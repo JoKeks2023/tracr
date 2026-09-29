@@ -12,6 +12,8 @@ use tracr_core::manifest::CapabilityManifest;
 pub mod discovery;
 pub mod extract;
 pub mod manifest;
+pub mod normalize;
+pub mod rules;
 
 /// Source kind of Claude Code transcript streams (§3.2 `source.kind`).
 pub const SOURCE_KIND: &str = "claude_transcript";

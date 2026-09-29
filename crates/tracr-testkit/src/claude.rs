@@ -9,6 +9,8 @@ pub struct ClaudeSession {
     pub cwd: String,
     pub branch: String,
     pub version: String,
+    /// `cli` is the only interactive entrypoint the manifest declares.
+    pub entrypoint: String,
     counter: u64,
 }
 
@@ -20,6 +22,7 @@ impl ClaudeSession {
             cwd: "/Users/dev/project".into(),
             branch: "main".into(),
             version: "2.1.281".into(),
+            entrypoint: "cli".into(),
             counter: 0,
         }
     }
@@ -44,7 +47,7 @@ impl ClaudeSession {
             "sessionId": self.session_id,
             "timestamp": at(hhmm),
             "version": self.version,
-            "entrypoint": "cli",
+            "entrypoint": self.entrypoint,
             "userType": "external",
             "isSidechain": false,
             "cwd": self.cwd,

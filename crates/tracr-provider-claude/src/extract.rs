@@ -21,7 +21,8 @@ use tracr_core::evidence::{
 use tracr_core::manifest::CapabilityManifest;
 use tracr_core::time::UtcMillis;
 
-use crate::manifest::{CONTENT_TAGS, HUMAN_CONTENT_TAGS, HUMAN_PROMPT_SOURCES};
+use crate::manifest::CONTENT_TAGS;
+use crate::rules::{non_human_reason, prompt_signals};
 
 type Obj = Map<String, Value>;
 
@@ -333,66 +334,6 @@ fn native(c: &Common<'_>) -> NativeIds {
     }
 }
 
-/// Why a user-role record is not a human prompt, or `None` if it is one.
-///
-/// The rule of architecture §13.2, validated against real transcripts: main
-/// chain, interactive entrypoint, not meta or compact summary, no tool
-/// result, no scheduled or automated origin (`origin.kind`, `turnOrigin`,
-/// `promptSource`), and no tool/system output envelope.
-struct PromptSignals<'a> {
-    role: StreamRole,
-    sidechain: bool,
-    agent_present: bool,
-    entrypoint: Option<&'a str>,
-    meta: bool,
-    compact_summary: bool,
-    transcript_only: bool,
-    scheduled: bool,
-    origin_kind: Option<&'a str>,
-    turn_origin: Option<&'a str>,
-    prompt_source: Option<&'a str>,
-    tag: Option<&'static str>,
-    content_kind: &'static str,
-}
-
-fn non_human_reason(s: &PromptSignals<'_>, manifest: &CapabilityManifest) -> Option<&'static str> {
-    if s.role == StreamRole::Subagent {
-        return Some("subagent_stream");
-    }
-    if s.sidechain || s.agent_present {
-        return Some("sidechain");
-    }
-    if !manifest.is_interactive(s.entrypoint) {
-        return Some("non_interactive_entrypoint");
-    }
-    if s.meta {
-        return Some("meta");
-    }
-    if s.compact_summary {
-        return Some("compact_summary");
-    }
-    if s.transcript_only {
-        return Some("transcript_only");
-    }
-    if s.scheduled {
-        return Some("scheduled");
-    }
-    if s.origin_kind.is_some_and(|k| k != "human")
-        || s.turn_origin.is_some_and(|t| t != "human")
-        || s.prompt_source
-            .is_some_and(|p| !HUMAN_PROMPT_SOURCES.contains(&p))
-    {
-        return Some("automated_origin");
-    }
-    if s.tag.is_some_and(|t| !HUMAN_CONTENT_TAGS.contains(&t)) {
-        return Some("tool_or_system_output");
-    }
-    if s.content_kind == "absent" {
-        return Some("no_content");
-    }
-    None
-}
-
 fn user(
     o: &Obj,
     ctx: &ExtractContext<'_>,
@@ -413,9 +354,6 @@ fn user(
         .set_bool("tool_result_block_present", has_tool_result);
     c.facts.tool_results = content.tool_results.clone();
 
-    let meta = bool_field(o, "isMeta").unwrap_or(false);
-    let compact_summary = bool_field(o, "isCompactSummary").unwrap_or(false);
-    let transcript_only = bool_field(o, "isVisibleInTranscriptOnly").unwrap_or(false);
     let scheduled = o.contains_key("scheduledTaskId") || o.contains_key("scheduledFireId");
     let interrupted = o.contains_key("interruptedMessageId");
     for (field, marker) in [
@@ -458,27 +396,14 @@ fn user(
         }
     }
 
+    // Classify from the markers just recorded, with the same rule the
+    // normalizer re-applies to retained facts (rules.rs, E-1).
     let (kind, subtype) = if tool_use_result || has_tool_result {
         (FactKind::ToolFinished, None)
     } else if interrupted {
         (FactKind::TurnInterrupted, None)
     } else {
-        let signals = PromptSignals {
-            role: ctx.stream.role,
-            sidechain: bool_field(o, "isSidechain").unwrap_or(false),
-            agent_present: o.contains_key("agentId"),
-            entrypoint: str_field(o, "entrypoint"),
-            meta,
-            compact_summary,
-            transcript_only,
-            scheduled,
-            origin_kind,
-            turn_origin,
-            prompt_source,
-            tag: content.tag,
-            content_kind: content.kind,
-        };
-        match non_human_reason(&signals, manifest) {
+        match non_human_reason(&prompt_signals(&c.facts), manifest, false) {
             None => (FactKind::UserInteraction, Some(PROMPT_SUBMITTED)),
             Some(reason) => (FactKind::AgentInput, Some(reason)),
         }

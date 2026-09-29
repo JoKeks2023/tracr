@@ -724,3 +724,68 @@ pub fn count_observations(conn: &Connection, exclude_channel: Option<Channel>) -
     )?;
     Ok(n.max(0) as u64)
 }
+
+// ---------------------------------------------------------------------------
+// Derivation input (§7.1: observations + facts)
+// ---------------------------------------------------------------------------
+
+/// One observation with one retained-fact row, as derivation reads it. An
+/// observation with facts from several extractor versions appears once per
+/// version; the caller picks the version it normalizes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactRow {
+    pub seq: i64,
+    pub id: String,
+    pub source_id: String,
+    pub record_key: String,
+    pub occurred_at: Option<UtcMillis>,
+    pub observed_at: UtcMillis,
+    pub producer_version: Option<String>,
+    pub manifest_range: Option<String>,
+    pub extractor_version: String,
+    pub kind: String,
+    pub subtype: Option<String>,
+    pub time_quality: String,
+    pub facts_json: String,
+}
+
+/// Every transcript observation of sources of `source_kind`, in source and file order.
+pub fn transcript_fact_rows(conn: &Connection, source_kind: &str) -> Result<Vec<FactRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT o.seq, o.id, o.source_id, o.record_key, o.occurred_at, o.observed_at,
+                o.producer_version, o.manifest_range, f.extractor_version, f.kind, f.subtype,
+                f.time_quality, f.facts_json
+         FROM observation o
+         JOIN source s ON s.id = o.source_id
+         JOIN observation_facts f ON f.observation_id = o.id
+         WHERE s.kind = ?1 AND o.channel = 'transcript'
+         ORDER BY o.source_id, o.seq, f.extractor_version",
+    )?;
+    let rows = stmt.query_map([source_kind], |r| {
+        Ok(FactRow {
+            seq: r.get(0)?,
+            id: r.get(1)?,
+            source_id: r.get(2)?,
+            record_key: r.get(3)?,
+            occurred_at: r.get::<_, Option<i64>>(4)?.map(UtcMillis),
+            observed_at: UtcMillis(r.get(5)?),
+            producer_version: r.get(6)?,
+            manifest_range: r.get(7)?,
+            extractor_version: r.get(8)?,
+            kind: r.get(9)?,
+            subtype: r.get(10)?,
+            time_quality: r.get(11)?,
+            facts_json: r.get(12)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The highest `observation.seq` (the derivation watermark), 0 if empty.
+pub fn max_observation_seq(conn: &Connection) -> Result<i64> {
+    Ok(
+        conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM observation", [], |r| {
+            r.get(0)
+        })?,
+    )
+}

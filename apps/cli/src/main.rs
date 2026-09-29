@@ -1,4 +1,5 @@
-//! `tracr` command-line host (T-0004): `roots add`, `import`, `sources`, `stats`.
+//! `tracr` command-line host: `roots add`, `import`, `sources`, `stats`,
+//! `rebuild`, `days`, `sessions --day`.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -41,6 +42,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Rebuild derived.sqlite from the ledger (normalization, copy election, agent timelines).
+    Rebuild,
+    /// Days with derived agent activity (reporting timezone).
+    Days,
+    /// Agent sessions of one day, each listed individually. Agent time is never human time.
+    Sessions {
+        /// Reporting day, YYYY-MM-DD (default: the latest day with data).
+        #[arg(long)]
+        day: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -74,6 +87,113 @@ fn table(title: &str, rows: &[(String, i64)]) {
     }
     for (k, n) in rows {
         println!("  {n:>9}  {k}");
+    }
+}
+
+fn hm(ms: i64, zone: &str) -> String {
+    use std::str::FromStr;
+    let tz = jiff::tz::TimeZone::get(zone).unwrap_or(jiff::tz::TimeZone::UTC);
+    jiff::Timestamp::from_millisecond(ms)
+        .map(|t| t.to_zoned(tz).strftime("%H:%M").to_string())
+        .unwrap_or_else(|_| String::from_str("?").unwrap())
+}
+
+fn minutes(ms: i64) -> String {
+    format!("{}m", (ms + 30_000) / 60_000)
+}
+
+fn tokens(t: tracr_app::day::TokenCount) -> String {
+    let n = t.sum as f64;
+    let base = if n >= 1e6 {
+        format!("{:.2}M", n / 1e6)
+    } else if n >= 1e3 {
+        format!("{:.1}k", n / 1e3)
+    } else {
+        format!("{}", t.sum)
+    };
+    if t.unknown_records > 0 {
+        format!("{base}+{}?", t.unknown_records)
+    } else {
+        base
+    }
+}
+
+fn print_day(v: &tracr_app::day::DayAgents) {
+    let tz = v.timezone.as_str();
+    println!("{}  ({})  {} agent sessions", v.day, tz, v.sessions.len());
+    println!("agent execution time is not human time; sessions overlap and are never merged\n");
+    for s in &v.sessions {
+        let span = match (s.first_evidence_at, s.last_evidence_at) {
+            (Some(a), Some(b)) => {
+                format!("{}–{}", hm(a.max(v.start), tz), hm(b.min(v.end - 1), tz))
+            }
+            _ => "-".into(),
+        };
+        println!(
+            "■ {}  [{}]  {}{}",
+            s.label.as_deref().unwrap_or("(no cwd)"),
+            &s.native_session_id[..8.min(s.native_session_id.len())],
+            span,
+            s.git_branch
+                .as_deref()
+                .map(|b| format!("  branch {b}"))
+                .unwrap_or_default()
+        );
+        if !s.engagement_instants.is_empty() {
+            let shown: Vec<String> = s
+                .engagement_instants
+                .iter()
+                .take(12)
+                .map(|&t| hm(t, tz))
+                .collect();
+            println!(
+                "    human prompts: {}{}",
+                shown.join(" "),
+                if s.engagement_instants.len() > 12 {
+                    format!(" … ({} total)", s.engagement_instants.len())
+                } else {
+                    String::new()
+                }
+            );
+        }
+        for a in &s.actors {
+            let who = match (a.actor_kind.as_str(), &a.native_agent_id) {
+                ("known", Some(id)) => format!("agent {}", &id[..12.min(id.len())]),
+                (k, _) => format!("{k} actor"),
+            };
+            println!(
+                "    {:<20} exec {:>5}  {:>3} segments  {:>3} turns  {:>4} tool calls",
+                who,
+                minutes(a.execution_ms),
+                a.segments.len(),
+                a.turns,
+                a.tool_calls
+            );
+        }
+        for u in &s.usage {
+            println!(
+                "    tokens {:<28} in {:>8}  cache+ {:>8}  cache↺ {:>8}  out {:>8}  ({} records{})",
+                u.model.as_deref().unwrap_or("(model unknown)"),
+                tokens(u.input_fresh),
+                tokens(u.cache_creation),
+                tokens(u.cache_read),
+                tokens(u.output),
+                u.records,
+                if u.identified { "" } else { ", unidentified" }
+            );
+        }
+        if !s.diagnostics.is_empty() {
+            let d: Vec<String> = s
+                .diagnostics
+                .iter()
+                .map(|(k, n)| format!("{k}={n}"))
+                .collect();
+            println!("    diagnostics: {}", d.join(", "));
+        }
+    }
+    println!();
+    for p in &v.pending {
+        println!("not derived yet — {}: {}", p.lane, p.reason);
     }
 }
 
@@ -207,6 +327,70 @@ fn main() -> Result<()> {
                 );
             }
             println!("{} sources", rows.len());
+        }
+        Command::Rebuild => {
+            let mut app = App::open_writer(&dir, Box::new(SystemClock))?;
+            let started = std::time::Instant::now();
+            let r = app.rebuild()?;
+            println!(
+                "rebuilt derived store in {:.1}s (as_of {}, ledger seq ≤ {})",
+                started.elapsed().as_secs_f64(),
+                r.as_of,
+                r.obs_watermark
+            );
+            println!(
+                "read {} observations in {} streams ({} skipped); {} later versions of a record key not elected",
+                r.observations_read, r.streams, r.streams_skipped, r.record_versions_not_elected
+            );
+            println!(
+                "{} sessions, {} actors, {} turns, {} tool calls, {} execution segments, {} engagement instants",
+                r.sessions, r.actors, r.turns, r.tool_calls, r.segments, r.engagement_instants
+            );
+            println!(
+                "{} events ({} copied context); {} copied records",
+                r.events, r.copied_events, r.copied_records
+            );
+            println!(
+                "{} usage records: {} duplicates of another stream's occurrence, {} unidentified",
+                r.usage_records, r.usage_duplicates, r.usage_unidentified
+            );
+            let diag: Vec<(String, i64)> = r
+                .diagnostics
+                .iter()
+                .map(|(k, v)| (k.clone(), *v as i64))
+                .collect();
+            table("diagnostics:", &diag);
+        }
+        Command::Days => {
+            let d = Reader::open(&dir)?.days()?;
+            println!(
+                "timezone {}{}",
+                d.timezone,
+                if d.timezone_from_setting {
+                    ""
+                } else {
+                    " (system zone; no timezone setting)"
+                }
+            );
+            for day in &d.days {
+                println!("  {day}");
+            }
+            println!("{} days", d.days.len());
+        }
+        Command::Sessions { day, json } => {
+            let reader = Reader::open(&dir)?;
+            let day = match day {
+                Some(d) => d.clone(),
+                None => reader.days()?.days.first().cloned().ok_or_else(|| {
+                    anyhow!("no days with data; run `tracr import` and `tracr rebuild`")
+                })?,
+            };
+            let v = reader.day_agents(&day)?;
+            if *json {
+                println!("{}", serde_json::to_string_pretty(&v)?);
+                return Ok(());
+            }
+            print_day(&v);
         }
         Command::Stats { json } => {
             let stats = Reader::open(&dir)?.stats()?;

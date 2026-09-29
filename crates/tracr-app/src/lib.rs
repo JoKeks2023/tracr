@@ -1,7 +1,11 @@
-//! Application use cases (architecture §1.1). Hosts (CLI now, desktop
-//! later) talk only to this crate. It owns the single-writer lock, wires the
-//! concrete adapters into ingestion and exposes the T-0004 use cases:
-//! approving roots, importing, and reading source and ledger statistics.
+//! Application use cases (architecture §1.1). Hosts (CLI, desktop) talk
+//! only to this crate. It owns the single-writer lock, wires the concrete
+//! adapters into ingestion and derivation, and exposes the use cases:
+//! approving roots, importing, rebuilding the derived store, and reading
+//! statistics and day views.
+
+pub mod day;
+pub mod derive;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, TryLockError};
@@ -34,6 +38,7 @@ pub fn default_data_dir() -> Option<PathBuf> {
     tracr_platform::app_paths().data_dir()
 }
 pub const PROVIDER_ROOTS_KEY: &str = "approved_provider_roots";
+pub const TIMEZONE_KEY: &str = "timezone";
 pub const REPOSITORY_ROOTS_KEY: &str = "approved_repository_roots";
 const CLIENT: &str = "tracr-cli";
 
@@ -345,12 +350,20 @@ impl App {
     }
 }
 
+impl App {
+    /// Rebuilds `derived.sqlite` from the ledger (§3.1). Only the lock holder rebuilds.
+    pub fn rebuild(&mut self) -> Result<derive::RebuildReport> {
+        derive::rebuild(&self.conn, &self.data_dir, self.clock.now())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Readers (no lock; never create or migrate)
 // ---------------------------------------------------------------------------
 
 pub struct Reader {
     conn: Connection,
+    data_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -399,7 +412,31 @@ impl Reader {
                 data_dir.display()
             );
         }
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            data_dir: data_dir.to_path_buf(),
+        })
+    }
+
+    /// The reporting timezone (AD-14): the `timezone` setting, else the system zone.
+    pub fn reporting_zone(&self) -> Result<day::ReportingZone> {
+        let setting = ledger::current_setting(&self.conn, TIMEZONE_KEY)?;
+        day::ReportingZone::resolve(setting.as_ref().and_then(|v| v.as_str()))
+    }
+
+    fn derived(&self) -> Result<Connection> {
+        tracr_store::derived::open_read_only(&self.data_dir)?
+            .ok_or_else(|| anyhow!("no derived store yet; run `tracr rebuild`"))
+    }
+
+    /// Days with derived agent activity, newest first.
+    pub fn days(&self) -> Result<day::DayList> {
+        day::days(&self.derived()?, &self.reporting_zone()?)
+    }
+
+    /// Agent activity of one reporting day (`YYYY-MM-DD`), every session individually.
+    pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
+        day::day_agents(&self.derived()?, &self.reporting_zone()?, day)
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {

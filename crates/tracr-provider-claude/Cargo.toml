@@ -10,3 +10,6 @@ publish.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 tracr-core = { version = "0.9.0-dev", path = "../tracr-core" }
+
+[dev-dependencies]
+tracr-testkit = { path = "../tracr-testkit" }

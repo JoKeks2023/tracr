@@ -4,6 +4,7 @@
 //! Immutability is enforced by triggers in the schema, not by convention.
 
 pub mod connection;
+pub mod derived;
 pub mod ledger;
 pub mod migrate;
 

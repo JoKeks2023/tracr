@@ -669,6 +669,8 @@ name = "tracr-app"
 version = "0.9.0-dev"
 dependencies = [
  "anyhow",
+ "blake3",
+ "jiff",
  "rusqlite",
  "serde",
  "serde_json",
@@ -688,6 +690,7 @@ version = "0.9.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "jiff",
  "serde_json",
  "tracr-app",
 ]
@@ -733,6 +736,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracr-core",
+ "tracr-testkit",
 ]
 
 [[package]]

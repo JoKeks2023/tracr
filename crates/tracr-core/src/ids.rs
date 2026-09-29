@@ -115,9 +115,39 @@ impl RecordKey {
     }
 }
 
+/// Deterministic ID of a derived record (AD-09, §6.1): `prefix` followed by
+/// the hex of the first 128 bits of BLAKE3 over the key parts. Parts are
+/// length-prefixed, so `["ab", "c"]` and `["a", "bc"]` never collide.
+pub fn derived_id(prefix: &str, parts: &[&str]) -> String {
+    let mut h = blake3::Hasher::new();
+    for p in parts {
+        h.update(&(p.len() as u64).to_le_bytes());
+        h.update(p.as_bytes());
+    }
+    let hex: String = h.finalize().as_bytes()[..16]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("{prefix}{hex}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn derived_ids_are_deterministic_and_unambiguous() {
+        assert_eq!(
+            derived_id("ses_", &["a", "b"]),
+            derived_id("ses_", &["a", "b"])
+        );
+        assert_ne!(
+            derived_id("ses_", &["ab", "c"]),
+            derived_id("ses_", &["a", "bc"])
+        );
+        let id = derived_id("trn_", &["x"]);
+        assert!(id.starts_with("trn_") && id.len() == 4 + 32);
+    }
 
     #[test]
     fn crlf_and_lf_lines_hash_the_same() {
