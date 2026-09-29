@@ -9,6 +9,7 @@ members = [
     "crates/tracr-testkit",
     "crates/tracr-app",
     "apps/cli",
+    "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

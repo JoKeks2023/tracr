@@ -1,0 +1,16 @@
+[package]
+name = "tracr-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tracr-app = { version = "0.9.0-dev", path = "../../../crates/tracr-app" }

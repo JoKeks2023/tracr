@@ -17,8 +17,9 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # The desktop host needs WebKitGTK on Linux; it is built by the macOS job.
+      - run: cargo clippy --workspace --exclude tracr-desktop --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude tracr-desktop
 
   macos:
     name: macOS (build, tests)
@@ -28,6 +29,15 @@ jobs:
       - name: Install pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build the desktop UI (tauri embeds dist/)
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile && pnpm build
       - run: cargo build --workspace
       - run: cargo test --workspace
 
@@ -39,4 +49,4 @@ jobs:
       - name: Install pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --exclude tracr-cli
+      - run: cargo check --workspace --exclude tracr-cli --exclude tracr-desktop

@@ -28,3 +28,19 @@ Each item is marked **tested** (automated, run locally), **manually verified** o
 - **Prompts reconcile:** 757 human prompts in the ledger = 666 engagement instants + 91 copied prompt events.
 - **`tracr sessions --day 2026-09-28`:** 12 sessions, each listed on its own. Subagents appear as `known` actors. Main-chain activity is actor `unknown` (AD-21). Tokens are per actor and model. The human, device, coverage and cost lanes are printed as "not derived yet".
 - **Quiet-gap split on real data:** the longest remaining segment is 155 minutes of continuous activity; before the split it was 1,301 minutes.
+
+## Milestone 2: Day view shell (2026-09-30)
+
+- **Build:** the first debug build of `tracr-desktop` took 1.5 min with `-j 4`; `target/` is now 2.8 GB. `pnpm build` (tsc strict + vite) passes. Workspace clippy with `-D warnings`, including the desktop crate, passes. 93 tests pass.
+- **Manually verified:** `pnpm tauri dev` on the scratch copy of the real history, screenshot of 2026-09-29:
+  - 14 sessions, each on its own lane;
+  - human prompts drawn as instants;
+  - main-chain and subagent execution bars;
+  - subagents collapsed per session (e.g. "46 subagents · 26h 11m");
+  - pending lanes labeled;
+  - tokens: 8.04 M output.
+- **Unverified:**
+  - the session sheet, day switching and the Refresh button were not clicked (no UI automation on this machine); the code paths behind them (`day_agents`, import, rebuild) are tested in `tracr-app`;
+  - light mode;
+  - a production bundle (`tauri build`);
+  - the default data directory.

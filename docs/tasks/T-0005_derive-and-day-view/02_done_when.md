@@ -12,5 +12,8 @@ S1.3 (architecture §13.1, adjusted per [01_scope](01_scope.md)):
 
 Day view shell:
 
-- [ ] `apps/desktop` builds and opens on real data: day dropdown, one lane per session with actor rows, tokens per session and model, pending lanes labeled
-- [ ] Manual check on real data, recorded in [05_validation_report](05_validation_report.md)
+- [x] `apps/desktop` builds and opens on real data: day dropdown, one lane per session with actor rows, tokens per session and model, pending lanes labeled
+- [x] First look on real data (dev build), recorded in [05_validation_report](05_validation_report.md)
+
+- [ ] Dogfooding check by the user: does the day look right? (§13.5, observed, not assumed)
+- [ ] CI on GitHub: unverified; nothing pushed

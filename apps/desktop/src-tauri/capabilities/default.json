@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The Day view window: tracr's own commands and core window events only. No filesystem, shell or HTTP plugin (AD-12).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

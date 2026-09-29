@@ -47,3 +47,25 @@
   A naive counter would overstate output by 2.4×.
 - Some subagent streams start with one agent record and its tool result before the subagent's task prompt, a few seconds earlier. They form a short turnless segment (`bounded` start). This is correct under the rule and left as is.
 - **Rebuild resources:** 6–9 s on the real history, 435 MB peak RSS. The whole fact set is held in memory; streaming by session would lower this if needed.
+
+## Milestone 2: Day view shell (2026-09-30)
+
+| Part | Where |
+|---|---|
+| Tauri 2 host: commands `status`, `days`, `day_agents`, `refresh` (import + rebuild under the writer lock); capability `core:default` only; strict production CSP | `apps/desktop/src-tauri/` (workspace member `tracr-desktop`) |
+| React + TypeScript UI (Vite): day dropdown, summary metrics, time axis, pending lanes, one lane per session with actor rows, collapsed subagent overlay, session detail sheet | `apps/desktop/ui/src/` |
+| CI: Linux and Windows exclude `tracr-desktop`; macOS builds the UI and then the whole workspace | `.github/workflows/ci.yml` |
+
+### Decisions made during implementation
+
+- **Visual language:**
+  - the user's design-language skill;
+  - dark-first on true black, with light mode through `prefers-color-scheme`;
+  - accent: lime;
+  - content sits directly on the canvas; session detail opens in a sheet, not in cards.
+- **Pending lanes** (human, device, coverage) are labeled tracks reading "Not derived yet". They are not hatched, because hatching will mean *unknown* in S1.4. Cost is noted in the session sheet.
+- **Headline execution** is split into main chain and subagents. One summed "88h" figure read like a claim about the day.
+- **Refresh button:** the app runs import + rebuild. This matches AD-03, where the app process hosts the collector. It is a small addition that goes beyond a strictly read-only view, and it is named here explicitly.
+- **Not built yet:**
+  - the menu bar item (§13.4), which needs S1.4 minutes;
+  - the usage/cost table as its own screen section; tokens are in the session sheet.
