@@ -1,0 +1,442 @@
+//! Application use cases (architecture §1.1). Hosts (CLI now, desktop
+//! later) talk only to this crate. It owns the single-writer lock, wires the
+//! concrete adapters into ingestion and exposes the T-0004 use cases:
+//! approving roots, importing, and reading source and ledger statistics.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File, TryLockError};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow, bail};
+use rusqlite::Connection;
+use serde::Serialize;
+use tracr_core::evidence::{Channel, IngestTrigger};
+use tracr_core::ids::MachineId;
+use tracr_ingest::source::{RunContext, new_uuid_v7};
+use tracr_ingest::{
+    DiscoveryReport, GapInfo, IngestEnv, ReconcileOptions, Registry, discover, reconcile,
+    record_failed_run,
+};
+use tracr_platform::{Clock, FileIdentity, file_identity};
+use tracr_provider_claude::ClaudeAdapter;
+use tracr_store::connection::{LEDGER_FILE, open_ledger, open_ledger_read_only};
+use tracr_store::ledger::{self, NewUserAction, SourceSummary, UsageRecordStats};
+use tracr_store::migrate::{self, migrate_ledger};
+
+pub use tracr_core::time::UtcMillis;
+pub use tracr_platform::SystemClock;
+
+pub const LOCK_FILE: &str = "tracr.lock";
+
+/// The platform's default data directory (§3.1), if it has one.
+pub fn default_data_dir() -> Option<PathBuf> {
+    tracr_platform::app_paths().data_dir()
+}
+pub const PROVIDER_ROOTS_KEY: &str = "approved_provider_roots";
+pub const REPOSITORY_ROOTS_KEY: &str = "approved_repository_roots";
+const CLIENT: &str = "tracr-cli";
+
+/// The adapters tracr ships (T-0004: Claude Code transcripts).
+pub fn registry() -> Registry {
+    Registry::new(vec![Arc::new(ClaudeAdapter::new())])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootKind {
+    Provider,
+    Repository,
+}
+
+impl RootKind {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Provider => PROVIDER_ROOTS_KEY,
+            Self::Repository => REPOSITORY_ROOTS_KEY,
+        }
+    }
+}
+
+fn read_roots(conn: &Connection, kind: RootKind) -> Result<Vec<String>> {
+    Ok(match ledger::current_setting(conn, kind.key())? {
+        Some(serde_json::Value::Array(items)) => items
+            .into_iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+        Some(other) => bail!("setting {} is not a list: {other}", kind.key()),
+        None => Vec::new(),
+    })
+}
+
+/// A writer: holds `tracr.lock` for its whole lifetime (AD-03 single writer).
+pub struct App {
+    data_dir: PathBuf,
+    conn: Connection,
+    machine: MachineId,
+    clock: Box<dyn Clock>,
+    fid: Box<dyn FileIdentity>,
+    registry: Registry,
+    _lock: File,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RootsChange {
+    Added(Vec<String>),
+    AlreadyApproved(Vec<String>),
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ImportReport {
+    pub run_id: String,
+    pub roots: Vec<String>,
+    pub missing_roots: Vec<String>,
+    pub files_seen: u64,
+    pub files_claimed: u64,
+    pub files_unclaimed: u64,
+    pub new_sources: u64,
+    pub unreadable_dirs: u64,
+    pub sources_reconciled: u64,
+    pub inserted: u64,
+    pub duplicates: u64,
+    pub quarantined: u64,
+    pub key_conflicts: u64,
+    pub incomplete_trailing: u64,
+    pub ended: u64,
+    /// Sources whose file was not found while discovery was incomplete.
+    pub missing: u64,
+    pub full_rereads: u64,
+    pub inserted_by_kind: BTreeMap<String, u64>,
+    pub ignored_by_type: BTreeMap<String, u64>,
+    pub unvalidated_versions: BTreeSet<String>,
+    pub gaps: Vec<GapSummary>,
+    pub errors: Vec<String>,
+    pub provider_observations_before: u64,
+    pub provider_observations_after: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GapSummary {
+    pub source_id: String,
+    pub start: String,
+    pub end: String,
+    pub reason: String,
+}
+
+impl App {
+    /// Opens `data_dir` for writing: takes the lock, creates and migrates the ledger.
+    pub fn open_writer(data_dir: &Path, clock: Box<dyn Clock>) -> Result<Self> {
+        fs::create_dir_all(data_dir).with_context(|| format!("create {}", data_dir.display()))?;
+        let lock = File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(data_dir.join(LOCK_FILE))?;
+        match lock.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => {
+                bail!(
+                    "another tracr process holds {}",
+                    data_dir.join(LOCK_FILE).display()
+                )
+            }
+            Err(TryLockError::Error(e)) => return Err(e.into()),
+        }
+        let mut conn = open_ledger(&data_dir.join(LEDGER_FILE))?;
+        let stamp = clock.now().to_rfc3339().replace(':', "-");
+        migrate_ledger(&mut conn, &data_dir.join("backups"), &stamp)?;
+        let fid = file_identity();
+        let machine = {
+            let env = IngestEnv {
+                clock: &*clock,
+                file_identity: &*fid,
+            };
+            ledger::ensure_machine(&conn, &new_uuid_v7(&env), None, clock.now())?
+        };
+        Ok(Self {
+            data_dir: data_dir.to_path_buf(),
+            conn,
+            machine,
+            clock,
+            fid,
+            registry: registry(),
+            _lock: lock,
+        })
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    pub fn machine(&self) -> &MachineId {
+        &self.machine
+    }
+
+    /// Records an approved provider or repository root in `setting_rev` (PS-02).
+    pub fn add_root(&mut self, kind: RootKind, path: &Path) -> Result<RootsChange> {
+        let canonical =
+            fs::canonicalize(path).with_context(|| format!("resolve {}", path.display()))?;
+        if !canonical.is_dir() {
+            bail!("{} is not a directory", canonical.display());
+        }
+        let text = canonical
+            .to_str()
+            .ok_or_else(|| anyhow!("path is not valid UTF-8"))?
+            .to_owned();
+        let mut roots = read_roots(&self.conn, kind)?;
+        if roots.contains(&text) {
+            return Ok(RootsChange::AlreadyApproved(roots));
+        }
+        roots.push(text);
+        roots.sort();
+        let env = IngestEnv {
+            clock: &*self.clock,
+            file_identity: &*self.fid,
+        };
+        let tx = self.conn.transaction()?;
+        let seq = ledger::append_user_action(
+            &tx,
+            &NewUserAction {
+                id: &new_uuid_v7(&env),
+                kind: &format!("setting.{}.add", kind.key()),
+                actor: "user",
+                at: self.clock.now(),
+                reason: None,
+                client: CLIENT,
+            },
+        )?;
+        ledger::append_setting(&tx, kind.key(), &serde_json::json!(roots), seq)?;
+        tx.commit()?;
+        Ok(RootsChange::Added(roots))
+    }
+
+    /// Backfill (§4.5): discovery over approved provider roots, then one
+    /// reconcile per source, oldest first. Idempotent.
+    pub fn import(&mut self, progress: &mut dyn FnMut(u64, u64)) -> Result<ImportReport> {
+        let roots: Vec<PathBuf> = read_roots(&self.conn, RootKind::Provider)?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        if roots.is_empty() {
+            bail!("no approved provider roots; run `tracr roots add --provider <path>` first");
+        }
+        let env = IngestEnv {
+            clock: &*self.clock,
+            file_identity: &*self.fid,
+        };
+        let mut report = ImportReport {
+            provider_observations_before: ledger::count_observations(
+                &self.conn,
+                Some(Channel::Collector),
+            )?,
+            ..ImportReport::default()
+        };
+        let mut run = RunContext::begin_import(&mut self.conn, &env, &self.machine, CLIENT)?;
+        report.run_id = run.run_id.clone();
+        let d: DiscoveryReport = discover(
+            &mut self.conn,
+            &env,
+            &self.registry,
+            &mut run,
+            &self.machine,
+            &roots,
+            IngestTrigger::Backfill,
+        )?;
+        report.roots = d
+            .roots
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        report.missing_roots = d
+            .missing_roots
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        (
+            report.files_seen,
+            report.files_claimed,
+            report.files_unclaimed,
+            report.new_sources,
+            report.unreadable_dirs,
+        ) = (
+            d.files_seen,
+            d.files_claimed,
+            d.files_unclaimed,
+            d.new_sources,
+            d.unreadable_dirs,
+        );
+
+        // A file discovery did not find ends its source (§4.3) only if this
+        // discovery walked every approved root completely. A missing root
+        // (e.g. an unmounted volume) or an unreadable directory leaves such
+        // sources `missing`; ending them would be permanent.
+        let discovery_confirmed = d.missing_roots.is_empty() && d.unreadable_dirs == 0;
+
+        // Oldest first (§4.6): by the earliest known creation time of the source's files.
+        let mut sources: Vec<(Option<i64>, tracr_store::ledger::SourceRow)> = Vec::new();
+        for s in ledger::sources(&self.conn, None)? {
+            if self.registry.for_kind(&s.kind).is_none() {
+                continue;
+            }
+            let birth = ledger::locators(&self.conn, &s.id)?
+                .iter()
+                .filter_map(|l| l.birth_time.or(l.first_seen).map(|t| t.0))
+                .min();
+            sources.push((birth, s));
+        }
+        sources.sort_by(|a, b| (a.0, &a.1.stream_key).cmp(&(b.0, &b.1.stream_key)));
+        let total = sources.len() as u64;
+        for (i, (_, source)) in sources.iter().enumerate() {
+            progress(i as u64 + 1, total);
+            match reconcile(
+                &mut self.conn,
+                &env,
+                &self.registry,
+                &mut run,
+                source,
+                IngestTrigger::Backfill,
+                &ReconcileOptions {
+                    discovery_confirmed,
+                    ..ReconcileOptions::default()
+                },
+            ) {
+                Ok(r) => {
+                    report.sources_reconciled += 1;
+                    report.inserted += r.inserted;
+                    report.duplicates += r.duplicates;
+                    report.quarantined += r.quarantined;
+                    report.key_conflicts += r.key_conflicts;
+                    report.incomplete_trailing += u64::from(r.incomplete_trailing);
+                    report.ended += u64::from(r.ended);
+                    report.missing += u64::from(r.mode == tracr_ingest::ReadMode::Missing);
+                    report.full_rereads += u64::from(r.mode == tracr_ingest::ReadMode::FullReread);
+                    for (k, n) in r.inserted_by_kind {
+                        *report.inserted_by_kind.entry(k).or_default() += n;
+                    }
+                    for (k, n) in r.ignored_by_type {
+                        *report.ignored_by_type.entry(k).or_default() += n;
+                    }
+                    report.unvalidated_versions.extend(r.unvalidated_versions);
+                    if let Some(GapInfo { start, end, reason }) = r.gap {
+                        report.gaps.push(GapSummary {
+                            source_id: source.id.to_string(),
+                            start: start.to_rfc3339(),
+                            end: end.to_rfc3339(),
+                            reason,
+                        });
+                    }
+                }
+                Err(e) => {
+                    // One unreadable source never aborts the import; the failure is evidence too.
+                    report.errors.push(format!("{}: {e}", source.id));
+                    record_failed_run(
+                        &mut self.conn,
+                        &env,
+                        &mut run,
+                        source,
+                        IngestTrigger::Backfill,
+                        &e,
+                    )?;
+                }
+            }
+        }
+        report.provider_observations_after =
+            ledger::count_observations(&self.conn, Some(Channel::Collector))?;
+        Ok(report)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Readers (no lock; never create or migrate)
+// ---------------------------------------------------------------------------
+
+pub struct Reader {
+    conn: Connection,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Stats {
+    pub machine: Option<String>,
+    pub schema_version: i64,
+    pub approved_provider_roots: Vec<String>,
+    pub approved_repository_roots: Vec<String>,
+    pub sources_by_kind: Vec<(String, i64)>,
+    pub ended_sources: u64,
+    pub observations_by_channel: Vec<(String, i64)>,
+    pub transcript_kinds: Vec<(String, i64)>,
+    pub parse_status: Vec<(String, i64)>,
+    pub quarantined: Vec<(String, i64)>,
+    pub producer_versions: Vec<(String, i64)>,
+    pub ignored_lines: Vec<(String, i64)>,
+    pub collector_records: Vec<(String, i64)>,
+    pub coverage_gaps: Vec<GapSummary>,
+    pub usage_records: UsageRecordStatsDto,
+}
+
+/// Counts of usage-bearing records, not token totals (election is S1.3).
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct UsageRecordStatsDto {
+    pub usage_bearing_observations: u64,
+    pub distinct_identities: u64,
+    pub without_identity: u64,
+}
+
+impl From<UsageRecordStats> for UsageRecordStatsDto {
+    fn from(u: UsageRecordStats) -> Self {
+        Self {
+            usage_bearing_observations: u.usage_bearing_observations,
+            distinct_identities: u.distinct_identities,
+            without_identity: u.without_identity,
+        }
+    }
+}
+
+impl Reader {
+    pub fn open(data_dir: &Path) -> Result<Self> {
+        let conn = open_ledger_read_only(&data_dir.join(LEDGER_FILE))?;
+        if migrate::user_version(&conn)? < 1 {
+            bail!(
+                "ledger at {} is not initialized; run `tracr import`",
+                data_dir.display()
+            );
+        }
+        Ok(Self { conn })
+    }
+
+    pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {
+        Ok(ledger::source_summaries(&self.conn, kind)?)
+    }
+
+    pub fn stats(&self) -> Result<Stats> {
+        let c = &self.conn;
+        let ended: i64 = c.query_row(
+            "SELECT COUNT(*) FROM source_cursor WHERE ended_at IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(Stats {
+            machine: ledger::machine_id(c)?.map(|m| m.to_string()),
+            schema_version: migrate::user_version(c)?,
+            approved_provider_roots: read_roots(c, RootKind::Provider)?,
+            approved_repository_roots: read_roots(c, RootKind::Repository)?,
+            sources_by_kind: ledger::source_counts_by_kind(c)?,
+            ended_sources: ended.max(0) as u64,
+            observations_by_channel: ledger::observation_counts_by_channel(c)?,
+            transcript_kinds: ledger::fact_counts(c, Channel::Transcript)?,
+            parse_status: ledger::parse_status_counts(c)?,
+            quarantined: ledger::quarantine_counts(c)?,
+            producer_versions: ledger::producer_version_counts(c)?,
+            ignored_lines: ledger::ignored_line_counts(c)?,
+            collector_records: ledger::collector_record_counts(c)?,
+            coverage_gaps: ledger::coverage_gaps(c)?
+                .into_iter()
+                .map(|g| GapSummary {
+                    source_id: g.source_id,
+                    start: g.start.to_rfc3339(),
+                    end: g.end.to_rfc3339(),
+                    reason: g.reason,
+                })
+                .collect(),
+            usage_records: ledger::usage_record_stats(c)?.into(),
+        })
+    }
+}

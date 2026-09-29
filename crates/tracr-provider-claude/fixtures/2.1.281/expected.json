@@ -1,0 +1,78 @@
+{
+  "main.jsonl": {
+    "lines": 149,
+    "outcomes": {
+      "agent_input/automated_origin": 2,
+      "agent_input/meta": 1,
+      "agent_input/tool_or_system_output": 1,
+      "agent_message": 40,
+      "ignored/ai-title": 6,
+      "ignored/atis-latch": 7,
+      "ignored/attachment": 33,
+      "ignored/file-history-snapshot": 4,
+      "ignored/last-prompt": 7,
+      "ignored/mode": 7,
+      "ignored/permission-mode": 7,
+      "queue_operation/dequeue": 2,
+      "queue_operation/enqueue": 2,
+      "reported_cost_snapshot": 2,
+      "system_event/stop_hook_summary": 4,
+      "system_event/turn_duration": 4,
+      "tool_finished": 15,
+      "turn_interrupted": 1,
+      "user_interaction/prompt_submitted": 4
+    },
+    "role": "main"
+  },
+  "records.jsonl": {
+    "lines": 102,
+    "outcomes": {
+      "agent_input/automated_origin": 3,
+      "agent_input/compact_summary": 4,
+      "agent_input/meta": 14,
+      "agent_input/tool_or_system_output": 5,
+      "agent_message": 6,
+      "ignored/agent-name": 2,
+      "ignored/agent-setting": 2,
+      "ignored/ai-title": 2,
+      "ignored/atis-latch": 2,
+      "ignored/attachment": 2,
+      "ignored/bridge-session": 2,
+      "ignored/file-history-delta": 2,
+      "ignored/file-history-snapshot": 2,
+      "ignored/last-prompt": 2,
+      "ignored/mode": 2,
+      "ignored/permission-mode": 2,
+      "pr_observed": 2,
+      "queue_operation/dequeue": 2,
+      "queue_operation/enqueue": 2,
+      "queue_operation/remove": 2,
+      "reported_cost_snapshot": 2,
+      "session_continued": 1,
+      "session_relocated": 2,
+      "system_event/away_summary": 2,
+      "system_event/bridge_status": 2,
+      "system_event/compact_boundary": 2,
+      "system_event/informational": 2,
+      "system_event/local_command": 2,
+      "system_event/scheduled_task_fire": 2,
+      "system_event/stop_hook_summary": 2,
+      "system_event/turn_duration": 2,
+      "tool_finished": 2,
+      "turn_interrupted": 2,
+      "user_interaction/prompt_submitted": 13,
+      "worktree_observed": 2
+    },
+    "role": "main"
+  },
+  "subagent.jsonl": {
+    "lines": 60,
+    "outcomes": {
+      "agent_input/subagent_stream": 1,
+      "agent_message": 23,
+      "ignored/attachment": 19,
+      "tool_finished": 17
+    },
+    "role": "subagent"
+  }
+}

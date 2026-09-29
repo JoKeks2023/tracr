@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/tracr-core",
+    "crates/tracr-platform",
+    "crates/tracr-store",
+    "crates/tracr-ingest",
+    "crates/tracr-provider-claude",
+    "crates/tracr-testkit",
+    "crates/tracr-app",
+    "apps/cli",
+]
+
+[workspace.package]
+version = "0.9.0-dev"
+edition = "2024"
+rust-version = "1.98"
+license = "UNLICENSED"
+publish = false

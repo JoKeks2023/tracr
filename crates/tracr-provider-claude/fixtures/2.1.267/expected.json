@@ -1,0 +1,72 @@
+{
+  "main.jsonl": {
+    "lines": 85,
+    "outcomes": {
+      "agent_input/automated_origin": 1,
+      "agent_message": 4,
+      "ignored/ai-title": 6,
+      "ignored/atis-latch": 7,
+      "ignored/attachment": 16,
+      "ignored/file-history-snapshot": 1,
+      "ignored/last-prompt": 7,
+      "ignored/mode": 7,
+      "ignored/permission-mode": 7,
+      "queue_operation/dequeue": 1,
+      "queue_operation/enqueue": 10,
+      "queue_operation/remove": 9,
+      "reported_cost_snapshot": 2,
+      "system_event/away_summary": 1,
+      "system_event/stop_hook_summary": 2,
+      "system_event/turn_duration": 2,
+      "tool_finished": 1,
+      "user_interaction/prompt_submitted": 1
+    },
+    "role": "main"
+  },
+  "records.jsonl": {
+    "lines": 82,
+    "outcomes": {
+      "agent_input/automated_origin": 4,
+      "agent_input/compact_summary": 2,
+      "agent_input/meta": 9,
+      "agent_input/tool_or_system_output": 2,
+      "agent_message": 6,
+      "ignored/agent-name": 2,
+      "ignored/ai-title": 2,
+      "ignored/atis-latch": 2,
+      "ignored/attachment": 2,
+      "ignored/file-history-delta": 2,
+      "ignored/file-history-snapshot": 2,
+      "ignored/last-prompt": 2,
+      "ignored/mode": 2,
+      "ignored/permission-mode": 2,
+      "pr_observed": 2,
+      "queue_operation/dequeue": 2,
+      "queue_operation/enqueue": 2,
+      "queue_operation/remove": 2,
+      "reported_cost_snapshot": 2,
+      "session_continued": 2,
+      "system_event/away_summary": 2,
+      "system_event/compact_boundary": 2,
+      "system_event/informational": 2,
+      "system_event/local_command": 2,
+      "system_event/scheduled_task_fire": 2,
+      "system_event/stop_hook_summary": 2,
+      "system_event/turn_duration": 2,
+      "tool_finished": 2,
+      "turn_interrupted": 2,
+      "user_interaction/prompt_submitted": 11
+    },
+    "role": "main"
+  },
+  "subagent.jsonl": {
+    "lines": 60,
+    "outcomes": {
+      "agent_input/subagent_stream": 1,
+      "agent_message": 23,
+      "ignored/attachment": 24,
+      "tool_finished": 12
+    },
+    "role": "subagent"
+  }
+}

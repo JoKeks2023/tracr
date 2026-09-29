@@ -1,0 +1,61 @@
+{
+  "main.jsonl": {
+    "lines": 42,
+    "outcomes": {
+      "agent_message": 10,
+      "ignored/ai-title": 2,
+      "ignored/attachment": 10,
+      "ignored/file-history-snapshot": 2,
+      "ignored/last-prompt": 3,
+      "ignored/mode": 3,
+      "ignored/permission-mode": 3,
+      "system_event/stop_hook_summary": 2,
+      "system_event/turn_duration": 2,
+      "tool_finished": 3,
+      "user_interaction/prompt_submitted": 2
+    },
+    "role": "main"
+  },
+  "records.jsonl": {
+    "lines": 63,
+    "outcomes": {
+      "agent_input/automated_origin": 2,
+      "agent_input/compact_summary": 1,
+      "agent_input/meta": 6,
+      "agent_input/tool_or_system_output": 2,
+      "agent_message": 6,
+      "ignored/agent-name": 2,
+      "ignored/ai-title": 2,
+      "ignored/attachment": 2,
+      "ignored/file-history-delta": 2,
+      "ignored/file-history-snapshot": 2,
+      "ignored/last-prompt": 2,
+      "ignored/mode": 2,
+      "ignored/permission-mode": 2,
+      "pr_observed": 2,
+      "queue_operation/dequeue": 2,
+      "queue_operation/enqueue": 2,
+      "queue_operation/remove": 2,
+      "system_event/away_summary": 2,
+      "system_event/compact_boundary": 1,
+      "system_event/informational": 1,
+      "system_event/local_command": 2,
+      "system_event/stop_hook_summary": 2,
+      "system_event/turn_duration": 2,
+      "tool_finished": 2,
+      "turn_interrupted": 2,
+      "user_interaction/prompt_submitted": 8
+    },
+    "role": "main"
+  },
+  "subagent.jsonl": {
+    "lines": 56,
+    "outcomes": {
+      "agent_input/subagent_stream": 2,
+      "agent_message": 32,
+      "ignored/attachment": 2,
+      "tool_finished": 20
+    },
+    "role": "subagent"
+  }
+}

@@ -1,0 +1,23 @@
+[package]
+name = "tracr-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+rusqlite = "0.40.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tracr-core = { version = "0.9.0-dev", path = "../tracr-core" }
+tracr-ingest = { version = "0.9.0-dev", path = "../tracr-ingest" }
+tracr-platform = { version = "0.9.0-dev", path = "../tracr-platform" }
+tracr-provider-claude = { version = "0.9.0-dev", path = "../tracr-provider-claude" }
+tracr-store = { version = "0.9.0-dev", path = "../tracr-store" }
+uuid = { version = "1.26.1", features = ["v7"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tracr-testkit = { path = "../tracr-testkit" }
