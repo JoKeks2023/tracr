@@ -58,3 +58,21 @@ This is spec-conformant but useless in a timesheet. It was raised with the user 
 - On the real history, September days now show 2–10 h unknown (the hours actually worked), instead of 24 h.
 - History is still never counted: there was no sensor.
 - **Deviation from §7.3 / activity model §6:** those texts make every unbridged gap unknown. The decision adds a length cap.
+
+## M3: incremental derivation, git context and attribution, completeness (2026-09-30)
+
+| Part | Where |
+|---|---|
+| `derive::update`: dirty sessions (observations past the watermark) closed over copy-election peers; human, device and coverage layers re-read from the store | `crates/tracr-app/src/derive.rs`, `crates/tracr-store/src/{derived,ledger}.rs` |
+| Runtime: incremental update at each heartbeat with changes; full rebuild only on a missing or outdated store | `crates/tracr-app/src/runtime.rs`, `lib.rs` (`update_derived`) |
+| Collector rows selected by source instead of channel: an empty update went from about 7 s to 0.1 s | `ledger::collector_and_sensor_rows` |
+| `ProbeAdapter` trait (core); `tracr-git` (pure plan and parse, remote normalization without credentials); probe executor (approved roots only, `GIT_OPTIONAL_LOCKS=0`, unchanged results skipped) | `crates/tracr-core/src/adapter.rs`, `crates/tracr-git/`, `crates/tracr-ingest/src/probe.rs` |
+| Attribution of work atoms (worktree and repository levels, report target), session repository; `counted_by_target`; timesheet `repository`, `worktree`, `attribution_state` | `crates/tracr-app/src/{derive_human,day,export}.rs`, schema v3 |
+| Completeness: ingestion watermark, stream gap and degraded extents, recovered records per day, provisional reasons; UI state line and coverage extents | `derive_human.rs`, `day.rs`, schema v4, `apps/desktop/ui/src/{App,Timeline}.tsx` |
+
+### Deviations and findings
+
+- **Branch probe split.** `rev-parse --abbrev-ref HEAD` fails in a repository without commits and took down the whole probe. The branch now comes from `symbolic-ref --short -q HEAD` (no branch when HEAD is detached).
+- **Provisional.** Every day is provisional until review exists (S2). The meaningful state today is the ingestion state (complete, or still arriving) and is shown separately.
+- **Project level (repository → tracr Project mapping)** follows with mappings (S3). The report target stops at repository.
+- **Real data:** 21 repositories identified by remote. Agent worktrees and subfolders collapse onto their repository. A nested repository (`avmsdesk/libs/hbb_common`) resolves to its own remote. A renamed repository is shown by its remote name (`jukebox` → `jokeks2023/cabinet`).

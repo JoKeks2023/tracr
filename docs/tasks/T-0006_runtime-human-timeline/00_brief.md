@@ -22,3 +22,5 @@ User decisions (2026-09-30, later):
   - A tool-specific column profile will follow once the tool is named.
 
 User decision (2026-09-30): **long gaps are blank.** An unbridged gap longer than 2 h is a break (blank), not unknown, and it separates unknown windows. Shorter unbridged gaps stay unknown for review. Rule `human-timeline@2`, parameter `max_unknown_gap_ms = 7200000` (AD-13, adjustable).
+
+User decision (2026-09-30, M3): git probes may run under **`~/Projects`** (approved repository root). The approval is recorded via the CLI on the user's behalf, at the next app update.

@@ -62,6 +62,9 @@ pub enum FactKind {
     DeviceUnlocked,
     DeviceSuspended,
     DeviceResumed,
+
+    /// Result of git probes for a working directory (§9).
+    GitContext,
 }
 
 impl FactKind {
@@ -99,6 +102,7 @@ impl FactKind {
             Self::DeviceUnlocked => "device_unlocked",
             Self::DeviceSuspended => "device_suspended",
             Self::DeviceResumed => "device_resumed",
+            Self::GitContext => "git_context",
         }
     }
 }

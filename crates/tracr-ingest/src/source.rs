@@ -272,6 +272,37 @@ fn insert_record(
     record_key: Option<String>,
     observation_id: Option<String>,
 ) -> Result<InsertOutcome> {
+    insert_record_with_quality(
+        conn,
+        env,
+        run,
+        source,
+        channel,
+        body,
+        kind,
+        trigger,
+        occurred_at,
+        record_key,
+        observation_id,
+        TimeQuality::Source,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn insert_record_with_quality(
+    conn: &Connection,
+    env: &IngestEnv<'_>,
+    run: &mut RunContext,
+    source: &SourceId,
+    channel: Channel,
+    body: Facts,
+    kind: tracr_core::events::FactKind,
+    trigger: IngestTrigger,
+    occurred_at: Option<tracr_core::time::UtcMillis>,
+    record_key: Option<String>,
+    observation_id: Option<String>,
+    time_quality: TimeQuality,
+) -> Result<InsertOutcome> {
     let facts_json = serde_json::to_string(&body)?;
     let hash = ContentHash::of(facts_json.as_bytes());
     let id = observation_id.unwrap_or_else(|| new_uuid_v7(env));
@@ -304,7 +335,7 @@ fn insert_record(
             extractor_version: concat!("tracr-ingest/", env!("CARGO_PKG_VERSION")),
             kind: kind.as_str(),
             subtype: None,
-            time_quality: TimeQuality::Source,
+            time_quality,
             facts_json: &facts_json,
         },
     )?)

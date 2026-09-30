@@ -13,6 +13,9 @@
 //! * file hints (debounced 500 ms): reconcile the file's source; an unknown
 //!   file runs discovery (directory hint) and reads the new sources;
 //! * every 5 min: the stat sweep; every 10 min: discovery;
+//! * git probes (§9) of working directories seen in new transcript records,
+//!   only under approved repository roots, at most once per directory every
+//!   10 minutes;
 //! * stop: `coverage_ended`.
 //!
 //! The derived store is updated in place (dirty units only); a full rebuild
@@ -47,6 +50,7 @@ pub const SWEEP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(10 * 60);
 pub const HINT_DEBOUNCE: Duration = Duration::from_millis(500);
 pub const REBUILD_MIN_INTERVAL: Duration = Duration::from_secs(60);
+pub const PROBE_MIN_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 /// Work for the writer thread.
 pub enum Job {
@@ -90,6 +94,9 @@ pub struct Collector {
     dirty: bool,
     last_rebuild: Option<Instant>,
     status: Arc<Mutex<RuntimeStatus>>,
+    /// Transcript `seq` up to which working directories were offered to git probes.
+    probe_watermark: i64,
+    last_probe: std::collections::HashMap<String, Instant>,
 }
 
 fn key_states(app: &App, sensor_available: bool) -> BTreeMap<String, String> {
@@ -144,6 +151,8 @@ impl Collector {
             dirty: true,
             last_rebuild: None,
             status,
+            probe_watermark: 0,
+            last_probe: std::collections::HashMap::new(),
         })
     }
 
@@ -317,7 +326,52 @@ impl Collector {
         Ok(woke)
     }
 
+    /// Git probes of working directories seen since the last pass (§9).
+    pub fn probe_git(&mut self) -> Result<()> {
+        let roots: Vec<PathBuf> = read_roots(&self.app.conn, RootKind::Repository)?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        let watermark = ledger::max_observation_seq(&self.app.conn)?;
+        let cwds = ledger::transcript_cwds_since(&self.app.conn, self.probe_watermark)?;
+        self.probe_watermark = watermark;
+        if roots.is_empty() {
+            return Ok(());
+        }
+        let env = IngestEnv {
+            clock: &*self.app.clock,
+            file_identity: &*self.app.fid,
+        };
+        for cwd in cwds {
+            if self
+                .last_probe
+                .get(&cwd)
+                .is_some_and(|t| t.elapsed() < PROBE_MIN_INTERVAL)
+            {
+                continue;
+            }
+            self.last_probe.insert(cwd.clone(), Instant::now());
+            let outcome = tracr_ingest::probe::probe(
+                &self.app.conn,
+                &env,
+                &mut self.run,
+                &tracr_git::GitProbe,
+                &self.app.machine,
+                &cwd,
+                &roots,
+                IngestTrigger::Hint,
+            )?;
+            if outcome == tracr_ingest::probe::ProbeOutcome::Recorded {
+                self.dirty = true;
+            }
+        }
+        Ok(())
+    }
+
     pub fn heartbeat(&mut self) -> Result<()> {
+        if let Err(e) = self.probe_git() {
+            self.note_error(&e);
+        }
         let keys = key_states(&self.app, self.sensor_available);
         let env = IngestEnv {
             clock: &*self.app.clock,
@@ -377,6 +431,7 @@ impl Collector {
                 let started = Instant::now();
                 let result = (|| {
                     let inserted = self.reconcile_all(IngestTrigger::Sweep)?;
+                    self.probe_git()?;
                     let sessions = self.rebuild()?;
                     Ok::<_, anyhow::Error>(Refreshed {
                         inserted,
@@ -482,6 +537,7 @@ impl Runtime {
                 .spawn(move || {
                     let start = (|| {
                         collector.reconcile_all(IngestTrigger::Startup)?;
+                        collector.probe_git()?;
                         collector.rebuild()?;
                         collector.heartbeat()
                     })();

@@ -698,16 +698,28 @@ fn derive_into(
             .collect();
         // The human layer reads every session's instants and segments from the
         // store, so an update sees the sessions it did not re-derive too.
+        let instant_rows = w.all_instants()?;
         let agents = crate::derive_human::AgentContext {
-            instants: w
-                .all_instants()?
+            instants: instant_rows
+                .iter()
+                .map(|(session, at, _)| tracr_core::human::Instant {
+                    at: UtcMillis(*at),
+                    session: session.clone(),
+                })
+                .collect(),
+            instant_cwds: instant_rows
                 .into_iter()
-                .map(|(session, at)| tracr_core::human::Instant {
-                    at: UtcMillis(at),
-                    session,
+                .map(|(session, at, ctx)| {
+                    let cwd = ctx
+                        .and_then(|c| {
+                            serde_json::from_str::<tracr_core::evidence::ContextFacts>(&c).ok()
+                        })
+                        .and_then(|c| c.cwd);
+                    (session, at, cwd)
                 })
                 .collect(),
             segments: w.all_segments()?,
+            sessions: w.all_session_cwds()?,
         };
         report.human = crate::derive_human::derive(
             ledger,

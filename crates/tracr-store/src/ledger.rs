@@ -901,3 +901,48 @@ pub fn transcript_fact_rows_of_source(conn: &Connection, source_id: &str) -> Res
     let rows = stmt.query_map([source_id], fact_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
+
+/// Facts JSON of a source's latest observation (by `seq`), if any.
+pub fn latest_facts_json(conn: &Connection, source_id: &SourceId) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT f.facts_json FROM observation o JOIN observation_facts f ON f.observation_id = o.id
+             WHERE o.source_id = ?1 ORDER BY o.seq DESC LIMIT 1",
+            [source_id.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// Distinct working directories stated by transcript records after `seq`.
+pub fn transcript_cwds_since(conn: &Connection, seq: i64) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT json_extract(f.facts_json, '$.context.cwd') AS cwd
+         FROM observation o JOIN observation_facts f ON f.observation_id = o.id
+         WHERE o.seq > ?1 AND o.channel = 'transcript' AND cwd IS NOT NULL",
+    )?;
+    let rows = stmt.query_map([seq], |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The latest git-context facts per working directory, as JSON.
+pub fn git_contexts(conn: &Connection) -> Result<Vec<(String, i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.stream_key, o.observed_at, f.facts_json FROM observation o
+         JOIN source s ON s.id = o.source_id JOIN observation_facts f ON f.observation_id = o.id
+         WHERE s.kind = 'git' ORDER BY o.seq",
+    )?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Occurrence times of transcript records first ingested by a non-live
+/// trigger (startup, sweep, wake, …) and received at or after `since`.
+pub fn recovered_record_times(conn: &Connection, since: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT occurred_at FROM observation WHERE channel = 'transcript' AND occurred_at IS NOT NULL
+           AND observed_at >= ?1 AND ingest_trigger NOT IN ('hint', 'dir_hint')",
+    )?;
+    let rows = stmt.query_map([since], |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

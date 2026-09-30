@@ -7,6 +7,7 @@
 
 pub mod cursor;
 pub mod discovery;
+pub mod probe;
 pub mod reader;
 pub mod reconcile;
 pub mod source;

@@ -31,6 +31,7 @@ pub const AGENT_SESSIONS_COLUMNS: &[&str] = &[
     "session_id",
     "native_session_id",
     "project_label",
+    "repository",
     "cwd",
     "git_branch",
     "actor_kind",
@@ -137,6 +138,7 @@ fn day_rows(out: &mut String, zone: &ReportingZone, v: &DayAgents) {
                     s.session_id.clone(),
                     s.native_session_id.clone(),
                     s.label.clone().unwrap_or_default(),
+                    s.repository.clone().unwrap_or_default(),
                     s.cwd.clone().unwrap_or_default(),
                     s.git_branch.clone().unwrap_or_default(),
                     a.actor_kind.clone(),
@@ -207,6 +209,9 @@ pub const TIMESHEET_COLUMNS: &[&str] = &[
     "unknown_minutes",
     "counting_basis",
     "unknown_reason",
+    "repository",
+    "worktree",
+    "attribution_state",
     "session_id",
     "native_session_id",
     "project_label",
@@ -272,6 +277,20 @@ pub fn timesheet_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
                         String::new()
                     },
                     a.unknown_reason.clone().unwrap_or_default(),
+                    a.attribution
+                        .as_ref()
+                        .filter(|at| at.level == "repository")
+                        .map(|at| at.targets.join(";"))
+                        .unwrap_or_default(),
+                    session
+                        .and_then(|s| s.cwd.clone())
+                        .filter(|_| a.attribution.as_ref().is_some_and(|at| at.level != "none"))
+                        .unwrap_or_default(),
+                    match (&a.attribution, a.status.as_str()) {
+                        (Some(at), _) => at.state.clone(),
+                        (None, "work") => "unattributed".to_owned(),
+                        _ => String::new(),
+                    },
                     a.engaged_session.clone().unwrap_or_default(),
                     session
                         .map(|s| s.native_session_id.clone())

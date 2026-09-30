@@ -234,9 +234,11 @@ fn agent_sessions_csv_has_one_row_per_day_session_actor_and_prompts_once() {
     let output = header.iter().position(|c| *c == "output_tokens").unwrap();
     let plain: Vec<Vec<String>> = lines[1..].iter().map(|l| parse_csv_line(l)).collect();
     assert!(plain.iter().all(|r| r.len() == header.len()));
-    assert_eq!(plain[0][6], "/Users/dev/my, project");
-    let main = plain.iter().find(|r| r[8] == "unknown").unwrap();
-    let agent = plain.iter().find(|r| r[8] == "known").unwrap();
+    let cwd = header.iter().position(|c| *c == "cwd").unwrap();
+    assert_eq!(plain[0][cwd], "/Users/dev/my, project");
+    let kind = header.iter().position(|c| *c == "actor_kind").unwrap();
+    let main = plain.iter().find(|r| r[kind] == "unknown").unwrap();
+    let agent = plain.iter().find(|r| r[kind] == "known").unwrap();
     assert_eq!(main[prompts], "2");
     assert_eq!(agent[prompts], "", "prompts only on the main-chain row");
     assert_eq!(main[output], "150");

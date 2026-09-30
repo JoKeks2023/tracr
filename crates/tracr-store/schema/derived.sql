@@ -25,6 +25,7 @@ CREATE TABLE agent_session (id TEXT PRIMARY KEY, provider TEXT NOT NULL, machine
   last_evidence_at INTEGER, end_observed_at INTEGER, end_basis TEXT,
   is_subagent_thread INTEGER NOT NULL DEFAULT 0, diagnostics TEXT, label TEXT,
   cwd TEXT, git_branch TEXT,                           -- event-time context of the first canonical record
+  repository_key TEXT, repository_label TEXT,          -- from git context of that cwd (approved roots only)
   derivation_run_id TEXT NOT NULL,
   UNIQUE (provider, machine_id, native_session_id));
 
@@ -100,3 +101,18 @@ CREATE TABLE human_atom_context (atom_id TEXT NOT NULL,
 -- Review proposals (window policy, idle end): never minutes (§7.2 Suggestion).
 CREATE TABLE human_proposal (atom_id TEXT NOT NULL, at INTEGER NOT NULL, kind TEXT NOT NULL,
   PRIMARY KEY (atom_id, at, kind));
+
+-- Resolved attribution per level (§7.5). Structural levels come from
+-- event-time context (worktree, repository). `report_target = 1` marks the
+-- single projection totals use.
+CREATE TABLE attribution (subject_kind TEXT NOT NULL, subject_id TEXT NOT NULL,
+  level TEXT NOT NULL,                                 -- explicit | project | repository | worktree | none
+  state TEXT NOT NULL,                                 -- confirmed | inferred | ambiguous | conflicting | unattributed
+  shape TEXT, targets TEXT, origin TEXT, evidence TEXT, overridden TEXT,
+  effective INTEGER NOT NULL, report_target INTEGER NOT NULL, derivation_run_id TEXT NOT NULL);
+CREATE INDEX attribution_subject ON attribution (subject_id);
+
+-- Per-day ingestion quality (§4.7, reporting §3): records recovered late
+-- (ingested by a non-live trigger after the collector first ran).
+CREATE TABLE day_quality (day TEXT PRIMARY KEY, recovered_records INTEGER NOT NULL,
+  derivation_run_id TEXT NOT NULL);

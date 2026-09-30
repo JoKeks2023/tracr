@@ -51,6 +51,8 @@ export interface SessionDay {
   label: string | null;
   cwd: string | null;
   git_branch: string | null;
+  repository: string | null;
+  repository_label: string | null;
   first_evidence_at: number | null;
   last_evidence_at: number | null;
   diagnostics: Record<string, number>;
@@ -75,6 +77,13 @@ export interface HumanAtom {
   end_boundary: string | null;
   reasons: string[];
   proposals: { at: number; kind: string }[];
+  /** Report-target attribution; work only. */
+  attribution: {
+    level: "repository" | "worktree" | "none";
+    state: "confirmed" | "conflicting" | "unattributed";
+    targets: string[];
+    labels: string[];
+  } | null;
 }
 
 /** Counted and unknown are separate figures and are never added together. */
@@ -83,6 +92,8 @@ export interface HumanDay {
   counted_ms: number;
   unknown_ms: number;
   unknown_by_reason: Record<string, number>;
+  /** Counted time per report target label (repository, "conflicting", "unattributed"). */
+  counted_by_target: Record<string, number>;
   /** First to last human prompt: an upper bound, never a total. */
   evidence_span: [number, number] | null;
 }
@@ -104,6 +115,14 @@ export interface DayAgents {
   human: HumanDay;
   device: LaneInterval[];
   coverage: Record<string, LaneInterval[]>;
+  quality: {
+    provisional: boolean;
+    provisional_reasons: string[];
+    ingestion_complete: boolean;
+    ingestion_verified_through: number | null;
+    recovered_records: number;
+    stream_extents: LaneInterval[];
+  };
   pending: PendingLane[];
 }
 

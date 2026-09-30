@@ -189,7 +189,22 @@ export function App() {
         <div>
           <h1>{day ? dayLabel(day) : "tracr"}</h1>
           <div className="sub">
-            {asOf ? `Derived ${new Date(asOf).toLocaleString("en-GB")}` : "Local development diary"}
+            {view ? (
+              <span title={view.quality.provisional_reasons.join("\n")}>
+                Provisional ·{" "}
+                {view.quality.ingestion_complete
+                  ? "data complete"
+                  : view.quality.ingestion_verified_through
+                    ? `data still arriving (verified through ${new Date(view.quality.ingestion_verified_through).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: view.timezone })})`
+                    : "ingestion not verified"}
+                {view.quality.recovered_records > 0 && ` · ${view.quality.recovered_records} records recovered late`}
+                {view.quality.stream_extents.some((e) => e.state === "gap") && " · ingestion gaps"}
+              </span>
+            ) : asOf ? (
+              `Derived ${new Date(asOf).toLocaleString("en-GB")}`
+            ) : (
+              "Local development diary"
+            )}
             {load.state === "ready" && ` · ${load.days.timezone}`}
           </div>
         </div>
@@ -276,6 +291,18 @@ export function App() {
               <div className="label">output tokens</div>
             </div>
           </div>
+          {Object.keys(totals.human.counted_by_target).length > 0 && (
+            <div className="by-target">
+              <span className="muted">Counted by repository</span>
+              {Object.entries(totals.human.counted_by_target)
+                .sort((a, b) => b[1] - a[1])
+                .map(([target, ms]) => (
+                  <span key={target} className={target === "unattributed" || target === "conflicting" ? "muted" : undefined}>
+                    {target} <span className="mono">{duration(ms)}</span>
+                  </span>
+                ))}
+            </div>
+          )}
           <Timeline day={view} selected={selected} onSelect={setSelected} />
         </>
       )}

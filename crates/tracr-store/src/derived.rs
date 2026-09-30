@@ -18,7 +18,7 @@ use crate::{Result, StoreError};
 pub const DERIVED_FILE: &str = "derived.sqlite";
 pub const DERIVED_NEXT_FILE: &str = "derived.next.sqlite";
 /// Bumped whenever `schema/derived.sql` changes; a mismatch means "rebuild".
-pub const DERIVED_SCHEMA_VERSION: i64 = 2;
+pub const DERIVED_SCHEMA_VERSION: i64 = 4;
 const SCHEMA: &str = include_str!("../schema/derived.sql");
 
 fn sidecars(path: &Path) -> [PathBuf; 3] {
@@ -280,6 +280,9 @@ pub struct IntervalRow {
     pub reason: Option<String>,
 }
 
+/// `(session id, first evidence, cwd)`.
+pub type SessionCwd = (String, Option<i64>, Option<String>);
+
 // ---------------------------------------------------------------------------
 // Writer
 // ---------------------------------------------------------------------------
@@ -337,19 +340,77 @@ impl<'c> DerivedWriter<'c> {
     pub fn clear_human(&self) -> Result<()> {
         self.tx.execute_batch(
             "DELETE FROM human_proposal; DELETE FROM human_atom_context; DELETE FROM human_atom;
-             DELETE FROM device_interval; DELETE FROM coverage_interval;
+             DELETE FROM device_interval; DELETE FROM coverage_interval; DELETE FROM attribution; DELETE FROM day_quality;
              DELETE FROM derivation_run WHERE unit = 'human';",
         )?;
         Ok(())
     }
 
-    /// Every engagement instant `(session_id, at)` currently in the store.
-    pub fn all_instants(&self) -> Result<Vec<(String, i64)>> {
+    /// Every engagement instant `(session_id, at, context JSON)` currently in the store.
+    pub fn all_instants(&self) -> Result<Vec<(String, i64, Option<String>)>> {
         let mut stmt = self
             .tx
-            .prepare("SELECT session_id, at FROM engagement_instant")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            .prepare("SELECT session_id, at, context FROM engagement_instant")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Every session `(id, first_evidence_at, cwd)`.
+    pub fn all_session_cwds(&self) -> Result<Vec<SessionCwd>> {
+        let mut stmt = self
+            .tx
+            .prepare("SELECT id, first_evidence_at, cwd FROM agent_session")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_session_repository(
+        &self,
+        id: &str,
+        key: Option<&str>,
+        label: Option<&str>,
+    ) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "UPDATE agent_session SET repository_key = ?2, repository_label = ?3 WHERE id = ?1",
+            )?
+            .execute(params![id, key, label])?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn attribution(
+        &self,
+        subject_kind: &str,
+        subject_id: &str,
+        level: &str,
+        state: &str,
+        targets: &str,
+        origin: &str,
+        evidence: Option<&str>,
+        effective: bool,
+        report_target: bool,
+        run: &str,
+    ) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT INTO attribution (subject_kind, subject_id, level, state, targets, origin, evidence,
+                   effective, report_target, derivation_run_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?
+            .execute(params![
+                subject_kind,
+                subject_id,
+                level,
+                state,
+                targets,
+                origin,
+                evidence,
+                effective,
+                report_target,
+                run
+            ])?;
+        Ok(())
     }
 
     /// Every execution segment `(session_id, start, end)` currently in the store.
@@ -485,6 +546,49 @@ impl<'c> DerivedWriter<'c> {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?
             .execute(params![machine, kind, start, end, state, reason, run])?;
+        Ok(())
+    }
+
+    /// A stream-level extent: a completeness gap or a degraded extent.
+    #[allow(clippy::too_many_arguments)]
+    pub fn stream_extent(
+        &self,
+        machine: &str,
+        kind: &str,
+        source_id: &str,
+        start: i64,
+        end: i64,
+        state: &str,
+        completeness: Option<&str>,
+        reason: Option<&str>,
+        run: &str,
+    ) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT INTO coverage_interval (machine_id, source_kind, source_id, start_at, end_at, state,
+                   completeness, reason, derivation_run_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?
+            .execute(params![
+                machine,
+                kind,
+                source_id,
+                start,
+                end,
+                state,
+                completeness,
+                reason,
+                run
+            ])?;
+        Ok(())
+    }
+
+    pub fn day_quality(&self, day: &str, recovered: i64, run: &str) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT OR REPLACE INTO day_quality (day, recovered_records, derivation_run_id)
+                 VALUES (?1, ?2, ?3)",
+            )?
+            .execute(params![day, recovered, run])?;
         Ok(())
     }
 
@@ -882,4 +986,62 @@ pub fn canonical_dump(conn: &Connection) -> Result<String> {
         }
     }
     Ok(out)
+}
+
+/// The report-target attribution of a subject: `(level, state, targets JSON)`.
+pub fn report_attribution(
+    conn: &Connection,
+    subject_id: &str,
+) -> Result<Option<(String, String, String)>> {
+    Ok(conn
+        .query_row(
+            "SELECT level, state, COALESCE(targets, '[]') FROM attribution WHERE subject_id = ?1 AND report_target = 1",
+            [subject_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?)
+}
+
+/// `(repository_key, repository_label)` of a session.
+pub fn session_repository(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<(Option<String>, Option<String>)> {
+    Ok(conn
+        .query_row(
+            "SELECT repository_key, repository_label FROM agent_session WHERE id = ?1",
+            [session_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((None, None)))
+}
+
+/// Stream-level extents (gaps, degraded) overlapping `[start, end)`, clipped.
+pub fn stream_extents_in(conn: &Connection, start: i64, end: i64) -> Result<Vec<IntervalRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT source_kind, MAX(start_at, ?1), MIN(end_at, ?2), COALESCE(completeness, state), reason
+         FROM coverage_interval WHERE source_id IS NOT NULL AND start_at < ?2 AND end_at > ?1 ORDER BY start_at",
+    )?;
+    let rows = stmt.query_map(params![start, end], |r| {
+        Ok(IntervalRow {
+            kind: r.get(0)?,
+            start_at: r.get(1)?,
+            end_at: r.get(2)?,
+            state: r.get(3)?,
+            reason: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+pub fn recovered_records(conn: &Connection, day: &str) -> Result<i64> {
+    Ok(conn
+        .query_row(
+            "SELECT recovered_records FROM day_quality WHERE day = ?1",
+            [day],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0))
 }

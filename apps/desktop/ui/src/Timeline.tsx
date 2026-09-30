@@ -156,7 +156,9 @@ function SessionLane({ s, range, tz, marks, selected, onSelect }: {
         aria-label={`Session ${s.label ?? s.native_session_id}, open details`}
       >
         <div className="label">
-          <span className="name">{s.label ?? "no working directory"}</span>
+          <span className="name" title={s.cwd ?? undefined}>
+            {s.repository_label ?? s.label ?? "no working directory"}
+          </span>
           <span className="id mono">{shortId(s.native_session_id)}</span>
         </div>
         <div className="track">
@@ -244,7 +246,13 @@ export function Timeline({ day, selected, onSelect }: {
               style={{ left: pct(range, Math.max(a.start, range.start)), width: width(range, Math.max(a.start, range.start), Math.min(a.end, range.end)) }}
               title={
                 a.status === "work"
-                  ? `${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} counted (inferred, provisional)`
+                  ? `${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} counted (inferred, provisional)\n${
+                      a.attribution?.state === "confirmed"
+                        ? `→ ${a.attribution.labels.join(", ")} (${a.attribution.level})`
+                        : a.attribution?.state === "conflicting"
+                          ? `conflicting: ${a.attribution.labels.join(", ")}`
+                          : "unattributed: no repository context (root not approved or not a repository)"
+                    }`
                   : `${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} unknown, not counted\n${REASON_LABEL[a.unknown_reason ?? ""] ?? a.unknown_reason}${a.proposals.length ? `\nProposal: work may have ended at ${hhmm(a.proposals[0].at, tz)} (last input)` : ""}`
               }
             />
@@ -269,6 +277,14 @@ export function Timeline({ day, selected, onSelect }: {
         <div className="label secondary">Coverage</div>
         <div className="track">
           <Grid range={range} marks={marks} />
+          {day.quality.stream_extents.map((e, i) => (
+            <div
+              key={`x${i}`}
+              className={`lane coverage-${e.state === "gap" ? "missing" : "degraded"} stream-extent`}
+              style={{ left: pct(range, Math.max(e.start, range.start)), width: width(range, Math.max(e.start, range.start), Math.min(e.end, range.end)) }}
+              title={`${hhmm(e.start, tz)}–${hhmm(e.end, tz)} · ${e.state === "gap" ? "ingestion gap" : "degraded (unreadable record)"}${e.reason ? `\n${e.reason.replaceAll("_", " ")}` : ""}`}
+            />
+          ))}
           {coverage.map((c, i) => (
             <div
               key={i}

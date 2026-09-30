@@ -273,6 +273,27 @@ pub struct Facts {
     pub collector: Option<CollectorFacts>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<crate::device::DeviceFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitFacts>,
+}
+
+/// Result of read-only git probes for one working directory (§9).
+/// Repository identity is the normalized remote (`host/owner/name`), else
+/// `local:<machine>:<common git dir>`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitFacts {
+    pub cwd: String,
+    pub is_repo: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toplevel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub common_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_key: Option<String>,
 }
 
 impl Facts {

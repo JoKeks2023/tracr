@@ -20,7 +20,13 @@ M2: derivation
 - [ ] Completeness `recovered`/`verified`/`unverified` and the provisional flag (moved to M3)
 - [ ] Midnight/DST scenario at app level (core day bounds tested; atoms split at local midnight)
 
-M3: see [01_scope](01_scope.md).
+M3: incremental derivation, git context and attribution, completeness
+
+- [x] Dirty-unit update equals a fresh rebuild at the same `as_of`, touching only dirty sessions and their copy peers (tested). Real data: 2 sessions in 6 s / 90 MB (debug) vs a full rebuild 25 s / 407 MB.
+- [x] Git probes only under approved roots; remote credentials never stored; repository from the normalized remote, else `local:<machine>:<common dir>` (tested; real: 21 repositories identified)
+- [x] Structural attribution of work atoms (worktree, repository, report target; conflicting and unattributed kept) (tested)
+- [x] Completeness: ingestion watermark (reconcile to EOF / unchanged in sweep / discovery), stream gaps and degraded extents, records recovered late per day; provisional reasons
+- [ ] Menu-bar minutes and a login item (not in S1.4 scope as built; see 01_scope)
 
 CSV export (pulled forward)
 

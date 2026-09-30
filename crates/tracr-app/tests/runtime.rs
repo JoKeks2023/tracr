@@ -215,3 +215,118 @@ fn a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown(
     );
     assert!(day.pending.iter().all(|p| p.lane == "cost"));
 }
+
+/// Collected day in a real git repository: the counted interval is
+/// attributed to the repository (normalized remote, no credentials), only
+/// once its root is approved.
+#[test]
+fn counted_time_is_attributed_to_the_repository_only_under_an_approved_root() {
+    use std::process::Command;
+    use std::sync::Arc;
+    use tracr_platform::ManualClock;
+
+    for approved in [true, false] {
+        let dir = TempDir::new().unwrap();
+        let data = dir.path().join("data");
+        let root = dir.path().join("projects");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let repo = std::fs::canonicalize(dir.path()).unwrap().join("code/repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                Command::new("git")
+                    .args(args)
+                    .current_dir(&repo)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://user:ghp_secret@github.com/Example/Repo.git",
+        ]);
+
+        let at =
+            |hhmm: &str| UtcMillis::parse_rfc3339(&tracr_testkit::collector::at(hhmm)).unwrap();
+        let clock = Arc::new(ManualClock::new(at("08:55")));
+        let mut app = App::open_writer(&data, Box::new(clock.clone())).unwrap();
+        app.add_root(RootKind::Provider, &root).unwrap();
+        if approved {
+            app.add_root(RootKind::Repository, repo.parent().unwrap())
+                .unwrap();
+        }
+        let mut c = Collector::begin(app, "test", true).unwrap();
+        let mut a = ClaudeSession::new(A);
+        a.cwd = repo.to_string_lossy().into_owned();
+        write_lines(
+            &transcript(&root, A),
+            &[
+                a.prompt("09:00"),
+                a.assistant("09:01", "m1", 1),
+                a.prompt("09:10"),
+            ],
+        );
+        let mut t = at("08:55");
+        while t <= at("09:15") {
+            clock.set(t);
+            c.sample(&DeviceSample {
+                at: t,
+                idle_ms: Some(1_000),
+                locked: Some(false),
+                last_sleep_wake: None,
+            })
+            .unwrap();
+            if (t.0 / 1000) % 60 == 0 {
+                c.heartbeat().unwrap();
+            }
+            t = UtcMillis(t.0 + 15_000);
+        }
+        c.reconcile_all(IngestTrigger::Startup).unwrap();
+        c.probe_git().unwrap();
+        c.rebuild().unwrap();
+        c.end("test done").unwrap();
+
+        let day = tracr_app::Reader::open(&data)
+            .unwrap()
+            .day_agents("2026-09-28")
+            .unwrap();
+        assert_eq!(day.human.counted_ms, 10 * 60_000);
+        let work = day.human.atoms.iter().find(|x| x.status == "work").unwrap();
+        let attribution = work.attribution.as_ref().unwrap();
+        if approved {
+            assert_eq!(
+                (attribution.level.as_str(), attribution.state.as_str()),
+                ("repository", "confirmed")
+            );
+            assert_eq!(
+                attribution.targets,
+                vec!["github.com/example/repo".to_owned()]
+            );
+            assert_eq!(
+                day.human.counted_by_target.get("example/repo"),
+                Some(&(10 * 60_000))
+            );
+            assert_eq!(
+                day.sessions[0].repository_label.as_deref(),
+                Some("example/repo")
+            );
+        } else {
+            assert_eq!(
+                attribution.state, "unattributed",
+                "git never ran outside approved roots"
+            );
+            assert_eq!(day.sessions[0].repository, None);
+        }
+        let ledger = std::fs::read(data.join("ledger.sqlite")).unwrap();
+        assert!(
+            !ledger.windows(10).any(|w| w == b"ghp_secret"),
+            "credentials in a remote URL never reach the ledger"
+        );
+    }
+}

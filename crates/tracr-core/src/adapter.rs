@@ -2,12 +2,13 @@
 //!
 //! Adapters depend on this crate only. `tracr-app` registers concrete
 //! adapters with the ingestion layer; ingestion never imports an adapter crate.
-//! Only the observation-adapter trait exists so far; normalizer, probe and
-//! context-port traits arrive with the tasks that need them.
+//! Observation adapters read files; probe adapters plan read-only commands
+//! and parse their output (§1.2). The normalizer trait lives in `normalize`.
 
 use serde::{Deserialize, Serialize};
 
-use crate::evidence::{ExtractOutcome, SourceKind, StreamKey};
+use crate::events::FactKind;
+use crate::evidence::{ExtractOutcome, Facts, SourceKind, StreamKey};
 use crate::ids::MachineId;
 use crate::manifest::CapabilityManifest;
 
@@ -57,4 +58,27 @@ pub trait ObservationAdapter: Send + Sync {
     /// Extracts retained facts from one complete line (terminator removed).
     /// Facts must be built from an allowlist; content is never copied (§11).
     fn extract(&self, line: &[u8], ctx: &ExtractContext<'_>) -> ExtractOutcome;
+}
+
+/// Exit status and standard output of one probe command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeOutput {
+    pub success: bool,
+    pub stdout: String,
+}
+
+/// An adapter that plans read-only commands against a working directory and
+/// parses their output into retained facts (§1.2). Planning and parsing are
+/// pure; `tracr-ingest` executes the plan, only under approved roots.
+pub trait ProbeAdapter: Send + Sync {
+    fn source_kind(&self) -> SourceKind;
+    fn adapter_version(&self) -> &'static str;
+    fn fact_kind(&self) -> FactKind;
+    /// The program to run (resolved on `PATH`).
+    fn program(&self) -> &'static str;
+    /// Argument lists, one per command, in order.
+    fn probes(&self) -> &'static [&'static [&'static str]];
+    /// Environment the commands run with (e.g. disabling optional locks).
+    fn env(&self) -> &'static [(&'static str, &'static str)];
+    fn parse(&self, cwd: &str, machine: &str, outputs: &[ProbeOutput]) -> Facts;
 }

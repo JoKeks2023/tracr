@@ -133,6 +133,9 @@ pub struct SessionDay {
     pub label: Option<String>,
     pub cwd: Option<String>,
     pub git_branch: Option<String>,
+    /// Repository of the session's working directory (approved roots only).
+    pub repository: Option<String>,
+    pub repository_label: Option<String>,
     pub first_evidence_at: Option<i64>,
     pub last_evidence_at: Option<i64>,
     pub diagnostics: BTreeMap<String, u64>,
@@ -171,6 +174,20 @@ pub struct HumanAtom {
     pub end_boundary: Option<String>,
     pub reasons: Vec<String>,
     pub proposals: Vec<Proposal>,
+    /// Report-target attribution (work only): level, state and target labels.
+    pub attribution: Option<Attribution>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Attribution {
+    /// `repository`, `worktree` or `none`.
+    pub level: String,
+    /// `confirmed`, `conflicting` or `unattributed`.
+    pub state: String,
+    /// Target keys (repository keys or worktree paths).
+    pub targets: Vec<String>,
+    /// Short labels for display (e.g. `owner/name`).
+    pub labels: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -181,6 +198,8 @@ pub struct HumanDay {
     /// Visible, not counted.
     pub unknown_ms: i64,
     pub unknown_by_reason: BTreeMap<String, i64>,
+    /// Counted time per report target label (`owner/name`, `conflicting`, `unattributed`).
+    pub counted_by_target: BTreeMap<String, i64>,
     /// First to last human prompt of the day: an upper bound, never a total.
     pub evidence_span: Option<(i64, i64)>,
 }
@@ -191,6 +210,22 @@ pub struct LaneInterval {
     pub end: i64,
     pub state: String,
     pub reason: Option<String>,
+}
+
+/// Whether a day's numbers are final (reporting §3).
+#[derive(Debug, Clone, Serialize)]
+pub struct DayQuality {
+    /// Always true until review exists (S2): drafts are unreviewed.
+    pub provisional: bool,
+    pub provisional_reasons: Vec<String>,
+    /// Every live stream is verified past the end of the day.
+    pub ingestion_complete: bool,
+    /// Up to when ingestion is verified (min over live streams and discovery).
+    pub ingestion_verified_through: Option<i64>,
+    /// Records ingested late (startup, sweep, wake) after the collector first ran.
+    pub recovered_records: i64,
+    /// Completeness gaps and degraded extents of individual streams.
+    pub stream_extents: Vec<LaneInterval>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -205,6 +240,7 @@ pub struct DayAgents {
     pub device: Vec<LaneInterval>,
     /// Coverage per source kind (e.g. `claude_transcript`, `os_sensor`).
     pub coverage: BTreeMap<String, Vec<LaneInterval>>,
+    pub quality: DayQuality,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -305,7 +341,10 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
                 output: u.output.into(),
             })
             .collect();
+        let (repository, repository_label) = derived::session_repository(conn, &s.id)?;
         sessions.push(SessionDay {
+            repository,
+            repository_label,
             engagement_instants: derived::instants_in(conn, &s.id, start, end)?
                 .into_iter()
                 .map(|i| i.at)
@@ -330,6 +369,34 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
     let mut human = HumanDay::default();
     for (a, engaged, proposals) in derived::atoms_of_day(conn, &date.to_string())? {
         let len = a.end_at - a.start_at;
+        let attribution =
+            derived::report_attribution(conn, &a.id)?.map(|(level, state, targets)| {
+                let targets: Vec<String> = serde_json::from_str(&targets).unwrap_or_default();
+                let labels = targets
+                    .iter()
+                    .map(|t| {
+                        if level == "repository" {
+                            tracr_git::repository_label(t)
+                        } else {
+                            t.rsplit('/').next().unwrap_or(t).to_owned()
+                        }
+                    })
+                    .collect();
+                Attribution {
+                    level,
+                    state,
+                    targets,
+                    labels,
+                }
+            });
+        if a.work_status == "work" {
+            let key = match &attribution {
+                Some(at) if at.state == "confirmed" => at.labels.join(", "),
+                Some(at) => at.state.clone(),
+                None => "unattributed".to_owned(),
+            };
+            *human.counted_by_target.entry(key).or_default() += len;
+        }
         match a.work_status.as_str() {
             "work" => human.counted_ms += len,
             "unknown" => {
@@ -359,6 +426,7 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
                 .into_iter()
                 .map(|(at, kind)| Proposal { at, kind })
                 .collect(),
+            attribution,
         });
     }
     let instants: Vec<i64> = sessions
@@ -380,7 +448,30 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
     for r in derived::coverage_in(conn, start, end)? {
         coverage.entry(r.kind.clone()).or_default().push(lane(r));
     }
+    let verified_through =
+        derived::meta(conn, "ingestion_watermark")?.and_then(|v| v.parse::<i64>().ok());
+    let ingestion_complete = verified_through.is_some_and(|w| w >= end);
+    let stream_extents: Vec<LaneInterval> = derived::stream_extents_in(conn, start, end)?
+        .into_iter()
+        .map(lane)
+        .collect();
+    let mut provisional_reasons = vec!["not reviewed (review arrives with S2)".to_owned()];
+    if !ingestion_complete {
+        provisional_reasons.push("ingestion not verified to the end of the day".to_owned());
+    }
+    if stream_extents.iter().any(|e| e.state == "gap") {
+        provisional_reasons.push("unresolved ingestion gaps".to_owned());
+    }
+    let quality = DayQuality {
+        provisional: true,
+        provisional_reasons,
+        ingestion_complete,
+        ingestion_verified_through: verified_through,
+        recovered_records: derived::recovered_records(conn, &date.to_string())?,
+        stream_extents,
+    };
     Ok(DayAgents {
+        quality,
         human,
         device: derived::device_in(conn, start, end)?
             .into_iter()

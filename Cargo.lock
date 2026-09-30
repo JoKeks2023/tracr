@@ -3990,6 +3990,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracr-core",
+ "tracr-git",
  "tracr-ingest",
  "tracr-platform",
  "tracr-provider-claude",
@@ -4031,6 +4032,13 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tracr-app",
+]
+
+[[package]]
+name = "tracr-git"
+version = "0.9.0-dev"
+dependencies = [
+ "tracr-core",
 ]
 
 [[package]]

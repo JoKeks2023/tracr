@@ -46,3 +46,15 @@
 | UI lanes | Manually verified | Release app on the permanent ledger (screenshot 2026-09-30 20:09): human lane with two unknown windows, device lane since 18:49, coverage hatched before 18:49 and green after; counted 0 m, unknown 32 m |
 | App Quit → `coverage_ended` | Manually verified | AppleScript quit → `coverage_ended` (reason `quit`) 20:06:16; new app `coverage_started` 20:06:28 |
 | UI after an app update | Fixed | The window stayed on "derived store out of date" after startup. It now reloads whenever the collector reports a rebuild (5 s status poll). |
+
+## M3 (2026-09-30)
+
+Workspace clippy with `-D warnings` and `cargo test --workspace` pass: 124 tests.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Update equals rebuild (INV-6, incremental half) | Tested | `derive.rs::incremental_update_equals_a_fresh_rebuild_and_touches_only_dirty_sessions` |
+| Attribution in a real git repository; unapproved root → no probe; no credentials in the ledger | Tested | `runtime.rs::counted_time_is_attributed_to_the_repository_only_under_an_approved_root` |
+| Remote normalization, origin preference, no-remote key, non-repo | Tested | `tracr-git` (4) |
+| Real probes (snapshot of the permanent ledger, `~/Projects` approved in the snapshot only) | Manually verified | 21 repositories; non-repositories stay unknown |
+| Incremental performance | Manually verified | Debug build: update of 2 dirty sessions 6 s / 90 MB; empty update 0.1 s / 22 MB; full rebuild 25 s / 407 MB |
