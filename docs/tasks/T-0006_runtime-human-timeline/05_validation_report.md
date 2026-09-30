@@ -43,4 +43,6 @@
 | INV-6 incl. human tables | Tested | `derive.rs::rebuild_is_deterministic_and_reimport_changes_nothing` (fixed `as_of`) |
 | Real device lane | Manually verified | Snapshot of the permanent ledger: idle from 18:49 (user away), 10 s handover unknown, active 19:13:56–19:14:24 (the user typed), idle after |
 | Real exports | Manually verified | Everything: 13 CSV + README, 75 MB. Timesheet 28–30 Sep: 0 counted, unknown `coverage_gap` (see finding) |
-| UI lanes | **Unverified**: not rendered yet; the release app is still the M1 build | |
+| UI lanes | Manually verified | Release app on the permanent ledger (screenshot 2026-09-30 20:09): human lane with two unknown windows, device lane since 18:49, coverage hatched before 18:49 and green after; counted 0 m, unknown 32 m |
+| App Quit → `coverage_ended` | Manually verified | AppleScript quit → `coverage_ended` (reason `quit`) 20:06:16; new app `coverage_started` 20:06:28 |
+| UI after an app update | Fixed | The window stayed on "derived store out of date" after startup. It now reloads whenever the collector reports a rebuild (5 s status poll). |

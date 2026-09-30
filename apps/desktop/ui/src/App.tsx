@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { compact, dayLabel, duration } from "./format";
 import { ExportSheet } from "./ExportSheet";
@@ -104,13 +104,24 @@ export function App() {
     void loadDays();
   }, [loadDays]);
 
-  // The collector state changes on its own (heartbeats, rebuilds): poll it quietly.
+  // The collector state changes on its own (heartbeats, rebuilds): poll it
+  // quietly, and reload the days whenever the collector finished a rebuild
+  // (or while nothing is derived yet).
+  const lastRebuild = useRef<number | null>(null);
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useEffect(() => {
     const t = window.setInterval(() => {
-      void api.status().then(setStatus);
-    }, 15_000);
+      void api.status().then((st) => {
+        setStatus(st);
+        const rebuilt = st.runtime?.last_rebuild ?? null;
+        const changed = rebuilt !== null && rebuilt !== lastRebuild.current;
+        lastRebuild.current = rebuilt;
+        if (changed || loadRef.current.state === "no-derived") void loadDays();
+      });
+    }, 5_000);
     return () => window.clearInterval(t);
-  }, []);
+  }, [loadDays]);
 
   const approve = async (path: string) => {
     setApproving(path);
