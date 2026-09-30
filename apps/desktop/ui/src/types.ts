@@ -142,7 +142,7 @@ export interface Status {
   ledger_present: boolean;
   approved_roots: string[];
   proposed_roots: { path: string; approved: boolean }[];
-  collector: "collecting" | "elsewhere" | "stopped" | "not_configured";
+  collector: "collecting" | "stalled" | "elsewhere" | "stopped" | "not_configured";
   collector_detail: string | null;
   runtime: RuntimeStatus | null;
 }

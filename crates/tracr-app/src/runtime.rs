@@ -52,6 +52,41 @@ pub const HINT_DEBOUNCE: Duration = Duration::from_millis(500);
 pub const REBUILD_MIN_INTERVAL: Duration = Duration::from_secs(60);
 pub const PROBE_MIN_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
+fn panic_text(p: &Box<dyn std::any::Any + Send>) -> String {
+    p.downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| p.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_owned())
+}
+
+/// Writes every panic (message, location, backtrace) to
+/// `<data dir>/logs/panic.log`, then runs the previous hook. Installed once.
+fn install_panic_log(data_dir: &Path) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    let log = data_dir.join("logs").join("panic.log");
+    ONCE.call_once(move || {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = std::fs::create_dir_all(log.parent().expect("logs dir"));
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log)
+            {
+                use std::io::Write;
+                let _ = writeln!(
+                    f,
+                    "--- {} thread {:?}\n{info}\n{}",
+                    SystemClock.now(),
+                    std::thread::current().name(),
+                    std::backtrace::Backtrace::force_capture()
+                );
+            }
+            previous(info);
+        }));
+    });
+}
+
 /// Work for the writer thread.
 pub enum Job {
     Hints(Vec<PathBuf>),
@@ -63,6 +98,21 @@ pub enum Job {
     Overflow,
     Refresh(Sender<Result<Refreshed, String>>),
     Stop(String),
+}
+
+impl Job {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Hints(_) => "hints",
+            Self::Sample(_) => "sample",
+            Self::Heartbeat => "heartbeat",
+            Self::Sweep => "sweep",
+            Self::Discovery => "discovery",
+            Self::Overflow => "overflow",
+            Self::Refresh(_) => "refresh",
+            Self::Stop(_) => "stop",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -484,6 +534,7 @@ impl Runtime {
     /// Takes the writer lock and starts collecting. Fails if another tracr
     /// process holds the lock (AD-03).
     pub fn start(data_dir: &Path, client: &'static str) -> Result<Self> {
+        install_panic_log(data_dir);
         let app = App::open_writer(data_dir, Box::new(SystemClock))?.with_client(client);
         let sensor: Box<dyn DeviceSensor> = device_sensor();
         let sensor_available = sensor.sample(SystemClock.now()).idle_ms.is_some();
@@ -535,24 +586,40 @@ impl Runtime {
             std::thread::Builder::new()
                 .name("tracr-writer".into())
                 .spawn(move || {
-                    let start = (|| {
-                        collector.reconcile_all(IngestTrigger::Startup)?;
-                        collector.probe_git()?;
-                        collector.rebuild()?;
-                        collector.heartbeat()
-                    })();
-                    if let Err(e) = start {
-                        collector.note_error(&e);
-                    }
+                    // A panic in one job must never silently end collection
+                    // (dogfooding 2026-09-30: the writer died, the timer
+                    // followed, the UI kept saying "collecting"). Panics are
+                    // contained per job, logged and reported as errors.
+                    let guard =
+                        |c: &mut Collector,
+                         what: &str,
+                         f: &mut dyn FnMut(&mut Collector) -> Result<()>| {
+                            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(c))) {
+                                Ok(Ok(())) => {}
+                                Ok(Err(e)) => c.note_error(&e),
+                                Err(p) => {
+                                    c.note_error(&anyhow!("panic in {what}: {}", panic_text(&p)))
+                                }
+                            }
+                        };
+                    guard(&mut collector, "startup", &mut |c| {
+                        c.reconcile_all(IngestTrigger::Startup)?;
+                        c.probe_git()?;
+                        c.rebuild()?;
+                        c.heartbeat()
+                    });
                     let mut reason = "channel closed".to_owned();
                     while let Ok(job) = rx.recv() {
                         if let Job::Stop(r) = &job {
                             reason = r.clone();
                             break;
                         }
-                        if let Err(e) = collector.handle(job) {
-                            collector.note_error(&e);
-                        }
+                        let what = job.name();
+                        let mut job = Some(job);
+                        guard(&mut collector, what, &mut |c| match job.take() {
+                            Some(j) => c.handle(j),
+                            None => Ok(()),
+                        });
                     }
                     if let Err(e) = collector.end(&reason)
                         && let Ok(mut s) = status.lock()

@@ -76,3 +76,20 @@ This is spec-conformant but useless in a timesheet. It was raised with the user 
 - **Provisional.** Every day is provisional until review exists (S2). The meaningful state today is the ingestion state (complete, or still arriving) and is shown separately.
 - **Project level (repository → tracr Project mapping)** follows with mappings (S3). The report target stops at repository.
 - **Real data:** 21 repositories identified by remote. Agent worktrees and subfolders collapse onto their repository. A nested repository (`avmsdesk/libs/hbb_common`) resolves to its own remote. A renamed repository is shown by its remote name (`jukebox` → `jokeks2023/cabinet`).
+
+### Dogfooding incident: the collector died silently (2026-09-30 22:48)
+
+- **Evidence:**
+  - The M2 app's last record was a heartbeat at 22:47:49; after that, no heartbeats, samples, sweeps or hints, and no `coverage_ended` when it was quit at 23:02.
+  - There was no crash report.
+  - The next app start recovered 233 records written up to 14 minutes earlier.
+- **Diagnosis:** a panic in the writer thread, most likely in the full rebuild that heartbeat triggered.
+  - A panic kills only its thread; the timer thread stopped because its job channel closed.
+  - The UI kept showing "Collecting", because nothing checked liveness.
+  - The panic message went to stderr and is lost, so the exact cause is **unknown**.
+- **Coverage records it correctly:** the window 22:47:49–23:03:25 is `missing` (`heartbeat_stall`).
+- **Fixes:**
+  1. Every writer job runs under `catch_unwind`. A panic becomes a reported error and collection continues.
+  2. A panic hook appends message, location and backtrace to `<data dir>/logs/panic.log`.
+  3. The app shows "Collector not responding" (red) when the last heartbeat is older than 3 minutes.
+- **Also fixed:** the "records recovered late" count now excludes history from before collection began. It had counted the first run's backfill: 1,013 records instead of 237.

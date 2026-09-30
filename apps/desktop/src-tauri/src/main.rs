@@ -88,7 +88,8 @@ struct Status {
     ledger_present: bool,
     approved_roots: Vec<String>,
     proposed_roots: Vec<ProposedRoot>,
-    /// `collecting`, `elsewhere` (another tracr process holds the lock), `stopped` or `not_configured`.
+    /// `collecting`, `stalled` (no heartbeat for 3 min), `elsewhere` (another
+    /// tracr process holds the lock), `stopped` or `not_configured`.
     collector: &'static str,
     collector_detail: Option<String>,
     runtime: Option<RuntimeStatus>,
@@ -104,7 +105,17 @@ fn status(ctx: tauri::State<'_, Ctx>) -> Status {
         .as_ref()
         .map(Runtime::status);
     let error = ctx.runtime_error.lock().expect("error lock").clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    // Heartbeats come every 60 s: older than 3 min means the collector is stuck.
+    let stalled = runtime
+        .as_ref()
+        .and_then(|r| r.last_heartbeat)
+        .is_some_and(|t| now - t > 3 * 60_000);
     let collector = match (&runtime, &error) {
+        (Some(r), _) if r.collecting && stalled => "stalled",
         (Some(r), _) if r.collecting => "collecting",
         (_, Some(e)) if e.contains("another tracr process") => "elsewhere",
         _ if approved.is_empty() => "not_configured",

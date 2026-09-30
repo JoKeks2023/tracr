@@ -14,6 +14,7 @@ type Load =
 
 const COLLECTOR_LABEL: Record<Status["collector"], string> = {
   collecting: "Collecting",
+  stalled: "Collector not responding",
   elsewhere: "Collecting in another tracr process",
   stopped: "Not collecting",
   not_configured: "No approved history",
