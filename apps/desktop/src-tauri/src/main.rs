@@ -195,6 +195,34 @@ async fn refresh(ctx: tauri::State<'_, Ctx>) -> Result<Refreshed, String> {
         .map_err(err)
 }
 
+/// Exports agent sessions of `[from, to]` as CSV to a file the user picks in
+/// a native save panel. The dialog and the write happen here, in the host;
+/// the webview gets no filesystem access (AD-12).
+#[tauri::command]
+async fn export_agent_sessions(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let dir = ctx.dir()?;
+    let csv = Reader::open(&dir)
+        .and_then(|r| tracr_app::export::agent_sessions_csv(&r, &from, &to))
+        .map_err(err)?;
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(tracr_app::export::default_file_name(&from, &to))
+        .add_filter("CSV", &["csv"])
+        .blocking_save_file();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None); // cancelled
+    };
+    std::fs::write(&path, csv).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -212,12 +240,14 @@ fn main() {
     };
     let app = tauri::Builder::default()
         .manage(ctx)
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             status,
             approve_root,
             days,
             day_agents,
-            refresh
+            refresh,
+            export_agent_sessions
         ])
         .setup(|app| {
             app.state::<Ctx>().start_runtime();

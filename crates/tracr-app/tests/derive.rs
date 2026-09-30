@@ -172,3 +172,68 @@ fn rebuild_is_deterministic_and_reimport_changes_nothing() {
     app.rebuild().unwrap();
     assert_eq!(dump(), first, "re-import changes no derived row");
 }
+
+#[test]
+fn agent_sessions_csv_has_one_row_per_day_session_actor_and_prompts_once() {
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let mut a = ClaudeSession::new(A);
+    a.cwd = "/Users/dev/my, project".into(); // a comma must be quoted
+    write_lines(
+        &transcript(&root, A),
+        &[
+            a.prompt("09:00"),
+            a.assistant("09:01", "m1", 100),
+            a.prompt("09:05"),
+            a.assistant("09:06", "m2", 50),
+        ],
+    );
+    let mut sub = ClaudeSession::new(A);
+    sub.uuid_prefix = "5ab5ab5a".into();
+    write_lines(
+        &root
+            .join("-Users-dev-project")
+            .join(A)
+            .join("subagents")
+            .join("agent-abc123.jsonl"),
+        &[sub.prompt("09:02"), sub.assistant("09:03", "m3", 7)],
+    );
+    import_and_rebuild(&data, &root);
+    let csv =
+        tracr_app::export::agent_sessions_csv(&Reader::open(&data).unwrap(), DAY, DAY).unwrap();
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(lines.len(), 3, "header + main chain + subagent:\n{csv}");
+    assert!(lines[0].starts_with("day,timezone,provider,session_id"));
+    assert!(csv.contains("\"/Users/dev/my, project\""), "{csv}");
+    let header = tracr_app::export::AGENT_SESSIONS_COLUMNS;
+    let prompts = header.iter().position(|c| *c == "human_prompts").unwrap();
+    let output = header.iter().position(|c| *c == "output_tokens").unwrap();
+    let plain: Vec<Vec<String>> = lines[1..].iter().map(|l| parse_csv_line(l)).collect();
+    assert!(plain.iter().all(|r| r.len() == header.len()));
+    assert_eq!(plain[0][6], "/Users/dev/my, project");
+    let main = plain.iter().find(|r| r[8] == "unknown").unwrap();
+    let agent = plain.iter().find(|r| r[8] == "known").unwrap();
+    assert_eq!(main[prompts], "2");
+    assert_eq!(agent[prompts], "", "prompts only on the main-chain row");
+    assert_eq!(main[output], "150");
+    assert_eq!(agent[output], "7");
+}
+
+/// Minimal RFC 4180 line parser for the assertions above.
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let (mut out, mut cur, mut quoted, mut chars) =
+        (Vec::new(), String::new(), false, line.chars().peekable());
+    while let Some(c) = chars.next() {
+        match (c, quoted) {
+            ('"', true) if chars.peek() == Some(&'"') => {
+                cur.push('"');
+                chars.next();
+            }
+            ('"', _) => quoted = !quoted,
+            (',', false) => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out
+}

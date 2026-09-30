@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorText } from "./api";
 import { compact, dayLabel, duration } from "./format";
+import { ExportSheet } from "./ExportSheet";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
 import type { DayAgents, DayList, Status } from "./types";
@@ -78,6 +79,7 @@ export function App() {
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const loadDays = useCallback(async (keep?: string | null) => {
     const status = await api.status();
@@ -200,6 +202,11 @@ export function App() {
               ))}
             </select>
           )}
+          {load.state === "ready" && load.days.days.length > 0 && (
+            <button className="button ghost" onClick={() => setExporting(true)}>
+              Export CSV
+            </button>
+          )}
           <button
             className="button primary"
             onClick={refresh}
@@ -252,6 +259,14 @@ export function App() {
         </>
       )}
 
+      {exporting && load.state === "ready" && (
+        <ExportSheet
+          days={load.days.days}
+          current={day}
+          onClose={() => setExporting(false)}
+          onDone={(text, error) => setNotice({ text, error })}
+        />
+      )}
       {session && view && <SessionSheet s={session} tz={view.timezone} onClose={() => setSelected(null)} />}
     </div>
   );

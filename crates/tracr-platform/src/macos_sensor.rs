@@ -74,12 +74,7 @@ fn hid_idle_ms() -> Option<i64> {
         if service == 0 {
             return None;
         }
-        let prop = IORegistryEntryCreateCFProperty(
-            service,
-            key.0,
-            kCFAllocatorDefault,
-            0,
-        );
+        let prop = IORegistryEntryCreateCFProperty(service, key.0, kCFAllocatorDefault, 0);
         IOObjectRelease(service);
         if prop.is_null() {
             return None;

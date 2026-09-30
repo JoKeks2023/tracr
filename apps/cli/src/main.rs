@@ -42,6 +42,11 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Export CSV (see docs/export.md).
+    Export {
+        #[command(subcommand)]
+        what: ExportWhat,
+    },
     /// Collect live until Ctrl-C: transcript hints, sweeps, the OS sensor, heartbeats.
     Run,
     /// Rebuild derived.sqlite from the ledger (normalization, copy election, agent timelines).
@@ -55,6 +60,22 @@ enum Command {
         day: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExportWhat {
+    /// One row per day × agent session × actor: execution, turns, tool calls, tokens.
+    AgentSessions {
+        /// First day, YYYY-MM-DD (inclusive).
+        #[arg(long)]
+        from: String,
+        /// Last day, YYYY-MM-DD (inclusive).
+        #[arg(long)]
+        to: String,
+        /// Write to this file instead of stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -329,6 +350,22 @@ fn main() -> Result<()> {
                 );
             }
             println!("{} sources", rows.len());
+        }
+        Command::Export {
+            what: ExportWhat::AgentSessions { from, to, out },
+        } => {
+            let csv = tracr_app::export::agent_sessions_csv(&Reader::open(&dir)?, from, to)?;
+            match out {
+                Some(path) => {
+                    std::fs::write(path, &csv)?;
+                    eprintln!(
+                        "wrote {} rows to {}",
+                        csv.lines().count() - 1,
+                        path.display()
+                    );
+                }
+                None => print!("{csv}"),
+            }
         }
         Command::Run => {
             let runtime = tracr_app::runtime::Runtime::start(&dir, "tracr-cli")?;

@@ -8,6 +8,9 @@ export const api = {
   dayAgents: (day: string) => invoke<DayAgents>("day_agents", { day }),
   refresh: () => invoke<Refreshed>("refresh"),
   approveRoot: (path: string) => invoke<void>("approve_root", { path }),
+  /** Resolves to the written path, or null if the save panel was cancelled. */
+  exportAgentSessions: (from: string, to: string) =>
+    invoke<string | null>("export_agent_sessions", { from, to }),
 };
 
 export function errorText(e: unknown): string {

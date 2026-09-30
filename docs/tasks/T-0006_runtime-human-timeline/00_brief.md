@@ -12,3 +12,11 @@ Order within S1.4, chosen because evidence is time-critical: every day without t
 1. **M1: collection.** `tracr run` plus the desktop app hosting the same runtime: file hints, sweeps, discovery, collector lifecycle and heartbeats, and the macOS sensor (idle, lock, sleep/wake). After M1, the user is asked to switch to the permanent data directory.
 2. **M2: derivation.** Coverage and completeness, the device lane, the human timeline and counting (no user records). The Day view's pending lanes are filled.
 3. **M3:** structural attribution (with `tracr-git` probes, deferred from S1.3) and incremental derivation with dirty units (INV-6, incremental half).
+
+User decisions (2026-09-30, later):
+
+- **Switch to the permanent data directory now.** The Claude root is approved via the CLI on the user's behalf (`tracr-cli` user action).
+- **CSV export is needed**, pulled forward from S4, for all three uses: timesheet/billing, agent usage analysis, and import elsewhere (target tool not yet named).
+  - The agent-sessions export is built now.
+  - The timesheet export follows with M2 (human time).
+  - A tool-specific column profile will follow once the tool is named.

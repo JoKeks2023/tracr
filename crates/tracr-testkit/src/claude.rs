@@ -11,6 +11,9 @@ pub struct ClaudeSession {
     pub version: String,
     /// `cli` is the only interactive entrypoint the manifest declares.
     pub entrypoint: String,
+    /// First UUID group of generated record IDs (default: the session's).
+    /// Give streams of the same session different prefixes, as real records never collide.
+    pub uuid_prefix: String,
     counter: u64,
 }
 
@@ -23,17 +26,14 @@ impl ClaudeSession {
             branch: "main".into(),
             version: "2.1.281".into(),
             entrypoint: "cli".into(),
+            uuid_prefix: session_id[..8].to_owned(),
             counter: 0,
         }
     }
 
     fn uuid(&mut self) -> String {
         self.counter += 1;
-        format!(
-            "{}-0000-4000-8000-{:012x}",
-            &self.session_id[..8],
-            self.counter
-        )
+        format!("{}-0000-4000-8000-{:012x}", self.uuid_prefix, self.counter)
     }
 
     fn base(
