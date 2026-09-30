@@ -62,6 +62,7 @@ pub struct RebuildReport {
     pub usage_duplicates: u64,
     pub usage_unidentified: u64,
     pub diagnostics: BTreeMap<String, u64>,
+    pub human: crate::derive_human::HumanReport,
 }
 
 struct Stream {
@@ -269,6 +270,15 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
             .push(si);
     }
 
+    let zone = crate::day::ReportingZone::resolve(
+        ledger::current_setting(ledger, crate::TIMEZONE_KEY)?
+            .as_ref()
+            .and_then(|v| v.as_str()),
+    )?;
+    let mut agents = crate::derive_human::AgentContext {
+        instants: Vec::new(),
+        segments: Vec::new(),
+    };
     let mut conn = derived::create_next(data_dir)?;
     {
         let w = DerivedWriter::begin(&mut conn)?;
@@ -353,6 +363,17 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
             })?;
 
             let tl: SessionTimeline = derive_session(&session_id, &timed, &params);
+            agents
+                .instants
+                .extend(tl.instants.iter().map(|i| tracr_core::human::Instant {
+                    at: i.at,
+                    session: session_id.clone(),
+                }));
+            agents.segments.extend(
+                tl.segments
+                    .iter()
+                    .map(|g| (session_id.clone(), g.start.0, g.end.0)),
+            );
 
             // Session row; context from the earliest canonical event that states a cwd.
             let first_ctx = timed
@@ -588,6 +609,19 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
                 *report.diagnostics.entry(k).or_default() += v;
             }
         }
+        let agent_kinds: Vec<String> = normalizers
+            .iter()
+            .map(|n| n.source_kind().as_str().to_owned())
+            .collect();
+        report.human = crate::derive_human::derive(
+            ledger,
+            &w,
+            &zone,
+            as_of,
+            report.obs_watermark,
+            &agent_kinds,
+            &agents,
+        )?;
         w.meta(
             "schema_version",
             &derived::DERIVED_SCHEMA_VERSION.to_string(),

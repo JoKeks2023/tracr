@@ -46,3 +46,10 @@ impl Clock for ManualClock {
         UtcMillis(self.0.load(Ordering::SeqCst))
     }
 }
+
+/// A shared clock: tests keep a handle to move time while the app owns it.
+impl<C: Clock + ?Sized> Clock for std::sync::Arc<C> {
+    fn now(&self) -> UtcMillis {
+        (**self).now()
+    }
+}

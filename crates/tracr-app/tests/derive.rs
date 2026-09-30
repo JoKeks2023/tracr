@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
-use tracr_app::{App, Reader, RootKind, SystemClock};
+use tracr_app::{App, Reader, RootKind, SystemClock, UtcMillis};
+use tracr_platform::ManualClock;
 use tracr_store::derived;
 use tracr_testkit::claude::ClaudeSession;
 use tracr_testkit::write_lines;
@@ -138,10 +139,10 @@ fn parallel_sessions_overlap_and_are_never_merged() {
         .collect();
     // 09:00–09:20 has a 15-minute quiet gap (> 10): 09:00–09:05 only; B 09:02–09:10.
     assert_eq!(exec, vec![5 * 60_000, 8 * 60_000]);
-    assert!(
-        day.pending.iter().any(|p| p.lane == "human"),
-        "human time is explicitly not derived yet, never zero"
-    );
+    // No collector ran: nothing is counted, and the time between the
+    // prompts is unknown for lack of coverage, never zero and never work.
+    assert_eq!(day.human.counted_ms, 0);
+    assert_eq!(day.human.unknown_by_reason.get("coverage_gap"), Some(&(2 * 60_000)));
 }
 
 #[test]
@@ -156,21 +157,41 @@ fn rebuild_is_deterministic_and_reimport_changes_nothing() {
     b_lines.extend([b.prompt("09:30"), b.assistant("09:31", "msg_3", 300)]);
     write_lines(&transcript(&root, B), &b_lines);
 
-    import_and_rebuild(&data, &root);
+    // INV-6 compares rebuilds at the same `as_of`: coverage reaches up to it.
+    let fixed = || Box::new(ManualClock::new(UtcMillis(1_790_600_000_000)));
+    let mut app = App::open_writer(&data, fixed()).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    app.import(&mut |_, _| {}).unwrap();
+    app.rebuild().unwrap();
     let dump =
         || derived::canonical_dump(&derived::open_read_only(&data).unwrap().unwrap()).unwrap();
     let first = dump();
-    assert!(first.contains("## agent_segment"));
-    let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+    assert!(first.contains("## agent_segment") && first.contains("## human_atom"));
     app.rebuild().unwrap();
-    assert_eq!(dump(), first, "same ledger, same derived rows (INV-6)");
+    assert_same(
+        &dump(),
+        &first,
+        "same ledger, same as_of, same derived rows (INV-6)",
+    );
     let r = app.import(&mut |_, _| {}).unwrap();
     assert_eq!(
         r.provider_observations_after,
         r.provider_observations_before
     );
     app.rebuild().unwrap();
-    assert_eq!(dump(), first, "re-import changes no derived row");
+    assert_same(&dump(), &first, "re-import changes no derived row");
+}
+
+/// Compares two canonical dumps and reports only the lines that differ.
+fn assert_same(got: &str, want: &str, what: &str) {
+    let g: std::collections::BTreeSet<&str> = got.lines().collect();
+    let w: std::collections::BTreeSet<&str> = want.lines().collect();
+    let only_got: Vec<&&str> = g.difference(&w).collect();
+    let only_want: Vec<&&str> = w.difference(&g).collect();
+    assert!(
+        only_got.is_empty() && only_want.is_empty(),
+        "{what}\n+ {only_got:#?}\n- {only_want:#?}"
+    );
 }
 
 #[test]

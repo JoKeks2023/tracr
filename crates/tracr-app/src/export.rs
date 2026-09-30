@@ -1,9 +1,10 @@
 //! CSV export (reporting §5, pulled forward from S4 at the user's request).
 //!
-//! `agent-sessions` export: one row per reporting day × agent session ×
-//! actor, built from the same day queries the Day view shows. Agent time is
-//! never human time; a timesheet export of human time follows with the
-//! human timeline (S1.4 M2).
+//! * `agent-sessions`: one row per reporting day × agent session × actor;
+//! * `timesheet`: human time, one row per atom (counted and unknown apart);
+//! * everything: one CSV per derived table, into a folder.
+//!
+//! Agent time is never human time.
 //!
 //! Conventions (documented in `docs/export.md`):
 //! * UTF-8, comma-separated, RFC 4180 quoting, header row, `\n` line ends;
@@ -170,22 +171,7 @@ fn day_rows(out: &mut String, zone: &ReportingZone, v: &DayAgents) {
 
 /// Agent sessions of every day with data in `[from, to]` (inclusive), as CSV.
 pub fn agent_sessions_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
-    let parse = |d: &str| -> Result<Date> {
-        d.parse()
-            .map_err(|e| anyhow::anyhow!("{d}: day must be YYYY-MM-DD: {e}"))
-    };
-    let (from_d, to_d) = (parse(from)?, parse(to)?);
-    if to_d < from_d {
-        bail!("`to` ({to}) is before `from` ({from})");
-    }
-    let zone = reader.reporting_zone()?;
-    let mut days: Vec<String> = reader
-        .days()?
-        .days
-        .into_iter()
-        .filter(|d| d.parse::<Date>().is_ok_and(|x| x >= from_d && x <= to_d))
-        .collect();
-    days.sort();
+    let (days, zone) = days_in(reader, from, to)?;
     let mut out = String::new();
     row(
         &mut out,
@@ -205,6 +191,230 @@ pub fn default_file_name(from: &str, to: &str) -> String {
     let mut s = String::new();
     let _ = write!(s, "tracr-agent-sessions_{from}_{to}.csv");
     s
+}
+
+
+// ---------------------------------------------------------------------------
+// Timesheet: human time, one row per atom
+// ---------------------------------------------------------------------------
+
+pub const TIMESHEET_COLUMNS: &[&str] = &[
+    "day",
+    "timezone",
+    "start",
+    "end",
+    "status",
+    "counted_minutes",
+    "unknown_minutes",
+    "counting_basis",
+    "unknown_reason",
+    "session_id",
+    "native_session_id",
+    "project_label",
+    "cwd",
+    "git_branch",
+    "start_boundary",
+    "end_boundary",
+    "reasons",
+    "derived_as_of",
+];
+
+/// Human time of every day with data in `[from, to]`: one row per atom.
+/// Counted and unknown minutes are separate columns and never one total;
+/// blank time (no evidence, locked, asleep) has no row.
+pub fn timesheet_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
+    let (days, zone) = days_in(reader, from, to)?;
+    let mut out = String::new();
+    row(
+        &mut out,
+        &TIMESHEET_COLUMNS
+            .iter()
+            .map(|c| (*c).to_owned())
+            .collect::<Vec<_>>(),
+    );
+    for d in days {
+        let v = reader.day_agents(&d)?;
+        let as_of = v
+            .derived_as_of
+            .map(|t| local_iso(&zone, t))
+            .unwrap_or_default();
+        for a in &v.human.atoms {
+            let session = a
+                .engaged_session
+                .as_ref()
+                .and_then(|id| v.sessions.iter().find(|s| &s.session_id == id));
+            let mins = minutes(a.end - a.start);
+            row(
+                &mut out,
+                &[
+                    v.day.clone(),
+                    v.timezone.clone(),
+                    local_iso(&zone, a.start),
+                    local_iso(&zone, a.end),
+                    a.status.clone(),
+                    if a.status == "work" {
+                        mins.clone()
+                    } else {
+                        String::new()
+                    },
+                    if a.status == "unknown" {
+                        mins
+                    } else {
+                        String::new()
+                    },
+                    if a.status == "work" {
+                        if a.duration_basis == "inferred_continuity" {
+                            "inferred"
+                        } else {
+                            "user_asserted"
+                        }
+                        .to_owned()
+                    } else {
+                        String::new()
+                    },
+                    a.unknown_reason.clone().unwrap_or_default(),
+                    a.engaged_session.clone().unwrap_or_default(),
+                    session
+                        .map(|s| s.native_session_id.clone())
+                        .unwrap_or_default(),
+                    session.and_then(|s| s.label.clone()).unwrap_or_default(),
+                    session.and_then(|s| s.cwd.clone()).unwrap_or_default(),
+                    session
+                        .and_then(|s| s.git_branch.clone())
+                        .unwrap_or_default(),
+                    a.start_boundary.clone().unwrap_or_default(),
+                    a.end_boundary.clone().unwrap_or_default(),
+                    a.reasons.join(";"),
+                    as_of.clone(),
+                ],
+            );
+        }
+    }
+    Ok(out)
+}
+
+fn days_in(reader: &Reader, from: &str, to: &str) -> Result<(Vec<String>, ReportingZone)> {
+    let parse = |d: &str| -> Result<Date> {
+        d.parse()
+            .map_err(|e| anyhow::anyhow!("{d}: day must be YYYY-MM-DD: {e}"))
+    };
+    let (from_d, to_d) = (parse(from)?, parse(to)?);
+    if to_d < from_d {
+        bail!("`to` ({to}) is before `from` ({from})");
+    }
+    let zone = reader.reporting_zone()?;
+    let mut days: Vec<String> = reader
+        .days()?
+        .days
+        .into_iter()
+        .filter(|d| d.parse::<Date>().is_ok_and(|x| x >= from_d && x <= to_d))
+        .collect();
+    days.sort();
+    Ok((days, zone))
+}
+
+// ---------------------------------------------------------------------------
+// Everything: one CSV per derived table
+// ---------------------------------------------------------------------------
+
+/// Derived tables exported by "export everything", with the file name used.
+pub const EVERYTHING: &[(&str, &str)] = &[
+    ("agent_session", "sessions.csv"),
+    ("agent_actor", "agents.csv"),
+    ("agent_segment", "agent_execution_segments.csv"),
+    ("turn", "turns.csv"),
+    ("tool_call", "tool_calls.csv"),
+    ("usage_record", "token_usage.csv"),
+    ("engagement_instant", "human_prompts.csv"),
+    ("human_atom", "human_time.csv"),
+    ("human_atom_context", "human_time_contexts.csv"),
+    ("human_proposal", "human_time_proposals.csv"),
+    ("device_interval", "device.csv"),
+    ("coverage_interval", "coverage.csv"),
+    ("norm_event", "events.csv"),
+];
+
+pub const EVERYTHING_README: &str = "tracr export: everything (derived data)
+
+One CSV per data set, UTF-8, RFC 4180, with a header row. IDs link the files:
+e.g. agents.csv session_id -> sessions.csv id. Every *_at column is epoch
+milliseconds (UTC); the *_at_local column next to it is the same instant in
+the reporting timezone. An empty cell means unknown or not applicable,
+never zero.
+
+Human time (human_time.csv): work_status 'work' rows are counted
+(counting_basis 'inferred' = provisional until reviewed); 'unknown' rows are
+visible but never counted. Blank time has no row. Agent execution
+(agent_execution_segments.csv) is agent time, never human time.
+
+token_usage.csv: rows with canonical = 0 are copies of another stream's
+occurrence (duplicate_of); count only canonical = 1 rows. There is no cost
+column: estimated API cost is not derived yet.
+
+No prompt, message or tool content exists in tracr, so none is exported.
+Column meanings: docs/export.md and docs/architecture.md section 3.4.
+";
+
+/// Writes every derived table as CSV into `dir`. Returns (file, rows).
+pub fn export_everything(
+    conn: &rusqlite::Connection,
+    zone: &ReportingZone,
+    dir: &std::path::Path,
+) -> Result<Vec<(String, usize)>> {
+    std::fs::create_dir_all(dir)?;
+    let mut written = Vec::new();
+    for (table, file) in EVERYTHING {
+        let cols: Vec<String> = conn
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|c| c != "derivation_run_id")
+            .collect();
+        let mut header: Vec<String> = Vec::new();
+        for c in &cols {
+            header.push(c.clone());
+            if c.ends_with("_at") {
+                header.push(format!("{c}_local"));
+            }
+        }
+        let mut out = String::new();
+        row(&mut out, &header);
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM {table} ORDER BY 1",
+            cols.join(", ")
+        ))?;
+        let mut rows = stmt.query([])?;
+        let mut n = 0;
+        while let Some(r) = rows.next()? {
+            let mut values = Vec::with_capacity(header.len());
+            for (i, c) in cols.iter().enumerate() {
+                let v: rusqlite::types::Value = r.get(i)?;
+                let text = match &v {
+                    rusqlite::types::Value::Null => String::new(),
+                    rusqlite::types::Value::Integer(x) => x.to_string(),
+                    rusqlite::types::Value::Real(x) => x.to_string(),
+                    rusqlite::types::Value::Text(t) => t.clone(),
+                    rusqlite::types::Value::Blob(b) => {
+                        b.iter().map(|x| format!("{x:02x}")).collect()
+                    }
+                };
+                values.push(text);
+                if c.ends_with("_at") {
+                    values.push(match v {
+                        rusqlite::types::Value::Integer(ms) => local_iso(zone, ms),
+                        _ => String::new(),
+                    });
+                }
+            }
+            row(&mut out, &values);
+            n += 1;
+        }
+        std::fs::write(dir.join(file), out)?;
+        written.push(((*file).to_owned(), n));
+    }
+    std::fs::write(dir.join("README.txt"), EVERYTHING_README)?;
+    Ok(written)
 }
 
 #[cfg(test)]

@@ -1,13 +1,44 @@
 import { useMemo, useState } from "react";
 import { duration, hhmm, shortId } from "./format";
-import type { ActorDay, DayAgents, Segment, SessionDay } from "./types";
+import type { ActorDay, DayAgents, LaneInterval, Segment, SessionDay } from "./types";
 
 const HOUR = 3_600_000;
-const PENDING_LANES: Record<string, string> = {
-  human: "Human time",
-  device: "Device",
-  coverage: "Coverage",
+const REASON_LABEL: Record<string, string> = {
+  coverage_gap: "coverage gap: tracr was not collecting everything needed",
+  conflicting_evidence: "conflicting evidence: prompts in several sessions interleave",
+  unresolved_window: "unresolved: the gap could not be bridged",
 };
+
+const COVERAGE_RANK: Record<string, number> = { collecting: 0, unknown: 1, missing: 2 };
+
+/** Worst-of coverage over all sources: the display roll-up (§4.7). */
+function coverageRollup(coverage: Record<string, LaneInterval[]>): LaneInterval[] {
+  const bounds = new Set<number>();
+  const all = Object.entries(coverage);
+  for (const [, v] of all) for (const i of v) {
+    bounds.add(i.start);
+    bounds.add(i.end);
+  }
+  const sorted = [...bounds].sort((a, b) => a - b);
+  const out: LaneInterval[] = [];
+  for (let n = 0; n + 1 < sorted.length; n++) {
+    const [a, b] = [sorted[n], sorted[n + 1]];
+    let worst: LaneInterval | null = null;
+    const notes: string[] = [];
+    for (const [key, v] of all) {
+      const hit = v.find((i) => i.start <= a && i.end > a);
+      if (!hit) continue;
+      if (hit.state !== "collecting") notes.push(`${key}: ${hit.state}${hit.reason ? ` (${hit.reason.replaceAll("_", " ")})` : ""}`);
+      if (!worst || COVERAGE_RANK[hit.state] > COVERAGE_RANK[worst.state]) worst = hit;
+    }
+    if (!worst) continue;
+    const reason = notes.join("; ") || null;
+    const last = out[out.length - 1];
+    if (last && last.end === a && last.state === worst.state && last.reason === reason) last.end = b;
+    else out.push({ start: a, end: b, state: worst.state, reason });
+  }
+  return out;
+}
 /** More subagents than this collapse into one overlay row. */
 const INLINE_SUBAGENTS = 3;
 
@@ -19,6 +50,7 @@ interface Range {
 /** The part of the day with evidence, widened to whole hours. */
 function visibleRange(day: DayAgents): Range {
   const times: number[] = [];
+  for (const a of day.human.atoms) times.push(a.start, a.end);
   for (const s of day.sessions) {
     times.push(...s.engagement_instants);
     for (const a of s.actors) for (const g of a.segments) times.push(g.start, g.end);
@@ -184,7 +216,7 @@ export function Timeline({ day, selected, onSelect }: {
       Math.min(...s.engagement_instants, ...s.actors.flatMap((a) => a.segments.map((g) => g.start)), Infinity);
     return [...day.sessions].sort((a, b) => first(a) - first(b));
   }, [day]);
-  const pending = day.pending.filter((p) => p.lane in PENDING_LANES);
+  const coverage = useMemo(() => coverageRollup(day.coverage), [day]);
 
   return (
     <div className="timeline">
@@ -201,16 +233,52 @@ export function Timeline({ day, selected, onSelect }: {
         </div>
       </div>
 
-      {pending.map((p) => (
-        <div className="row" key={p.lane}>
-          <div className="label secondary">{PENDING_LANES[p.lane]}</div>
-          <div className="track">
-            <div className="pending-track" title={p.reason}>
-              Not derived yet
-            </div>
-          </div>
+      <div className="row">
+        <div className="label secondary">Human time</div>
+        <div className="track">
+          <Grid range={range} marks={marks} />
+          {day.human.atoms.map((a, i) => (
+            <div
+              key={i}
+              className={`human ${a.status}`}
+              style={{ left: pct(range, Math.max(a.start, range.start)), width: width(range, Math.max(a.start, range.start), Math.min(a.end, range.end)) }}
+              title={
+                a.status === "work"
+                  ? `${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} counted (inferred, provisional)`
+                  : `${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} unknown, not counted\n${REASON_LABEL[a.unknown_reason ?? ""] ?? a.unknown_reason}${a.proposals.length ? `\nProposal: work may have ended at ${hhmm(a.proposals[0].at, tz)} (last input)` : ""}`
+              }
+            />
+          ))}
         </div>
-      ))}
+      </div>
+      <div className="row">
+        <div className="label secondary">Device</div>
+        <div className="track">
+          <Grid range={range} marks={marks} />
+          {day.device.map((d, i) => (
+            <div
+              key={i}
+              className={`lane device-${d.state}`}
+              style={{ left: pct(range, Math.max(d.start, range.start)), width: width(range, Math.max(d.start, range.start), Math.min(d.end, range.end)) }}
+              title={`${hhmm(d.start, tz)}–${hhmm(d.end, tz)} · ${d.state}`}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="row">
+        <div className="label secondary">Coverage</div>
+        <div className="track">
+          <Grid range={range} marks={marks} />
+          {coverage.map((c, i) => (
+            <div
+              key={i}
+              className={`lane coverage-${c.state}`}
+              style={{ left: pct(range, Math.max(c.start, range.start)), width: width(range, Math.max(c.start, range.start), Math.min(c.end, range.end)) }}
+              title={`${hhmm(c.start, tz)}–${hhmm(c.end, tz)} · ${c.state}${c.reason ? `\n${c.reason}` : ""}`}
+            />
+          ))}
+        </div>
+      </div>
 
       <div className="group-title">Agent sessions · each listed on its own, overlapping freely</div>
       {sessions.map((s) => (
@@ -238,7 +306,15 @@ export function Timeline({ day, selected, onSelect }: {
           <span className="swatch bar-sw sub" />
           Agent execution, subagent
         </span>
-        <span>Square end: the agent may have run a little longer than its last record</span>
+        <span>
+          <span className="swatch human-sw" />
+          Counted human time (inferred)
+        </span>
+        <span>
+          <span className="swatch unknown-sw" />
+          Unknown, not counted
+        </span>
+        <span>Blank: no evidence, or locked or asleep</span>
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
-//! Day queries over the derived store: which days have data, and the agent
-//! activity of one reporting day (architecture §13.4, AD-14, AD-16).
+//! Day queries over the derived store: which days have data, and one
+//! reporting day's lanes (architecture §13.4, AD-14, AD-16).
 //!
 //! Sessions are listed individually; their segments overlap freely and are
-//! never merged across actors or sessions. Nothing here is human time: the
-//! human, device and coverage lanes and cost are listed as not derived yet
-//! (S1.4, S1.5), never shown as zero.
+//! never merged across actors or sessions. Agent time is never human time.
+//! Human time comes only from human atoms: counted (work) and unknown
+//! minutes are separate fields and are never added together (INV-2). Cost
+//! is listed as not derived yet (S1.5), never as zero.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -148,6 +149,51 @@ pub struct PendingLane {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct Proposal {
+    pub at: i64,
+    pub kind: String,
+}
+
+/// One human atom within the day.
+#[derive(Debug, Clone, Serialize)]
+pub struct HumanAtom {
+    pub start: i64,
+    pub end: i64,
+    /// `work`, `unknown` or `non_work`.
+    pub status: String,
+    /// For `unknown`: `coverage_gap`, `conflicting_evidence` or `unresolved_window`.
+    pub unknown_reason: Option<String>,
+    /// `inferred_continuity`, `user_asserted`, `timer_measured` or `none`.
+    pub duration_basis: String,
+    /// The session whose prompts bound inferred work (evidence, not attribution).
+    pub engaged_session: Option<String>,
+    pub start_boundary: Option<String>,
+    pub end_boundary: Option<String>,
+    pub reasons: Vec<String>,
+    pub proposals: Vec<Proposal>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct HumanDay {
+    pub atoms: Vec<HumanAtom>,
+    /// Counted human time (inferred, provisional until reviewed).
+    pub counted_ms: i64,
+    /// Visible, not counted.
+    pub unknown_ms: i64,
+    pub unknown_by_reason: BTreeMap<String, i64>,
+    /// First to last human prompt of the day: an upper bound, never a total.
+    pub evidence_span: Option<(i64, i64)>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LaneInterval {
+    pub start: i64,
+    pub end: i64,
+    pub state: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DayAgents {
     pub day: String,
     pub timezone: String,
@@ -155,29 +201,19 @@ pub struct DayAgents {
     pub end: i64,
     pub derived_as_of: Option<i64>,
     pub sessions: Vec<SessionDay>,
+    pub human: HumanDay,
+    pub device: Vec<LaneInterval>,
+    /// Coverage per source kind (e.g. `claude_transcript`, `os_sensor`).
+    pub coverage: BTreeMap<String, Vec<LaneInterval>>,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
 }
 
-pub const PENDING_LANES: &[PendingLane] = &[
-    PendingLane {
-        lane: "human",
-        reason: "human timeline and counting arrive with S1.4; no human minutes are derived yet",
-    },
-    PendingLane {
-        lane: "device",
-        reason: "the macOS device sensor arrives with S1.4 (`tracr run`)",
-    },
-    PendingLane {
-        lane: "coverage",
-        reason: "coverage and completeness intervals arrive with S1.4",
-    },
-    PendingLane {
-        lane: "cost",
-        reason: "pricing catalog and API-equivalent estimates arrive with S1.5",
-    },
-];
+pub const PENDING_LANES: &[PendingLane] = &[PendingLane {
+    lane: "cost",
+    reason: "pricing catalog and API-equivalent estimates arrive with S1.5",
+}];
 
 fn union_ms(mut spans: Vec<(i64, i64)>) -> i64 {
     spans.sort_unstable();
@@ -291,7 +327,66 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
             usage,
         });
     }
+    let mut human = HumanDay::default();
+    for (a, engaged, proposals) in derived::atoms_of_day(conn, &date.to_string())? {
+        let len = a.end_at - a.start_at;
+        match a.work_status.as_str() {
+            "work" => human.counted_ms += len,
+            "unknown" => {
+                human.unknown_ms += len;
+                *human
+                    .unknown_by_reason
+                    .entry(a.unknown_reason.clone().unwrap_or_default())
+                    .or_default() += len;
+            }
+            _ => {}
+        }
+        human.atoms.push(HumanAtom {
+            start: a.start_at,
+            end: a.end_at,
+            status: a.work_status,
+            unknown_reason: a.unknown_reason,
+            duration_basis: a.duration_basis,
+            engaged_session: engaged,
+            start_boundary: a.start_boundary,
+            end_boundary: a.end_boundary,
+            reasons: a
+                .reasons
+                .as_deref()
+                .and_then(|r| serde_json::from_str(r).ok())
+                .unwrap_or_default(),
+            proposals: proposals
+                .into_iter()
+                .map(|(at, kind)| Proposal { at, kind })
+                .collect(),
+        });
+    }
+    let instants: Vec<i64> = sessions
+        .iter()
+        .flat_map(|s: &SessionDay| s.engagement_instants.iter().copied())
+        .collect();
+    human.evidence_span = instants
+        .iter()
+        .min()
+        .zip(instants.iter().max())
+        .map(|(a, b)| (*a, *b));
+    let lane = |r: derived::IntervalRow| LaneInterval {
+        start: r.start_at,
+        end: r.end_at,
+        state: r.state,
+        reason: r.reason,
+    };
+    let mut coverage: BTreeMap<String, Vec<LaneInterval>> = BTreeMap::new();
+    for r in derived::coverage_in(conn, start, end)? {
+        coverage.entry(r.kind.clone()).or_default().push(lane(r));
+    }
     Ok(DayAgents {
+        human,
+        device: derived::device_in(conn, start, end)?
+            .into_iter()
+            .map(lane)
+            .collect(),
+        coverage,
         day: date.to_string(),
         timezone: zone.name.clone(),
         start,

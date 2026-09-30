@@ -195,25 +195,35 @@ async fn refresh(ctx: tauri::State<'_, Ctx>) -> Result<Refreshed, String> {
         .map_err(err)
 }
 
-/// Exports agent sessions of `[from, to]` as CSV to a file the user picks in
-/// a native save panel. The dialog and the write happen here, in the host;
-/// the webview gets no filesystem access (AD-12).
+/// Exports `[from, to]` as CSV (`timesheet` or `agent_sessions`) to a file
+/// the user picks in a native save panel. The dialog and the write happen
+/// here, in the host; the webview gets no filesystem access (AD-12).
 #[tauri::command]
-async fn export_agent_sessions(
+async fn export_csv(
     app: tauri::AppHandle,
     ctx: tauri::State<'_, Ctx>,
+    kind: String,
     from: String,
     to: String,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let dir = ctx.dir()?;
-    let csv = Reader::open(&dir)
-        .and_then(|r| tracr_app::export::agent_sessions_csv(&r, &from, &to))
-        .map_err(err)?;
+    let reader = Reader::open(&ctx.dir()?).map_err(err)?;
+    let (csv, name) = match kind.as_str() {
+        "timesheet" => (
+            tracr_app::export::timesheet_csv(&reader, &from, &to),
+            format!("tracr-timesheet_{from}_{to}.csv"),
+        ),
+        "agent_sessions" => (
+            tracr_app::export::agent_sessions_csv(&reader, &from, &to),
+            tracr_app::export::default_file_name(&from, &to),
+        ),
+        other => return Err(format!("unknown export {other}")),
+    };
+    let csv = csv.map_err(err)?;
     let picked = app
         .dialog()
         .file()
-        .set_file_name(tracr_app::export::default_file_name(&from, &to))
+        .set_file_name(name)
         .add_filter("CSV", &["csv"])
         .blocking_save_file();
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
@@ -221,6 +231,29 @@ async fn export_agent_sessions(
     };
     std::fs::write(&path, csv).map_err(|e| e.to_string())?;
     Ok(Some(path.display().to_string()))
+}
+
+/// Exports everything (one CSV per data set) into a new folder inside the
+/// folder the user picks.
+#[tauri::command]
+async fn export_everything(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let reader = Reader::open(&ctx.dir()?).map_err(err)?;
+    let Some(parent) = app
+        .dialog()
+        .file()
+        .set_title("Choose where to put the export folder")
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok())
+    else {
+        return Ok(None);
+    };
+    let dir = parent.join(reader.export_folder_name().map_err(err)?);
+    reader.export_everything(&dir).map_err(err)?;
+    Ok(Some(dir.display().to_string()))
 }
 
 fn show_main(app: &tauri::AppHandle) {
@@ -247,7 +280,8 @@ fn main() {
             days,
             day_agents,
             refresh,
-            export_agent_sessions
+            export_csv,
+            export_everything
         ])
         .setup(|app| {
             app.state::<Ctx>().start_runtime();

@@ -2,8 +2,11 @@
 
 Pulled forward from S4 (reporting §5) at the user's request on 2026-09-30.
 
-- CLI: `tracr export agent-sessions --from YYYY-MM-DD --to YYYY-MM-DD [--out file.csv]`
-- App: **Export CSV** (header), choose the range, then save.
+- CLI:
+  - `tracr export timesheet --from YYYY-MM-DD --to YYYY-MM-DD [--out file.csv]`
+  - `tracr export agent-sessions --from … --to … [--out file.csv]`
+  - `tracr export all --out <folder>`
+- App: **Export CSV** (header), choose what and the range, then save.
 
 ## Conventions
 
@@ -13,6 +16,31 @@ Pulled forward from S4 (reporting §5) at the user's request on 2026-09-30.
 - IDs are stable across rebuilds:
   - `session_id` is tracr's derived ID of the session's natural key;
   - `native_session_id` is the provider's own ID.
+
+## `timesheet` (human time)
+
+One row per **human-time interval** (atom) of each day with data. Blank time has **no row**: no evidence, locked or asleep.
+
+| Column | Meaning |
+|---|---|
+| `day`, `timezone`, `start`, `end` | The interval, split at local midnight |
+| `status` | `work` (counted) or `unknown` (visible, **not counted**) |
+| `counted_minutes` | Only on `work` rows |
+| `unknown_minutes` | Only on `unknown` rows. Never add it to `counted_minutes`. |
+| `counting_basis` | `inferred`: bridged between human prompts of one session (provisional until reviewed); `user_asserted` later (S2) |
+| `unknown_reason` | `coverage_gap` (tracr was not collecting what the rule needs, e.g. before the device sensor ran), `conflicting_evidence` (prompts of several sessions interleave), `unresolved_window` (a gap the rule cannot bridge) |
+| `session_id`, `native_session_id`, `project_label`, `cwd`, `git_branch` | The engaged session of a `work` row. This is evidence, not attribution: attribution comes later (M3/S2). |
+| `start_boundary`, `end_boundary` | `observed` (a prompt), `device` (lock/sleep cut), `day_boundary` |
+| `reasons` | All rule reasons, `;`-separated |
+
+## `all` (everything)
+
+A folder with one CSV per data set and a `README.txt`: `sessions`, `agents`, `agent_execution_segments`, `turns`, `tool_calls`, `token_usage`, `human_prompts`, `human_time` (+ `_contexts`, `_proposals`), `device`, `coverage`, `events`.
+
+- All columns of the derived store (architecture §3.4). IDs link the files.
+- Every `*_at` column is epoch milliseconds and is followed by `*_at_local` (ISO 8601, reporting timezone).
+- In `token_usage.csv`, only rows with `canonical = 1` count. Rows with `canonical = 0` are copies of another stream's occurrence.
+- The raw ledger (evidence envelopes and facts) is not part of this export.
 
 ## `agent-sessions`
 

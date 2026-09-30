@@ -133,3 +133,85 @@ fn only_one_runtime_can_collect() {
     assert!(App::open_writer(&data, Box::new(SystemClock)).is_err());
     c.end("test done").unwrap();
 }
+
+/// End to end: a collecting run with an active device, two prompts of one
+/// session 10 minutes apart, then a prompt in another session 5 minutes later.
+/// The same-session gap is counted (inferred); the cross-session gap is unknown.
+#[test]
+fn a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown() {
+    use std::sync::Arc;
+    use tracr_platform::ManualClock;
+
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().join("data");
+    let root = dir.path().join("projects");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(&root).unwrap();
+    let at = |hhmm: &str| UtcMillis::parse_rfc3339(&tracr_testkit::collector::at(hhmm)).unwrap();
+    let clock = Arc::new(ManualClock::new(at("08:55")));
+
+    let mut app = App::open_writer(&data, Box::new(clock.clone())).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    let mut c = Collector::begin(app, "test", true).unwrap();
+
+    let mut a = ClaudeSession::new(A);
+    let mut b = ClaudeSession::new(B);
+    write_lines(
+        &transcript(&root, A),
+        &[
+            a.prompt("09:00"),
+            a.assistant("09:01", "m1", 1),
+            a.prompt("09:10"),
+            a.assistant("09:11", "m2", 1),
+        ],
+    );
+    write_lines(&transcript(&root, B), &[b.prompt("09:15")]);
+
+    // Collect 08:55–09:20: a sample every 15 s (always active), a heartbeat every minute.
+    let mut t = at("08:55");
+    while t <= at("09:20") {
+        clock.set(t);
+        c.sample(&DeviceSample {
+            at: t,
+            idle_ms: Some(1_000),
+            locked: Some(false),
+            last_sleep_wake: None,
+        })
+        .unwrap();
+        if (t.0 / 1000) % 60 == 0 {
+            c.heartbeat().unwrap();
+        }
+        t = UtcMillis(t.0 + 15_000);
+    }
+    c.reconcile_all(IngestTrigger::Startup).unwrap();
+    c.rebuild().unwrap();
+    c.end("test done").unwrap();
+
+    let day = tracr_app::Reader::open(&data)
+        .unwrap()
+        .day_agents("2026-09-28")
+        .unwrap();
+    let h = &day.human;
+    assert_eq!(
+        h.counted_ms,
+        10 * 60_000,
+        "09:00–09:10, same session, device active"
+    );
+    assert_eq!(h.unknown_ms, 5 * 60_000, "09:10–09:15 crosses sessions");
+    assert_eq!(
+        h.unknown_by_reason.get("unresolved_window"),
+        Some(&(5 * 60_000))
+    );
+    assert_eq!(
+        h.evidence_span.map(|(s, e)| e - s),
+        Some(15 * 60_000),
+        "an upper bound only"
+    );
+    assert!(day.device.iter().any(|d| d.state == "active"));
+    assert!(
+        day.coverage["os_sensor"]
+            .iter()
+            .any(|c| c.state == "collecting")
+    );
+    assert!(day.pending.iter().all(|p| p.lane == "cost"));
+}

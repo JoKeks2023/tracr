@@ -1,6 +1,7 @@
 //! `tracr` command-line host: `roots add`, `import`, `sources`, `stats`,
 //! `rebuild`, `days`, `sessions --day`.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -65,6 +66,21 @@ enum Command {
 
 #[derive(Subcommand)]
 enum ExportWhat {
+    /// Human time: one row per interval; counted and unknown minutes in separate columns.
+    Timesheet {
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Everything: one CSV per data set into a folder, with a README.
+    All {
+        /// Folder to write into (created if missing).
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// One row per day × agent session × actor: execution, turns, tool calls, tokens.
     AgentSessions {
         /// First day, YYYY-MM-DD (inclusive).
@@ -214,6 +230,54 @@ fn print_day(v: &tracr_app::day::DayAgents) {
             println!("    diagnostics: {}", d.join(", "));
         }
     }
+    let h = &v.human;
+    println!();
+    println!(
+        "human time: counted {} (inferred, provisional) · unknown {} (not counted){}",
+        minutes(h.counted_ms),
+        minutes(h.unknown_ms),
+        if h.unknown_by_reason.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " [{}]",
+                h.unknown_by_reason
+                    .iter()
+                    .map(|(r, ms)| format!("{r} {}", minutes(*ms)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    );
+    if let Some((a, b)) = h.evidence_span {
+        println!(
+            "evidence span {}–{} = {} (an upper bound, not a total)",
+            hm(a, tz),
+            hm(b, tz),
+            minutes(b - a)
+        );
+    }
+    for a in &h.atoms {
+        println!(
+            "    {}–{}  {:<8} {}",
+            hm(a.start, tz),
+            hm(a.end, tz),
+            a.status,
+            a.unknown_reason.as_deref().unwrap_or(&a.duration_basis)
+        );
+    }
+    let device: BTreeMap<&str, i64> = v.device.iter().fold(BTreeMap::new(), |mut m, d| {
+        *m.entry(d.state.as_str()).or_default() += d.end - d.start;
+        m
+    });
+    println!(
+        "device: {}",
+        device
+            .iter()
+            .map(|(s, ms)| format!("{s} {}", minutes(*ms)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     println!();
     for p in &v.pending {
         println!("not derived yet — {}: {}", p.lane, p.reason);
@@ -352,9 +416,25 @@ fn main() -> Result<()> {
             println!("{} sources", rows.len());
         }
         Command::Export {
-            what: ExportWhat::AgentSessions { from, to, out },
+            what: ExportWhat::All { out },
         } => {
-            let csv = tracr_app::export::agent_sessions_csv(&Reader::open(&dir)?, from, to)?;
+            for (file, rows) in Reader::open(&dir)?.export_everything(out)? {
+                println!("{rows:>8}  {file}");
+            }
+            println!("wrote {}", out.display());
+        }
+        Command::Export { what } => {
+            let reader = Reader::open(&dir)?;
+            let (csv, out) = match what {
+                ExportWhat::AgentSessions { from, to, out } => (
+                    tracr_app::export::agent_sessions_csv(&reader, from, to)?,
+                    out,
+                ),
+                ExportWhat::Timesheet { from, to, out } => {
+                    (tracr_app::export::timesheet_csv(&reader, from, to)?, out)
+                }
+                ExportWhat::All { .. } => unreachable!("handled above"),
+            };
             match out {
                 Some(path) => {
                     std::fs::write(path, &csv)?;

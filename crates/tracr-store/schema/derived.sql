@@ -1,7 +1,8 @@
 -- tracr derived store (architecture §3.4). Everything here is a pure
 -- function of the ledger, the rule versions and `as_of`. It is never
 -- migrated: on a schema-version mismatch it is rebuilt (§3.1).
--- S1.3 subset: normalized events, agent timelines, usage records.
+-- S1.3–S1.4: normalized events, agent timelines, usage records, coverage,
+-- device lane, human timeline and counting.
 
 CREATE TABLE derived_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
@@ -65,3 +66,37 @@ CREATE TABLE usage_record (id TEXT PRIMARY KEY,        -- BLAKE3(provider, strea
 CREATE INDEX usage_record_extent ON usage_record (extent_start);
 CREATE TABLE usage_record_source (usage_id TEXT NOT NULL, observation_id TEXT NOT NULL,
   PRIMARY KEY (usage_id, observation_id));
+
+CREATE TABLE coverage_interval (machine_id TEXT NOT NULL, source_kind TEXT NOT NULL,
+  source_id TEXT,                                      -- NULL = kind-level state
+  start_at INTEGER NOT NULL, end_at INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('collecting','degraded','missing','unknown')),
+  completeness TEXT, reason TEXT, derivation_run_id TEXT NOT NULL);
+CREATE INDEX coverage_interval_time ON coverage_interval (start_at, end_at);
+
+CREATE TABLE device_interval (machine_id TEXT NOT NULL, start_at INTEGER NOT NULL, end_at INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('active','idle','locked','suspended','unknown')),
+  start_basis TEXT, end_basis TEXT, derivation_run_id TEXT NOT NULL);
+CREATE INDEX device_interval_time ON device_interval (start_at, end_at);
+
+CREATE TABLE human_atom (id TEXT PRIMARY KEY, day TEXT NOT NULL, start_at INTEGER NOT NULL, end_at INTEGER NOT NULL,
+  work_status TEXT NOT NULL CHECK (work_status IN ('work','unknown','non_work')),
+  counting_basis TEXT CHECK (counting_basis IN ('user_asserted','inferred')),
+  unknown_reason TEXT,                                 -- coverage_gap | conflicting_evidence | unresolved_window
+  duration_basis TEXT NOT NULL,                        -- timer_measured | user_asserted | inferred_continuity | none
+  candidate_status TEXT, candidate_reason TEXT, candidate_basis TEXT,
+  start_boundary TEXT, end_boundary TEXT, grade TEXT, reasons TEXT,
+  decided_by TEXT NOT NULL, rule_ref TEXT NOT NULL, derivation_run_id TEXT NOT NULL,
+  CHECK (end_at > start_at),
+  CHECK ((work_status = 'work') = (counting_basis IS NOT NULL)),
+  CHECK ((work_status = 'unknown') = (unknown_reason IS NOT NULL)),
+  CHECK ((work_status = 'work') = (duration_basis <> 'none')),
+  CHECK (counting_basis IS NULL OR (counting_basis = 'inferred') = (duration_basis = 'inferred_continuity')));
+CREATE INDEX human_atom_day ON human_atom (day, start_at);
+CREATE TABLE human_atom_context (atom_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('engaged','concurrent_agent')),
+  context_kind TEXT NOT NULL, context_key TEXT NOT NULL,
+  PRIMARY KEY (atom_id, role, context_kind, context_key));
+-- Review proposals (window policy, idle end): never minutes (§7.2 Suggestion).
+CREATE TABLE human_proposal (atom_id TEXT NOT NULL, at INTEGER NOT NULL, kind TEXT NOT NULL,
+  PRIMARY KEY (atom_id, at, kind));

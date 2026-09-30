@@ -7,9 +7,11 @@
 pub mod adapter;
 pub mod agent;
 pub mod copy;
+pub mod coverage;
 pub mod device;
 pub mod events;
 pub mod evidence;
+pub mod human;
 pub mod ids;
 pub mod manifest;
 pub mod normalize;

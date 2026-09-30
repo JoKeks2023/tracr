@@ -9,8 +9,10 @@ export const api = {
   refresh: () => invoke<Refreshed>("refresh"),
   approveRoot: (path: string) => invoke<void>("approve_root", { path }),
   /** Resolves to the written path, or null if the save panel was cancelled. */
-  exportAgentSessions: (from: string, to: string) =>
-    invoke<string | null>("export_agent_sessions", { from, to }),
+  exportCsv: (kind: "timesheet" | "agent_sessions", from: string, to: string) =>
+    invoke<string | null>("export_csv", { kind, from, to }),
+  /** Resolves to the written folder, or null if cancelled. */
+  exportEverything: () => invoke<string | null>("export_everything"),
 };
 
 export function errorText(e: unknown): string {

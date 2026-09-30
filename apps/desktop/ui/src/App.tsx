@@ -152,6 +152,7 @@ export function App() {
 
   const totals = useMemo(() => {
     if (!view) return null;
+    const human = view.human;
     let mainExec = 0;
     let subExec = 0;
     let output = 0;
@@ -164,7 +165,7 @@ export function App() {
       }
       for (const u of s.usage) output += u.output.sum;
     }
-    return { mainExec, subExec, output, prompts, sessions: view.sessions.length };
+    return { mainExec, subExec, output, prompts, sessions: view.sessions.length, human };
   }, [view]);
 
   const session = view?.sessions.find((s) => s.session_id === selected) ?? null;
@@ -231,6 +232,19 @@ export function App() {
         <>
           <div className="summary">
             <div className="metric">
+              <div className="value human-value">{duration(totals.human.counted_ms)}</div>
+              <div className="label">counted human time · inferred, provisional</div>
+            </div>
+            <div
+              className="metric"
+              title={Object.entries(totals.human.unknown_by_reason)
+                .map(([r, ms]) => `${r.replaceAll("_", " ")}: ${duration(ms)}`)
+                .join("\n")}
+            >
+              <div className="value unknown-value">{duration(totals.human.unknown_ms)}</div>
+              <div className="label">unknown · visible, not counted</div>
+            </div>
+            <div className="metric">
               <div className="value">{totals.sessions}</div>
               <div className="label">agent sessions</div>
             </div>
@@ -249,10 +263,6 @@ export function App() {
             <div className="metric">
               <div className="value">{compact(totals.output)}</div>
               <div className="label">output tokens</div>
-            </div>
-            <div className="metric pending">
-              <div className="value">Not derived yet</div>
-              <div className="label">human time · counted and unknown arrive with S1.4</div>
             </div>
           </div>
           <Timeline day={view} selected={selected} onSelect={setSelected} />

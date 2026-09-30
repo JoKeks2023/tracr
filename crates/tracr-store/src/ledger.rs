@@ -747,37 +747,83 @@ pub struct FactRow {
     pub subtype: Option<String>,
     pub time_quality: String,
     pub facts_json: String,
+    pub collector_run_id: String,
+}
+
+fn fact_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<FactRow> {
+    Ok(FactRow {
+        seq: r.get(0)?,
+        id: r.get(1)?,
+        source_id: r.get(2)?,
+        record_key: r.get(3)?,
+        occurred_at: r.get::<_, Option<i64>>(4)?.map(UtcMillis),
+        observed_at: UtcMillis(r.get(5)?),
+        producer_version: r.get(6)?,
+        manifest_range: r.get(7)?,
+        extractor_version: r.get(8)?,
+        kind: r.get(9)?,
+        subtype: r.get(10)?,
+        time_quality: r.get(11)?,
+        facts_json: r.get(12)?,
+        collector_run_id: r.get(13)?,
+    })
+}
+
+const FACT_ROW_SELECT: &str =
+    "SELECT o.seq, o.id, o.source_id, o.record_key, o.occurred_at, o.observed_at,
+                o.producer_version, o.manifest_range, f.extractor_version, f.kind, f.subtype,
+                f.time_quality, f.facts_json, o.collector_run_id
+         FROM observation o
+         JOIN source s ON s.id = o.source_id
+         JOIN observation_facts f ON f.observation_id = o.id";
+
+/// Collector and OS-sensor records (coverage, heartbeats, gaps, device transitions), in ledger order.
+pub fn collector_and_sensor_rows(conn: &Connection) -> Result<Vec<FactRow>> {
+    let mut stmt = conn.prepare(&format!(
+        "{FACT_ROW_SELECT} WHERE o.channel IN ('collector', 'os_sensor') ORDER BY o.seq, f.extractor_version"
+    ))?;
+    let rows = stmt.query_map([], fact_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Extents of streams around records that could not be extracted (§4.7
+/// `degraded`): from the previous to the next timed record of the same source.
+pub fn degraded_extents(conn: &Connection) -> Result<Vec<(String, UtcMillis, UtcMillis)>> {
+    let mut stmt = conn.prepare(
+        "SELECT o.source_id, o.occurred_at,
+           (SELECT p.occurred_at FROM observation p WHERE p.source_id = o.source_id AND p.seq < o.seq
+              AND p.occurred_at IS NOT NULL ORDER BY p.seq DESC LIMIT 1),
+           (SELECT n.occurred_at FROM observation n WHERE n.source_id = o.source_id AND n.seq > o.seq
+              AND n.occurred_at IS NOT NULL ORDER BY n.seq ASC LIMIT 1)
+         FROM observation o WHERE o.channel = 'transcript' AND o.parse_status <> 'ok'",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<i64>>(1)?,
+            r.get::<_, Option<i64>>(2)?,
+            r.get::<_, Option<i64>>(3)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (source, own, prev, next) = row?;
+        let times: Vec<i64> = [own, prev, next].into_iter().flatten().collect();
+        if let (Some(lo), Some(hi)) = (times.iter().min(), times.iter().max())
+            && hi > lo
+        {
+            out.push((source, UtcMillis(*lo), UtcMillis(*hi)));
+        }
+    }
+    Ok(out)
 }
 
 /// Every transcript observation of sources of `source_kind`, in source and file order.
 pub fn transcript_fact_rows(conn: &Connection, source_kind: &str) -> Result<Vec<FactRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT o.seq, o.id, o.source_id, o.record_key, o.occurred_at, o.observed_at,
-                o.producer_version, o.manifest_range, f.extractor_version, f.kind, f.subtype,
-                f.time_quality, f.facts_json
-         FROM observation o
-         JOIN source s ON s.id = o.source_id
-         JOIN observation_facts f ON f.observation_id = o.id
-         WHERE s.kind = ?1 AND o.channel = 'transcript'
-         ORDER BY o.source_id, o.seq, f.extractor_version",
-    )?;
-    let rows = stmt.query_map([source_kind], |r| {
-        Ok(FactRow {
-            seq: r.get(0)?,
-            id: r.get(1)?,
-            source_id: r.get(2)?,
-            record_key: r.get(3)?,
-            occurred_at: r.get::<_, Option<i64>>(4)?.map(UtcMillis),
-            observed_at: UtcMillis(r.get(5)?),
-            producer_version: r.get(6)?,
-            manifest_range: r.get(7)?,
-            extractor_version: r.get(8)?,
-            kind: r.get(9)?,
-            subtype: r.get(10)?,
-            time_quality: r.get(11)?,
-            facts_json: r.get(12)?,
-        })
-    })?;
+    let mut stmt = conn.prepare(&format!(
+        "{FACT_ROW_SELECT} WHERE s.kind = ?1 AND o.channel = 'transcript' ORDER BY o.source_id, o.seq, f.extractor_version"
+    ))?;
+    let rows = stmt.query_map([source_kind], fact_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 

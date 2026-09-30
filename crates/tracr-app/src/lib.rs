@@ -6,6 +6,7 @@
 
 pub mod day;
 pub mod derive;
+pub mod derive_human;
 pub mod export;
 pub mod runtime;
 
@@ -458,6 +459,18 @@ impl Reader {
     fn derived(&self) -> Result<Connection> {
         tracr_store::derived::open_read_only(&self.data_dir)?
             .ok_or_else(|| anyhow!("no derived store yet; run `tracr rebuild`"))
+    }
+
+    /// `tracr-export_<local date>_<HHMM>` for an everything export.
+    pub fn export_folder_name(&self) -> Result<String> {
+        let zone = self.reporting_zone()?;
+        let now = jiff::Timestamp::now().to_zoned(zone.tz);
+        Ok(format!("tracr-export_{}", now.strftime("%Y-%m-%d_%H%M")))
+    }
+
+    /// Writes every derived table as CSV into `dir` (export everything).
+    pub fn export_everything(&self, dir: &Path) -> Result<Vec<(String, usize)>> {
+        export::export_everything(&self.derived()?, &self.reporting_zone()?, dir)
     }
 
     /// Days with derived agent activity, newest first.

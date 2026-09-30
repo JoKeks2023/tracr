@@ -18,7 +18,7 @@ use crate::{Result, StoreError};
 pub const DERIVED_FILE: &str = "derived.sqlite";
 pub const DERIVED_NEXT_FILE: &str = "derived.next.sqlite";
 /// Bumped whenever `schema/derived.sql` changes; a mismatch means "rebuild".
-pub const DERIVED_SCHEMA_VERSION: i64 = 1;
+pub const DERIVED_SCHEMA_VERSION: i64 = 2;
 const SCHEMA: &str = include_str!("../schema/derived.sql");
 
 fn sidecars(path: &Path) -> [PathBuf; 3] {
@@ -236,6 +236,36 @@ pub struct UsageRow {
     pub run: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AtomRow {
+    pub id: String,
+    pub day: String,
+    pub start_at: i64,
+    pub end_at: i64,
+    pub work_status: String,
+    pub counting_basis: Option<String>,
+    pub unknown_reason: Option<String>,
+    pub duration_basis: String,
+    pub candidate_status: Option<String>,
+    pub candidate_reason: Option<String>,
+    pub candidate_basis: Option<String>,
+    pub start_boundary: Option<String>,
+    pub end_boundary: Option<String>,
+    pub reasons: Option<String>,
+    pub decided_by: String,
+    pub rule_ref: String,
+    pub run: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntervalRow {
+    pub kind: String,
+    pub start_at: i64,
+    pub end_at: i64,
+    pub state: String,
+    pub reason: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Writer
 // ---------------------------------------------------------------------------
@@ -360,6 +390,77 @@ impl<'c> DerivedWriter<'c> {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )?
         .execute(params![i.id, i.at, i.session_id, i.event_id, i.subtype, i.context, i.run])?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn coverage(
+        &self,
+        machine: &str,
+        kind: &str,
+        start: i64,
+        end: i64,
+        state: &str,
+        reason: Option<&str>,
+        run: &str,
+    ) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT INTO coverage_interval (machine_id, source_kind, start_at, end_at, state, reason, derivation_run_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?
+            .execute(params![machine, kind, start, end, state, reason, run])?;
+        Ok(())
+    }
+
+    pub fn device(
+        &self,
+        machine: &str,
+        start: i64,
+        end: i64,
+        state: &str,
+        run: &str,
+    ) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT INTO device_interval (machine_id, start_at, end_at, state, derivation_run_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute(params![machine, start, end, state, run])?;
+        Ok(())
+    }
+
+    pub fn atom(&self, a: &AtomRow) -> Result<()> {
+        self.tx.prepare_cached(
+            "INSERT INTO human_atom (id, day, start_at, end_at, work_status, counting_basis, unknown_reason,
+               duration_basis, candidate_status, candidate_reason, candidate_basis, start_boundary, end_boundary,
+               reasons, decided_by, rule_ref, derivation_run_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+        )?
+        .execute(params![
+            a.id, a.day, a.start_at, a.end_at, a.work_status, a.counting_basis, a.unknown_reason,
+            a.duration_basis, a.candidate_status, a.candidate_reason, a.candidate_basis, a.start_boundary,
+            a.end_boundary, a.reasons, a.decided_by, a.rule_ref, a.run
+        ])?;
+        Ok(())
+    }
+
+    pub fn atom_context(&self, atom: &str, role: &str, kind: &str, key: &str) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT OR IGNORE INTO human_atom_context (atom_id, role, context_kind, context_key)
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?
+            .execute(params![atom, role, kind, key])?;
+        Ok(())
+    }
+
+    pub fn proposal(&self, atom: &str, at: i64, kind: &str) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT OR IGNORE INTO human_proposal (atom_id, at, kind) VALUES (?1, ?2, ?3)",
+            )?
+            .execute(params![atom, at, kind])?;
         Ok(())
     }
 
@@ -582,6 +683,95 @@ pub fn usage_sums_in(
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Coverage intervals (kind level) overlapping `[start, end)`, clipped.
+pub fn coverage_in(conn: &Connection, start: i64, end: i64) -> Result<Vec<IntervalRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT source_kind, MAX(start_at, ?1), MIN(end_at, ?2), state, reason FROM coverage_interval
+         WHERE source_id IS NULL AND start_at < ?2 AND end_at > ?1 ORDER BY source_kind, start_at",
+    )?;
+    let rows = stmt.query_map(params![start, end], |r| {
+        Ok(IntervalRow {
+            kind: r.get(0)?,
+            start_at: r.get(1)?,
+            end_at: r.get(2)?,
+            state: r.get(3)?,
+            reason: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Device-lane intervals overlapping `[start, end)`, clipped.
+pub fn device_in(conn: &Connection, start: i64, end: i64) -> Result<Vec<IntervalRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT 'device', MAX(start_at, ?1), MIN(end_at, ?2), state, NULL FROM device_interval
+         WHERE start_at < ?2 AND end_at > ?1 ORDER BY start_at",
+    )?;
+    let rows = stmt.query_map(params![start, end], |r| {
+        Ok(IntervalRow {
+            kind: r.get(0)?,
+            start_at: r.get(1)?,
+            end_at: r.get(2)?,
+            state: r.get(3)?,
+            reason: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// An atom, its engaged session (if any) and its review proposals `(at, kind)`.
+pub type DayAtom = (AtomRow, Option<String>, Vec<(i64, String)>);
+
+/// Human atoms of a reporting day with their engaged session, if any.
+pub fn atoms_of_day(
+    conn: &Connection,
+    day: &str,
+) -> Result<Vec<DayAtom>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.day, a.start_at, a.end_at, a.work_status, a.counting_basis, a.unknown_reason,
+                a.duration_basis, a.candidate_status, a.candidate_reason, a.candidate_basis, a.start_boundary,
+                a.end_boundary, a.reasons, a.decided_by, a.rule_ref, a.derivation_run_id,
+                (SELECT c.context_key FROM human_atom_context c WHERE c.atom_id = a.id AND c.role = 'engaged' LIMIT 1)
+         FROM human_atom a WHERE a.day = ?1 ORDER BY a.start_at",
+    )?;
+    let rows: Vec<(AtomRow, Option<String>)> = stmt
+        .query_map([day], |r| {
+            Ok((
+                AtomRow {
+                    id: r.get(0)?,
+                    day: r.get(1)?,
+                    start_at: r.get(2)?,
+                    end_at: r.get(3)?,
+                    work_status: r.get(4)?,
+                    counting_basis: r.get(5)?,
+                    unknown_reason: r.get(6)?,
+                    duration_basis: r.get(7)?,
+                    candidate_status: r.get(8)?,
+                    candidate_reason: r.get(9)?,
+                    candidate_basis: r.get(10)?,
+                    start_boundary: r.get(11)?,
+                    end_boundary: r.get(12)?,
+                    reasons: r.get(13)?,
+                    decided_by: r.get(14)?,
+                    rule_ref: r.get(15)?,
+                    run: r.get(16)?,
+                },
+                r.get(17)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut prop =
+        conn.prepare("SELECT at, kind FROM human_proposal WHERE atom_id = ?1 ORDER BY at")?;
+    let mut out = Vec::new();
+    for (a, engaged) in rows {
+        let proposals = prop
+            .query_map([&a.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        out.push((a, engaged, proposals));
+    }
+    Ok(out)
 }
 
 /// Every row of every table, sorted, without `derivation_run` and the

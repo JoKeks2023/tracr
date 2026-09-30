@@ -64,6 +64,36 @@ export interface PendingLane {
   reason: string;
 }
 
+export interface HumanAtom {
+  start: number;
+  end: number;
+  status: "work" | "unknown" | "non_work";
+  unknown_reason: "coverage_gap" | "conflicting_evidence" | "unresolved_window" | null;
+  duration_basis: string;
+  engaged_session: string | null;
+  start_boundary: string | null;
+  end_boundary: string | null;
+  reasons: string[];
+  proposals: { at: number; kind: string }[];
+}
+
+/** Counted and unknown are separate figures and are never added together. */
+export interface HumanDay {
+  atoms: HumanAtom[];
+  counted_ms: number;
+  unknown_ms: number;
+  unknown_by_reason: Record<string, number>;
+  /** First to last human prompt: an upper bound, never a total. */
+  evidence_span: [number, number] | null;
+}
+
+export interface LaneInterval {
+  start: number;
+  end: number;
+  state: string;
+  reason: string | null;
+}
+
 export interface DayAgents {
   day: string;
   timezone: string;
@@ -71,6 +101,9 @@ export interface DayAgents {
   end: number;
   derived_as_of: number | null;
   sessions: SessionDay[];
+  human: HumanDay;
+  device: LaneInterval[];
+  coverage: Record<string, LaneInterval[]>;
   pending: PendingLane[];
 }
 

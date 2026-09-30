@@ -28,3 +28,19 @@
 | Tray, hide on close, Quit → `coverage_ended` from the app | **Unverified** | Not clicked |
 
 `cargo fmt --all --check`, workspace clippy with `-D warnings` and `cargo test --workspace` pass: 103 tests.
+
+## M2: derivation (2026-09-30)
+
+`cargo fmt --all --check`, workspace clippy with `-D warnings` and `cargo test --workspace` pass: 117 tests.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Walkthrough B | Tested | `human::walkthrough_b_counts_87_and_leaves_20_unknown` |
+| Interleaved, lock, idle, no coverage, blank | Tested | `human::tests` |
+| Coverage rules | Tested | `coverage::tests` (4) |
+| Device lane | Tested | `device::tests` (lane, run reset, first sample) |
+| Collector → counting end to end | Tested | `runtime.rs::a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown` |
+| INV-6 incl. human tables | Tested | `derive.rs::rebuild_is_deterministic_and_reimport_changes_nothing` (fixed `as_of`) |
+| Real device lane | Manually verified | Snapshot of the permanent ledger: idle from 18:49 (user away), 10 s handover unknown, active 19:13:56–19:14:24 (the user typed), idle after |
+| Real exports | Manually verified | Everything: 13 CSV + README, 75 MB. Timesheet 28–30 Sep: 0 counted, unknown `coverage_gap` (see finding) |
+| UI lanes | **Unverified**: not rendered yet; the release app is still the M1 build | |

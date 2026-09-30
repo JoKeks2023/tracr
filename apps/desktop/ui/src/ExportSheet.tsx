@@ -2,6 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "./api";
 import { dayLabel } from "./format";
 
+type Kind = "timesheet" | "agent_sessions" | "everything";
+
+const KINDS: Record<Kind, { label: string; note: string }> = {
+  timesheet: {
+    label: "Timesheet (human time)",
+    note: "One row per interval: counted minutes (inferred, provisional) and unknown minutes in separate columns, never one total. Blank time has no row.",
+  },
+  agent_sessions: {
+    label: "Agent sessions",
+    note: "One row per day, session and agent: repository, branch, agent execution, turns, tool calls, human prompts and tokens. Agent time is not human time.",
+  },
+  everything: {
+    label: "Everything (folder of CSV files)",
+    note: "All data sets, all columns, all days: sessions, agents, execution, turns, tool calls, token usage, prompts, human time, device and coverage, with a README.",
+  },
+};
+
 /** Days are newest first. Defaults to the month of the day being viewed. */
 export function ExportSheet({ days, current, onClose, onDone }: {
   days: string[];
@@ -15,6 +32,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
   const [from, setFrom] = useState(inMonth[0] ?? ascending[0] ?? "");
   const [to, setTo] = useState(inMonth[inMonth.length - 1] ?? ascending[ascending.length - 1] ?? "");
   const [busy, setBusy] = useState(false);
+  const [kind, setKind] = useState<Kind>("timesheet");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -25,7 +43,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
   const run = async () => {
     setBusy(true);
     try {
-      const path = await api.exportAgentSessions(from, to);
+      const path = kind === "everything" ? await api.exportEverything() : await api.exportCsv(kind, from, to);
       if (path) onDone(`Exported to ${path}`);
       onClose();
     } catch (e) {
@@ -55,24 +73,32 @@ export function ExportSheet({ days, current, onClose, onDone }: {
         <header>
           <div style={{ flex: 1 }}>
             <h2>Export CSV</h2>
-            <div className="muted">Agent sessions: one row per day, session and agent</div>
+            <div className="muted">{KINDS[kind].label}</div>
           </div>
         </header>
         <div className="body">
-          <div className="fields">
-            {select(from, setFrom, "From")}
-            {select(to, setTo, "To")}
-          </div>
-          <p className="note">
-            Columns: repository, branch, agent execution, turns, tool calls, human prompts and tokens by category.
-            Agent execution is agent time, not human time. The timesheet export of human time follows once human
-            time is derived.
-          </p>
+          <label className="field">
+            <span>What</span>
+            <select className="select" value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
+              {(Object.keys(KINDS) as Kind[]).map((k) => (
+                <option key={k} value={k}>
+                  {KINDS[k].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {kind !== "everything" && (
+            <div className="fields">
+              {select(from, setFrom, "From")}
+              {select(to, setTo, "To")}
+            </div>
+          )}
+          <p className="note">{KINDS[kind].note}</p>
           <div className="actions">
             <button className="button ghost" onClick={onClose}>
               Cancel
             </button>
-            <button className="button primary" onClick={run} disabled={busy || !from || !to || to < from}>
+            <button className="button primary" onClick={run} disabled={busy || (kind !== "everything" && (!from || !to || to < from))}>
               {busy ? <span className="spinner" aria-label="Exporting" /> : "Export…"}
             </button>
           </div>

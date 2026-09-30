@@ -179,6 +179,137 @@ impl DeviceTracker {
     }
 }
 
+/// Device-lane state (architecture §3.4 `device_interval`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LaneState {
+    Active,
+    Idle,
+    Locked,
+    Suspended,
+    Unknown,
+}
+
+impl LaneState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Idle => "idle",
+            Self::Locked => "locked",
+            Self::Suspended => "suspended",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceInterval {
+    pub start: UtcMillis,
+    pub end: UtcMillis,
+    pub state: LaneState,
+}
+
+/// The device lane from sensor transitions. Outside `collecting` spans of
+/// the sensor's coverage the state is `unknown`: evidence the sensor did not
+/// collect is never assumed. Each run start resets what is known (the run's
+/// first sample restates the device). Precedence: suspended > locked > idle > active.
+pub fn device_lane(
+    transitions: &[DeviceFacts],
+    run_starts: &[UtcMillis],
+    collecting: &[(UtcMillis, UtcMillis)],
+    as_of: UtcMillis,
+) -> Vec<DeviceInterval> {
+    #[derive(Clone, Copy)]
+    enum Change<'a> {
+        Reset,
+        Fact(&'a DeviceFacts),
+    }
+    let mut starts: Vec<i64> = run_starts.iter().map(|t| t.0).collect();
+    starts.sort_unstable();
+    let mut changes: Vec<(i64, u8, Change<'_>)> =
+        starts.iter().map(|t| (*t, 0, Change::Reset)).collect();
+    // A run's first sample places the initial state at the last input,
+    // usually before the run began. It applies from the run's start: the
+    // run's reset must not erase what its own sample reported.
+    changes.extend(transitions.iter().map(|f| {
+        let run_start = starts.iter().rev().find(|s| **s <= f.sample_at.0).copied();
+        (
+            run_start.map_or(f.at.0, |s| f.at.0.max(s)),
+            1,
+            Change::Fact(f),
+        )
+    }));
+    changes.sort_by_key(|c| (c.0, c.1));
+
+    // Raw state segments from the transitions alone.
+    let (mut idle, mut locked, mut suspended): (Option<bool>, bool, bool) = (None, false, false);
+    let state = |idle: Option<bool>, locked: bool, suspended: bool| {
+        if suspended {
+            LaneState::Suspended
+        } else if locked {
+            LaneState::Locked
+        } else {
+            match idle {
+                Some(true) => LaneState::Idle,
+                Some(false) => LaneState::Active,
+                None => LaneState::Unknown,
+            }
+        }
+    };
+    let mut raw: Vec<(i64, LaneState)> = Vec::new();
+    for (t, _, c) in &changes {
+        match c {
+            Change::Reset => (idle, locked, suspended) = (None, false, false),
+            Change::Fact(f) => match f.event {
+                DeviceEvent::Active => idle = Some(false),
+                DeviceEvent::Idle => idle = Some(true),
+                DeviceEvent::Locked => locked = true,
+                DeviceEvent::Unlocked => locked = false,
+                DeviceEvent::Suspended => suspended = true,
+                DeviceEvent::Resumed => suspended = false,
+            },
+        }
+        raw.push((*t, state(idle, locked, suspended)));
+    }
+
+    // Cut by coverage: outside collecting spans the lane is unknown.
+    let mut bounds: Vec<i64> = raw.iter().map(|r| r.0).collect();
+    for (s, e) in collecting {
+        bounds.push(s.0);
+        bounds.push(e.0);
+    }
+    bounds.push(as_of.0);
+    bounds.retain(|b| *b <= as_of.0);
+    bounds.sort_unstable();
+    bounds.dedup();
+    let raw_at = |t: i64| -> LaneState {
+        raw.iter()
+            .rev()
+            .find(|r| r.0 <= t)
+            .map_or(LaneState::Unknown, |r| r.1)
+    };
+    let covered = |t: i64| collecting.iter().any(|(s, e)| s.0 <= t && t < e.0);
+
+    let mut out: Vec<DeviceInterval> = Vec::new();
+    for w in bounds.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let st = if covered(a) {
+            raw_at(a)
+        } else {
+            LaneState::Unknown
+        };
+        match out.last_mut() {
+            Some(last) if last.end.0 == a && last.state == st => last.end = UtcMillis(b),
+            _ => out.push(DeviceInterval {
+                start: UtcMillis(a),
+                end: UtcMillis(b),
+                state: st,
+            }),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +398,85 @@ mod tests {
         let mut t = DeviceTracker::new();
         let v = t.observe(&sample(100, 1));
         assert!(v.iter().all(|f| f.event != DeviceEvent::Resumed));
+    }
+
+    fn fact(event: DeviceEvent, at: i64) -> DeviceFacts {
+        DeviceFacts {
+            event,
+            at: UtcMillis(at * S),
+            earliest: None,
+            basis: "observed".into(),
+            sample_at: UtcMillis(at * S),
+            collection_threshold_ms: None,
+            signal: "test".into(),
+        }
+    }
+
+    #[test]
+    fn the_lane_follows_transitions_inside_coverage_only() {
+        let t = [
+            fact(DeviceEvent::Active, 100),
+            fact(DeviceEvent::Idle, 200),
+            fact(DeviceEvent::Locked, 260),
+            fact(DeviceEvent::Unlocked, 300),
+            fact(DeviceEvent::Active, 305),
+            fact(DeviceEvent::Suspended, 400),
+            fact(DeviceEvent::Resumed, 500),
+        ];
+        let cov = [
+            (UtcMillis(100 * S), UtcMillis(450 * S)),
+            (UtcMillis(480 * S), UtcMillis(600 * S)),
+        ];
+        let lane = device_lane(&t, &[UtcMillis(100 * S)], &cov, UtcMillis(600 * S));
+        let v: Vec<(i64, i64, &str)> = lane
+            .iter()
+            .map(|d| (d.start.0 / S, d.end.0 / S, d.state.as_str()))
+            .collect();
+        assert_eq!(
+            v,
+            vec![
+                (100, 200, "active"),
+                (200, 260, "idle"),
+                (260, 300, "locked"),
+                (300, 305, "idle"),
+                (305, 400, "active"),
+                (400, 450, "suspended"),
+                (450, 480, "unknown"),
+                (480, 500, "suspended"),
+                (500, 600, "active"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_first_sample_of_a_run_is_not_erased_by_its_own_start() {
+        // The run starts at 100; its first sample (at 100) reports active since 99.
+        let mut f = fact(DeviceEvent::Active, 99);
+        f.sample_at = UtcMillis(100 * S);
+        let cov = [(UtcMillis(100 * S), UtcMillis(200 * S))];
+        let lane = device_lane(&[f], &[UtcMillis(100 * S)], &cov, UtcMillis(200 * S));
+        assert_eq!(lane.last().unwrap().state, LaneState::Active);
+        assert_eq!(lane.last().unwrap().start, UtcMillis(100 * S));
+    }
+
+    #[test]
+    fn a_new_run_forgets_the_previous_lock() {
+        let t = [
+            fact(DeviceEvent::Active, 0),
+            fact(DeviceEvent::Locked, 10),
+            fact(DeviceEvent::Active, 100),
+        ];
+        let cov = [
+            (UtcMillis(0), UtcMillis(20 * S)),
+            (UtcMillis(100 * S), UtcMillis(200 * S)),
+        ];
+        let lane = device_lane(
+            &t,
+            &[UtcMillis(0), UtcMillis(100 * S)],
+            &cov,
+            UtcMillis(200 * S),
+        );
+        assert_eq!(lane.last().unwrap().state, LaneState::Active);
     }
 
     #[test]

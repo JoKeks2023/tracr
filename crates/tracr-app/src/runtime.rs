@@ -429,8 +429,7 @@ impl Runtime {
     pub fn start(data_dir: &Path, client: &'static str) -> Result<Self> {
         let app = App::open_writer(data_dir, Box::new(SystemClock))?.with_client(client);
         let sensor: Box<dyn DeviceSensor> = device_sensor();
-        let first = sensor.sample(SystemClock.now());
-        let sensor_available = first.idle_ms.is_some();
+        let sensor_available = sensor.sample(SystemClock.now()).idle_ms.is_some();
         let mut collector = Collector::begin(app, client, sensor_available)?;
         let status = collector.status_handle();
         if let Ok(mut s) = status.lock() {
@@ -557,8 +556,9 @@ impl Runtime {
                     }
                 })?
         };
-        // The first sample is recorded right away, not after 15 s.
-        let _ = jobs.send(Job::Sample(first));
+        // The first sample is recorded right away, not after 15 s, and is
+        // taken after `coverage_started` so it belongs to this run.
+        let _ = jobs.send(Job::Sample(device_sensor().sample(SystemClock.now())));
 
         Ok(Self {
             jobs,
