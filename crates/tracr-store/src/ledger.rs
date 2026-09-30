@@ -779,8 +779,11 @@ const FACT_ROW_SELECT: &str =
 
 /// Collector and OS-sensor records (coverage, heartbeats, gaps, device transitions), in ledger order.
 pub fn collector_and_sensor_rows(conn: &Connection) -> Result<Vec<FactRow>> {
+    // Selected by source (indexed), not by channel (not indexed): the ledger
+    // holds few collector and sensor sources but many transcript observations.
     let mut stmt = conn.prepare(&format!(
-        "{FACT_ROW_SELECT} WHERE o.channel IN ('collector', 'os_sensor') ORDER BY o.seq, f.extractor_version"
+        "{FACT_ROW_SELECT} WHERE o.source_id IN (SELECT id FROM source WHERE kind IN ('collector', 'os_sensor'))
+           AND o.channel IN ('collector', 'os_sensor') ORDER BY o.seq, f.extractor_version"
     ))?;
     let rows = stmt.query_map([], fact_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -862,5 +865,39 @@ pub fn unread_sources(conn: &Connection) -> Result<Vec<SourceRow>> {
          ORDER BY created_at, stream_key"
     ))?;
     let rows = stmt.query_map([], source_from_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Sources with transcript observations newer than `seq` (dirty since a watermark).
+pub fn sources_with_transcript_since(conn: &Connection, seq: i64) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT source_id FROM observation WHERE seq > ?1 AND channel = 'transcript'",
+    )?;
+    let rows = stmt.query_map([seq], |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Other sources that hold any native record key of `sources` (copy-election peers).
+pub fn sources_sharing_records(conn: &Connection, sources: &[String]) -> Result<Vec<String>> {
+    if sources.is_empty() {
+        return Ok(Vec::new());
+    }
+    let marks = vec!["?"; sources.len()].join(", ");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT DISTINCT o2.source_id FROM observation o1
+         JOIN observation o2 ON o2.record_key = o1.record_key AND o2.source_id <> o1.source_id
+         WHERE o1.source_id IN ({marks}) AND o1.record_key NOT LIKE 'h:%'
+           AND o1.channel = 'transcript' AND o2.channel = 'transcript'"
+    ))?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(sources.iter()), |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Every transcript observation of one source, in file order.
+pub fn transcript_fact_rows_of_source(conn: &Connection, source_id: &str) -> Result<Vec<FactRow>> {
+    let mut stmt = conn.prepare(&format!(
+        "{FACT_ROW_SELECT} WHERE o.source_id = ?1 AND o.channel = 'transcript' ORDER BY o.seq, f.extractor_version"
+    ))?;
+    let rows = stmt.query_map([source_id], fact_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

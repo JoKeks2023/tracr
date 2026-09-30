@@ -51,7 +51,11 @@ enum Command {
     /// Collect live until Ctrl-C: transcript hints, sweeps, the OS sensor, heartbeats.
     Run,
     /// Rebuild derived.sqlite from the ledger (normalization, copy election, agent timelines).
-    Rebuild,
+    Rebuild {
+        /// Update only the dirty units in place (a full rebuild if that is not possible).
+        #[arg(long)]
+        incremental: bool,
+    },
     /// Days with derived agent activity (reporting timezone).
     Days,
     /// Agent sessions of one day, each listed individually. Agent time is never human time.
@@ -470,10 +474,14 @@ fn main() -> Result<()> {
             runtime.stop("interrupted");
             println!("stopped");
         }
-        Command::Rebuild => {
+        Command::Rebuild { incremental } => {
             let mut app = App::open_writer(&dir, Box::new(SystemClock))?;
             let started = std::time::Instant::now();
-            let r = app.rebuild()?;
+            let r = if *incremental {
+                app.update_derived()?
+            } else {
+                app.rebuild()?
+            };
             println!(
                 "rebuilt derived store in {:.1}s (as_of {}, ledger seq ≤ {})",
                 started.elapsed().as_secs_f64(),

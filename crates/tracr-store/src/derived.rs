@@ -65,6 +65,20 @@ pub fn install_next(data_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Opens the installed derived store for an in-place update by the lock
+/// holder. `Ok(None)` if it is missing or from another schema version: the
+/// caller then does a full rebuild.
+pub fn open_writer(data_dir: &Path) -> Result<Option<Connection>> {
+    let path = data_dir.join(DERIVED_FILE);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn = Connection::open(&path)?;
+    conn.busy_timeout(Duration::from_secs(10))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    Ok((version == DERIVED_SCHEMA_VERSION).then_some(conn))
+}
+
 /// Opens the installed derived store read-only. `Ok(None)` if none was
 /// built yet; an error if it was built by a different schema version.
 pub fn open_read_only(data_dir: &Path) -> Result<Option<Connection>> {
@@ -284,6 +298,67 @@ impl<'c> DerivedWriter<'c> {
 
     pub fn commit(self) -> Result<()> {
         Ok(self.tx.commit()?)
+    }
+
+    /// Removes every row derived for one session (before re-deriving it).
+    pub fn delete_session(&self, session_id: &str) -> Result<()> {
+        self.tx.execute(
+            "DELETE FROM norm_event_source WHERE event_id IN (SELECT id FROM norm_event WHERE session_id = ?1)",
+            [session_id],
+        )?;
+        self.tx.execute(
+            "DELETE FROM usage_record_source WHERE usage_id IN (SELECT id FROM usage_record WHERE session_id = ?1)",
+            [session_id],
+        )?;
+        for table in [
+            "norm_event",
+            "usage_record",
+            "agent_actor",
+            "turn",
+            "tool_call",
+            "agent_segment",
+            "engagement_instant",
+        ] {
+            self.tx.execute(
+                &format!("DELETE FROM {table} WHERE session_id = ?1"),
+                [session_id],
+            )?;
+        }
+        self.tx
+            .execute("DELETE FROM agent_session WHERE id = ?1", [session_id])?;
+        self.tx.execute(
+            "DELETE FROM derivation_run WHERE unit = 'session' AND unit_key = ?1",
+            [session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Removes the coverage, device and human layers (recomputed as a whole).
+    pub fn clear_human(&self) -> Result<()> {
+        self.tx.execute_batch(
+            "DELETE FROM human_proposal; DELETE FROM human_atom_context; DELETE FROM human_atom;
+             DELETE FROM device_interval; DELETE FROM coverage_interval;
+             DELETE FROM derivation_run WHERE unit = 'human';",
+        )?;
+        Ok(())
+    }
+
+    /// Every engagement instant `(session_id, at)` currently in the store.
+    pub fn all_instants(&self) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self
+            .tx
+            .prepare("SELECT session_id, at FROM engagement_instant")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Every execution segment `(session_id, start, end)` currently in the store.
+    pub fn all_segments(&self) -> Result<Vec<(String, i64, i64)>> {
+        let mut stmt = self
+            .tx
+            .prepare("SELECT session_id, start_at, end_at FROM agent_segment")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn meta(&self, key: &str, value: &str) -> Result<()> {

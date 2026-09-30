@@ -261,3 +261,59 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     out.push(cur);
     out
 }
+
+/// INV-6, second half: an in-place update of the dirty units equals a fresh
+/// rebuild at the same `as_of`, and only dirty sessions are re-derived.
+#[test]
+fn incremental_update_equals_a_fresh_rebuild_and_touches_only_dirty_sessions() {
+    const C: &str = "cccccccc-3333-4333-8333-333333333333";
+    const D: &str = "dddddddd-4444-4444-8444-444444444444";
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let mut a = ClaudeSession::new(A);
+    let a_lines = vec![a.prompt("09:00"), a.assistant("09:01", "msg_1", 100)];
+    write_lines(&transcript(&root, A), &a_lines);
+    let mut b = ClaudeSession::new(B);
+    let mut b_lines: Vec<String> = a_lines.iter().map(|l| copied(l, B)).collect();
+    b_lines.extend([b.prompt("09:30"), b.assistant("09:31", "msg_3", 300)]);
+    write_lines(&transcript(&root, B), &b_lines);
+    let mut d = ClaudeSession::new(D);
+    write_lines(
+        &transcript(&root, D),
+        &[d.prompt("08:00"), d.assistant("08:01", "msg_d", 5)],
+    );
+
+    let fixed = || Box::new(ManualClock::new(UtcMillis(1_790_600_000_000)));
+    let mut app = App::open_writer(&data, fixed()).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    app.import(&mut |_, _| {}).unwrap();
+    assert_eq!(app.rebuild().unwrap().sessions, 3);
+
+    // A continues; a new session C appears.
+    tracr_testkit::append_lines(
+        &transcript(&root, A),
+        &[a.prompt("10:00"), a.assistant("10:01", "msg_2", 50)],
+    );
+    let mut c = ClaudeSession::new(C);
+    write_lines(
+        &transcript(&root, C),
+        &[c.prompt("11:00"), c.assistant("11:02", "msg_c", 7)],
+    );
+    app.import(&mut |_, _| {}).unwrap();
+
+    let updated = app.update_derived().unwrap();
+    assert_eq!(updated.sessions, 3, "A, its copy peer B, and C; not D");
+    let dump =
+        || derived::canonical_dump(&derived::open_read_only(&data).unwrap().unwrap()).unwrap();
+    let after_update = dump();
+    app.rebuild().unwrap();
+    assert_same(
+        &after_update,
+        &dump(),
+        "update equals a fresh rebuild (INV-6)",
+    );
+
+    // Nothing new: an update re-derives no session.
+    assert_eq!(app.update_derived().unwrap().sessions, 0);
+    assert_same(&after_update, &dump(), "an empty update changes nothing");
+}

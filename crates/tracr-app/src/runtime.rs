@@ -8,14 +8,15 @@
 //!   (discovery first) and a derived rebuild;
 //! * every 15 s: an OS-sensor sample; transitions are written as
 //!   `device_*` observations; a new kernel wake schedules a wake reconcile;
-//! * every 60 s: `collector_heartbeat` with each coverage key's state, and a
-//!   derived rebuild if something changed and the last one is ≥ 5 min old;
+//! * every 60 s: `collector_heartbeat` with each coverage key's state, and
+//!   an incremental update of the derived store if something changed;
 //! * file hints (debounced 500 ms): reconcile the file's source; an unknown
 //!   file runs discovery (directory hint) and reads the new sources;
 //! * every 5 min: the stat sweep; every 10 min: discovery;
 //! * stop: `coverage_ended`.
 //!
-//! A full rebuild stands in for dirty-unit derivation until that exists.
+//! The derived store is updated in place (dirty units only); a full rebuild
+//! happens only when it is missing or from another schema version.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -45,7 +46,7 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 pub const SWEEP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(10 * 60);
 pub const HINT_DEBOUNCE: Duration = Duration::from_millis(500);
-pub const REBUILD_MIN_INTERVAL: Duration = Duration::from_secs(5 * 60);
+pub const REBUILD_MIN_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Work for the writer thread.
 pub enum Job {
@@ -174,8 +175,9 @@ impl Collector {
         Ok(r.inserted)
     }
 
+    /// Brings the derived store up to date (incremental where possible).
     pub fn rebuild(&mut self) -> Result<u64> {
-        let r = self.app.rebuild()?;
+        let r = self.app.update_derived()?;
         self.dirty = false;
         self.last_rebuild = Some(Instant::now());
         if let Ok(mut s) = self.status.lock() {

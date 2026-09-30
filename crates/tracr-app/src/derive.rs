@@ -1,4 +1,5 @@
-//! Full rebuild of `derived.sqlite` (architecture §3.1, §7.1, §8.1).
+//! Derivation of `derived.sqlite` (architecture §3.1, §7.1, §8.1): a full
+//! rebuild into a fresh file, or an in-place update of the dirty units.
 //!
 //! ledger observations + facts
 //!   → within-stream record election (one observation per record key: the first)
@@ -8,7 +9,13 @@
 //!   → derived.next.sqlite, installed by rename.
 //!
 //! Pure with respect to the ledger and `as_of`: the same ledger gives the
-//! same rows (INV-6). Copied records stay as events with `copied_from` and
+//! same rows (INV-6), whether rebuilt or updated.
+//!
+//! **Dirty units** (§7.1): sessions with transcript observations past the
+//! watermark, closed over every session that shares a native record with
+//! them (copy election decides between those streams together). Coverage,
+//! the device lane and the human timeline are recomputed as a whole: they
+//! are small and depend on `as_of`. Copied records stay as events with `copied_from` and
 //! usage rows with `duplicate_of`; nothing is derived from them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -142,8 +149,82 @@ fn basename(path: &str) -> String {
         .to_owned()
 }
 
-/// Rebuilds `derived.sqlite` in `data_dir` from `ledger`. The caller holds `tracr.lock`.
+/// Rebuilds `derived.sqlite` in `data_dir` from `ledger` into a fresh file.
+/// The caller holds `tracr.lock`.
 pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result<RebuildReport> {
+    let mut conn = derived::create_next(data_dir)?;
+    let report = derive_into(ledger, &mut conn, as_of, None)?;
+    drop(conn);
+    derived::install_next(data_dir).context("install derived store")?;
+    Ok(report)
+}
+
+/// Updates the installed derived store in place: only dirty sessions are
+/// re-derived. `Ok(None)` when a full rebuild is needed instead (no store,
+/// another schema version, or no watermark). The caller holds `tracr.lock`.
+pub fn update(
+    ledger: &Connection,
+    data_dir: &Path,
+    as_of: UtcMillis,
+) -> Result<Option<RebuildReport>> {
+    let Some(mut conn) = derived::open_writer(data_dir)? else {
+        return Ok(None);
+    };
+    let Some(watermark) =
+        derived::meta(&conn, "obs_watermark")?.and_then(|v| v.parse::<i64>().ok())
+    else {
+        return Ok(None);
+    };
+    let scope = dirty_sources(ledger, watermark)?;
+    Ok(Some(derive_into(ledger, &mut conn, as_of, Some(&scope))?))
+}
+
+/// Sources to re-derive: those with new transcript observations, expanded to
+/// their whole sessions and closed over copy-election peers.
+fn dirty_sources(ledger: &Connection, watermark: i64) -> Result<BTreeSet<String>> {
+    let mut session_of: HashMap<String, String> = HashMap::new();
+    let mut sources_of: HashMap<String, Vec<String>> = HashMap::new();
+    for s in ledger::sources(ledger, None)? {
+        let stream: Option<StreamRef> = s
+            .stream_meta
+            .as_deref()
+            .and_then(|m| serde_json::from_str(m).ok());
+        if let Some(native) = stream.and_then(|st| st.native_session) {
+            let key = format!("{}|{}|{native}", s.kind, s.machine_id);
+            session_of.insert(s.id.to_string(), key.clone());
+            sources_of.entry(key).or_default().push(s.id.to_string());
+        }
+    }
+    let mut scope: BTreeSet<String> = BTreeSet::new();
+    let mut frontier: Vec<String> = ledger::sources_with_transcript_since(ledger, watermark)?;
+    while !frontier.is_empty() {
+        let mut added: Vec<String> = Vec::new();
+        for src in frontier {
+            let whole = session_of
+                .get(&src)
+                .and_then(|k| sources_of.get(k))
+                .cloned()
+                .unwrap_or_else(|| vec![src.clone()]);
+            for s in whole {
+                if scope.insert(s.clone()) {
+                    added.push(s);
+                }
+            }
+        }
+        frontier = ledger::sources_sharing_records(ledger, &added)?
+            .into_iter()
+            .filter(|s| !scope.contains(s))
+            .collect();
+    }
+    Ok(scope)
+}
+
+fn derive_into(
+    ledger: &Connection,
+    conn: &mut Connection,
+    as_of: UtcMillis,
+    scope: Option<&BTreeSet<String>>,
+) -> Result<RebuildReport> {
     let normalizers = normalizers();
     let params = SegmentParams::default();
     let rule_ref = params.rule_ref();
@@ -157,7 +238,16 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
     let mut streams: Vec<Stream> = Vec::new();
     for (ni, n) in normalizers.iter().enumerate() {
         let kind = n.source_kind();
-        let rows = ledger::transcript_fact_rows(ledger, kind.as_str())?;
+        let rows = match scope {
+            None => ledger::transcript_fact_rows(ledger, kind.as_str())?,
+            Some(scope) => {
+                let mut rows = Vec::new();
+                for src in scope {
+                    rows.extend(ledger::transcript_fact_rows_of_source(ledger, src)?);
+                }
+                rows
+            }
+        };
         report.observations_read += rows.len() as u64;
         let mut by_source: BTreeMap<&str, Vec<&FactRow>> = BTreeMap::new();
         for r in &rows {
@@ -275,13 +365,17 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
             .as_ref()
             .and_then(|v| v.as_str()),
     )?;
-    let mut agents = crate::derive_human::AgentContext {
-        instants: Vec::new(),
-        segments: Vec::new(),
-    };
-    let mut conn = derived::create_next(data_dir)?;
     {
-        let w = DerivedWriter::begin(&mut conn)?;
+        let w = DerivedWriter::begin(conn)?;
+        if scope.is_some() {
+            for (ni, machine, native) in sessions.keys() {
+                w.delete_session(&derived_id(
+                    "ses_",
+                    &[normalizers[*ni].provider(), machine, native],
+                ))?;
+            }
+            w.clear_human()?;
+        }
         for ((ni, machine, native), members) in &sessions {
             let n = &normalizers[*ni];
             let provider = n.provider();
@@ -363,17 +457,6 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
             })?;
 
             let tl: SessionTimeline = derive_session(&session_id, &timed, &params);
-            agents
-                .instants
-                .extend(tl.instants.iter().map(|i| tracr_core::human::Instant {
-                    at: i.at,
-                    session: session_id.clone(),
-                }));
-            agents.segments.extend(
-                tl.segments
-                    .iter()
-                    .map(|g| (session_id.clone(), g.start.0, g.end.0)),
-            );
 
             // Session row; context from the earliest canonical event that states a cwd.
             let first_ctx = timed
@@ -613,6 +696,19 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
             .iter()
             .map(|n| n.source_kind().as_str().to_owned())
             .collect();
+        // The human layer reads every session's instants and segments from the
+        // store, so an update sees the sessions it did not re-derive too.
+        let agents = crate::derive_human::AgentContext {
+            instants: w
+                .all_instants()?
+                .into_iter()
+                .map(|(session, at)| tracr_core::human::Instant {
+                    at: UtcMillis(at),
+                    session,
+                })
+                .collect(),
+            segments: w.all_segments()?,
+        };
         report.human = crate::derive_human::derive(
             ledger,
             &w,
@@ -630,7 +726,5 @@ pub fn rebuild(ledger: &Connection, data_dir: &Path, as_of: UtcMillis) -> Result
         w.meta("obs_watermark", &report.obs_watermark.to_string())?;
         w.commit()?;
     }
-    drop(conn);
-    derived::install_next(data_dir).context("install derived store")?;
     Ok(report)
 }

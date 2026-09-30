@@ -387,6 +387,15 @@ impl App {
     pub fn rebuild(&mut self) -> Result<derive::RebuildReport> {
         derive::rebuild(&self.conn, &self.data_dir, self.clock.now())
     }
+
+    /// Brings `derived.sqlite` up to date: an in-place update of the dirty
+    /// units, or a full rebuild if the store is missing or outdated.
+    pub fn update_derived(&mut self) -> Result<derive::RebuildReport> {
+        match derive::update(&self.conn, &self.data_dir, self.clock.now())? {
+            Some(report) => Ok(report),
+            None => self.rebuild(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
