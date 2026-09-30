@@ -789,3 +789,32 @@ pub fn max_observation_seq(conn: &Connection) -> Result<i64> {
         })?,
     )
 }
+
+/// The source a locator path belongs to, if discovery recorded it.
+pub fn source_for_path(conn: &Connection, path: &str) -> Result<Option<SourceRow>> {
+    Ok(conn
+        .query_row(
+            &format!(
+                "SELECT {} FROM source s JOIN source_locator l ON l.source_id = s.id WHERE l.path = ?1
+                 ORDER BY l.last_seen DESC LIMIT 1",
+                SOURCE_COLUMNS
+                    .split(", ")
+                    .map(|c| format!("s.{c}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            [path],
+            source_from_row,
+        )
+        .optional()?)
+}
+
+/// Sources of registered kinds that have no cursor yet (new, never read).
+pub fn unread_sources(conn: &Connection) -> Result<Vec<SourceRow>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SOURCE_COLUMNS} FROM source WHERE id NOT IN (SELECT source_id FROM source_cursor)
+         ORDER BY created_at, stream_key"
+    ))?;
+    let rows = stmt.query_map([], source_from_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

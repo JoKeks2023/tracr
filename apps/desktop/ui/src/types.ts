@@ -74,10 +74,25 @@ export interface DayAgents {
   pending: PendingLane[];
 }
 
+export interface RuntimeStatus {
+  collecting: boolean;
+  run_id: string | null;
+  keys: Record<string, string>;
+  last_heartbeat: number | null;
+  last_rebuild: number | null;
+  last_error: string | null;
+  sensor: string;
+}
+
 export interface Status {
   data_dir: string | null;
   data_dir_from_env: boolean;
   ledger_present: boolean;
+  approved_roots: string[];
+  proposed_roots: { path: string; approved: boolean }[];
+  collector: "collecting" | "elsewhere" | "stopped" | "not_configured";
+  collector_detail: string | null;
+  runtime: RuntimeStatus | null;
 }
 
 export interface Refreshed {

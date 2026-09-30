@@ -7,6 +7,7 @@ export const api = {
   days: () => invoke<DayList>("days"),
   dayAgents: (day: string) => invoke<DayAgents>("day_agents", { day }),
   refresh: () => invoke<Refreshed>("refresh"),
+  approveRoot: (path: string) => invoke<void>("approve_root", { path }),
 };
 
 export function errorText(e: unknown): string {

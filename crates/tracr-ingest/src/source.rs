@@ -94,6 +94,44 @@ impl RunContext {
         Ok(run)
     }
 
+    /// A runtime run (§4.7): writes `coverage_started` for `keys`; its ID
+    /// is the `collector_run_id` of everything the run records.
+    pub fn begin_runtime(
+        conn: &mut Connection,
+        env: &IngestEnv<'_>,
+        machine: &MachineId,
+        client: &str,
+        keys: Vec<String>,
+        heartbeat_interval_ms: i64,
+        sample_interval_ms: i64,
+    ) -> Result<Self> {
+        let collector = ensure_collector_source(conn, env, machine)?;
+        let run_id = new_uuid_v7(env);
+        let mut run = Self {
+            run_id: run_id.clone(),
+            machine_id: machine.clone(),
+            collector_source: collector.id,
+            receipt_seq: 0,
+        };
+        let tx = conn.transaction()?;
+        insert_collector(
+            &tx,
+            env,
+            &mut run,
+            CollectorFacts::CoverageStarted {
+                client: client.to_owned(),
+                keys,
+                heartbeat_interval_ms,
+                sample_interval_ms,
+            },
+            IngestTrigger::Startup,
+            Some(run_id.clone()),
+            Some(run_id),
+        )?;
+        tx.commit()?;
+        Ok(run)
+    }
+
     /// Monotonic receipt order within this run.
     pub fn next_receipt(&mut self) -> i64 {
         self.receipt_seq += 1;
@@ -120,6 +158,60 @@ pub fn ensure_collector_source(
         },
     )?;
     Ok(row)
+}
+
+/// Source kind of OS-sensor evidence (§4.7 coverage key).
+pub const OS_SENSOR_KIND: &str = "os_sensor";
+
+pub fn ensure_os_sensor_source(
+    conn: &Connection,
+    env: &IngestEnv<'_>,
+    machine: &MachineId,
+) -> Result<SourceRow> {
+    let (row, _) = ledger::ensure_source(
+        conn,
+        &NewSource {
+            id: &new_uuid_v7(env),
+            kind: OS_SENSOR_KIND,
+            machine_id: machine,
+            stream_key: &format!("os_sensor:{machine}"),
+            adapter: "tracr-platform",
+            adapter_version: env!("CARGO_PKG_VERSION"),
+            created_at: env.clock.now(),
+            stream_meta: None,
+        },
+    )?;
+    Ok(row)
+}
+
+/// Writes one device transition from the OS sensor (§4.8). Each gets a fresh
+/// record key: sensor evidence is never re-read, so it cannot duplicate.
+pub fn write_device_record(
+    conn: &Connection,
+    env: &IngestEnv<'_>,
+    run: &mut RunContext,
+    source: &SourceId,
+    device: tracr_core::device::DeviceFacts,
+) -> Result<InsertOutcome> {
+    let kind = device.event.kind();
+    let at = device.at;
+    let body = Facts {
+        device: Some(device),
+        ..Facts::default()
+    };
+    insert_record(
+        conn,
+        env,
+        run,
+        source,
+        Channel::OsSensor,
+        body,
+        kind,
+        IngestTrigger::Sample,
+        Some(at),
+        None,
+        None,
+    )
 }
 
 /// Writes a record about the collector's own work. `record_key` makes
@@ -150,6 +242,36 @@ fn insert_collector(
         collector: Some(facts),
         ..Facts::default()
     };
+    let source = run.collector_source.clone();
+    insert_record(
+        conn,
+        env,
+        run,
+        &source,
+        Channel::Collector,
+        body,
+        kind,
+        trigger,
+        None,
+        record_key,
+        observation_id,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn insert_record(
+    conn: &Connection,
+    env: &IngestEnv<'_>,
+    run: &mut RunContext,
+    source: &SourceId,
+    channel: Channel,
+    body: Facts,
+    kind: tracr_core::events::FactKind,
+    trigger: IngestTrigger,
+    occurred_at: Option<tracr_core::time::UtcMillis>,
+    record_key: Option<String>,
+    observation_id: Option<String>,
+) -> Result<InsertOutcome> {
     let facts_json = serde_json::to_string(&body)?;
     let hash = ContentHash::of(facts_json.as_bytes());
     let id = observation_id.unwrap_or_else(|| new_uuid_v7(env));
@@ -161,10 +283,10 @@ fn insert_collector(
         conn,
         &NewObservation {
             id: &id,
-            source_id: &run.collector_source,
+            source_id: source,
             record_key: &key,
             content_hash: &hash,
-            channel: Channel::Collector,
+            channel,
             locator_path: None,
             cursor_offset: None,
             producer: Some("tracr"),
@@ -172,7 +294,7 @@ fn insert_collector(
             adapter_version: env!("CARGO_PKG_VERSION"),
             manifest_range: None,
             native: &native,
-            occurred_at: Some(now),
+            occurred_at: Some(occurred_at.unwrap_or(now)),
             observed_at: now,
             collector_run_id: &run.run_id,
             receipt_seq: receipt,

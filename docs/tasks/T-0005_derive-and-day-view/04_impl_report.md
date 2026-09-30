@@ -25,7 +25,7 @@
 2. **Quiet-gap split, rule `agent-segment@2`.** A segment ends at its last record when the actor is silent for more than 10 minutes; the turn continues.
    - Real data: `AskUserQuestion` waits of 3,005 and 1,296 minutes; a `Read` permission prompt answered after 922 minutes.
    - Without the split, one session showed 1,150 execution minutes in one day; with it, 98.
-   - The parameter is in `rule_ref` (`agent-segment@2#quiet_gap_max_ms=600000`) and is provisional (AD-13). **Open for user confirmation.**
+   - The parameter is in `rule_ref` (`agent-segment@2#quiet_gap_max_ms=600000`) and is provisional (AD-13). **Confirmed by the user on 2026-09-30.**
 3. **Within-stream record election.** One observation per record key: the first in file order. This covers the 56 re-appended changed lines found in T-0004. Later versions are counted, not used.
 4. **Usage semantics.** The elected record states the request's usage, so it is stored as one `delta` per request. The rule name is `claude.last_record_per_request_message@1`.
 5. **Session context and label.** The cwd and branch come from the earliest canonical record that states a cwd. The label is the cwd's last path component.

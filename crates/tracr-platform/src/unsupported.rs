@@ -28,3 +28,23 @@ impl AppPaths for UnsupportedAppPaths {
         Vec::new()
     }
 }
+
+/// No device sensor on this platform yet: every signal is unavailable,
+/// which the device lane shows as `unknown` (§10), never as idle or active.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnsupportedDeviceSensor;
+
+impl crate::DeviceSensor for UnsupportedDeviceSensor {
+    fn name(&self) -> &'static str {
+        "unsupported"
+    }
+
+    fn sample(&self, now: tracr_core::time::UtcMillis) -> tracr_core::device::DeviceSample {
+        tracr_core::device::DeviceSample {
+            at: now,
+            idle_ms: None,
+            locked: None,
+            last_sleep_wake: None,
+        }
+    }
+}

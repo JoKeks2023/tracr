@@ -48,6 +48,20 @@ pub enum FactKind {
     IncompleteTrailing,
     KeyContentConflict,
     LocatorConflict,
+    /// A runtime began collecting (its ID is the run's `collector_run_id`).
+    CoverageStarted,
+    /// Every 60 s while a runtime collects: the state of each coverage key.
+    CollectorHeartbeat,
+    /// A runtime stopped cleanly.
+    CoverageEnded,
+
+    // Records from the OS sensor (§4.8).
+    DeviceActive,
+    DeviceIdle,
+    DeviceLocked,
+    DeviceUnlocked,
+    DeviceSuspended,
+    DeviceResumed,
 }
 
 impl FactKind {
@@ -76,6 +90,15 @@ impl FactKind {
             Self::IncompleteTrailing => "incomplete_trailing",
             Self::KeyContentConflict => "key_content_conflict",
             Self::LocatorConflict => "locator_conflict",
+            Self::CoverageStarted => "coverage_started",
+            Self::CollectorHeartbeat => "collector_heartbeat",
+            Self::CoverageEnded => "coverage_ended",
+            Self::DeviceActive => "device_active",
+            Self::DeviceIdle => "device_idle",
+            Self::DeviceLocked => "device_locked",
+            Self::DeviceUnlocked => "device_unlocked",
+            Self::DeviceSuspended => "device_suspended",
+            Self::DeviceResumed => "device_resumed",
         }
     }
 }

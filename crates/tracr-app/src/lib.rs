@@ -6,6 +6,7 @@
 
 pub mod day;
 pub mod derive;
+pub mod runtime;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, TryLockError};
@@ -39,6 +40,16 @@ pub fn default_data_dir() -> Option<PathBuf> {
 }
 pub const PROVIDER_ROOTS_KEY: &str = "approved_provider_roots";
 pub const TIMEZONE_KEY: &str = "timezone";
+
+/// Proposed provider roots that exist on this machine (PS-02: proposals only;
+/// nothing is read until the user approves one).
+pub fn proposed_provider_roots() -> Vec<PathBuf> {
+    tracr_platform::app_paths()
+        .proposed_provider_roots()
+        .into_iter()
+        .filter(|p| p.is_dir())
+        .collect()
+}
 pub const REPOSITORY_ROOTS_KEY: &str = "approved_repository_roots";
 const CLIENT: &str = "tracr-cli";
 
@@ -81,6 +92,7 @@ pub struct App {
     clock: Box<dyn Clock>,
     fid: Box<dyn FileIdentity>,
     registry: Registry,
+    client: &'static str,
     _lock: File,
 }
 
@@ -164,8 +176,15 @@ impl App {
             clock,
             fid,
             registry: registry(),
+            client: CLIENT,
             _lock: lock,
         })
+    }
+
+    /// Names the host in user actions and runs (`tracr-cli`, `tracr-desktop`).
+    pub fn with_client(mut self, client: &'static str) -> Self {
+        self.client = client;
+        self
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -206,7 +225,7 @@ impl App {
                 actor: "user",
                 at: self.clock.now(),
                 reason: None,
-                client: CLIENT,
+                client: self.client,
             },
         )?;
         ledger::append_setting(&tx, kind.key(), &serde_json::json!(roots), seq)?;
@@ -217,6 +236,25 @@ impl App {
     /// Backfill (§4.5): discovery over approved provider roots, then one
     /// reconcile per source, oldest first. Idempotent.
     pub fn import(&mut self, progress: &mut dyn FnMut(u64, u64)) -> Result<ImportReport> {
+        if read_roots(&self.conn, RootKind::Provider)?.is_empty() {
+            bail!("no approved provider roots; run `tracr roots add --provider <path>` first");
+        }
+        let env = IngestEnv {
+            clock: &*self.clock,
+            file_identity: &*self.fid,
+        };
+        let mut run = RunContext::begin_import(&mut self.conn, &env, &self.machine, self.client)?;
+        self.reconcile_all(&mut run, IngestTrigger::Backfill, progress)
+    }
+
+    /// Discovery over the approved provider roots, then one reconcile per
+    /// source (oldest first) with `trigger`, recorded under `run`.
+    pub fn reconcile_all(
+        &mut self,
+        run: &mut RunContext,
+        trigger: IngestTrigger,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> Result<ImportReport> {
         let roots: Vec<PathBuf> = read_roots(&self.conn, RootKind::Provider)?
             .into_iter()
             .map(PathBuf::from)
@@ -233,18 +271,17 @@ impl App {
                 &self.conn,
                 Some(Channel::Collector),
             )?,
+            run_id: run.run_id.clone(),
             ..ImportReport::default()
         };
-        let mut run = RunContext::begin_import(&mut self.conn, &env, &self.machine, CLIENT)?;
-        report.run_id = run.run_id.clone();
         let d: DiscoveryReport = discover(
             &mut self.conn,
             &env,
             &self.registry,
-            &mut run,
+            run,
             &self.machine,
             &roots,
-            IngestTrigger::Backfill,
+            trigger,
         )?;
         report.roots = d
             .roots
@@ -296,9 +333,9 @@ impl App {
                 &mut self.conn,
                 &env,
                 &self.registry,
-                &mut run,
+                run,
                 source,
-                IngestTrigger::Backfill,
+                trigger,
                 &ReconcileOptions {
                     discovery_confirmed,
                     ..ReconcileOptions::default()
@@ -333,14 +370,7 @@ impl App {
                 Err(e) => {
                     // One unreadable source never aborts the import; the failure is evidence too.
                     report.errors.push(format!("{}: {e}", source.id));
-                    record_failed_run(
-                        &mut self.conn,
-                        &env,
-                        &mut run,
-                        source,
-                        IngestTrigger::Backfill,
-                        &e,
-                    )?;
+                    record_failed_run(&mut self.conn, &env, run, source, trigger, &e)?;
                 }
             }
         }

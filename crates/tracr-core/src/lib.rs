@@ -7,6 +7,7 @@
 pub mod adapter;
 pub mod agent;
 pub mod copy;
+pub mod device;
 pub mod events;
 pub mod evidence;
 pub mod ids;

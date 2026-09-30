@@ -8,11 +8,14 @@ use std::fs::Metadata;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
+use tracr_core::device::DeviceSample;
 use tracr_core::time::UtcMillis;
 
 pub mod clock;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "macos")]
+pub mod macos_sensor;
 #[cfg(unix)]
 pub mod unix;
 pub mod unsupported;
@@ -36,6 +39,24 @@ pub trait AppPaths: Send + Sync {
     /// Provider roots proposed at setup. They are only proposals: discovery
     /// reads a root only after the user approves it (PS-02).
     fn proposed_provider_roots(&self) -> Vec<PathBuf>;
+}
+
+/// Device state for the OS sensor (§4.8). Implementations return `None`
+/// for any signal they cannot read; the device lane then shows `unknown`.
+pub trait DeviceSensor: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn sample(&self, now: UtcMillis) -> DeviceSample;
+}
+
+pub fn device_sensor() -> Box<dyn DeviceSensor> {
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(macos_sensor::MacDeviceSensor)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Box::new(unsupported::UnsupportedDeviceSensor)
+    }
 }
 
 pub fn file_identity() -> Box<dyn FileIdentity> {

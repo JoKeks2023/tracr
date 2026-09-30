@@ -83,6 +83,7 @@ str_enum!(
         Wake => "wake",
         Discovery => "discovery",
         Backfill => "backfill",
+        Sample => "sample",
     }
 );
 
@@ -270,6 +271,8 @@ pub struct Facts {
     pub quarantine: Option<QuarantineFacts>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collector: Option<CollectorFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<crate::device::DeviceFacts>,
 }
 
 impl Facts {
@@ -542,6 +545,21 @@ pub enum CollectorFacts {
         kept_path: String,
         other_path: String,
     },
+    /// A runtime began collecting these coverage keys (§4.7).
+    CoverageStarted {
+        client: String,
+        keys: Vec<String>,
+        heartbeat_interval_ms: i64,
+        sample_interval_ms: i64,
+    },
+    /// Liveness and per-key state (`collecting`, `unavailable`, …).
+    CollectorHeartbeat {
+        keys: BTreeMap<String, String>,
+    },
+    /// A clean stop (Quit, Ctrl-C).
+    CoverageEnded {
+        reason: String,
+    },
 }
 
 impl CollectorFacts {
@@ -557,6 +575,9 @@ impl CollectorFacts {
             Self::IncompleteTrailing { .. } => FactKind::IncompleteTrailing,
             Self::KeyContentConflict { .. } => FactKind::KeyContentConflict,
             Self::LocatorConflict { .. } => FactKind::LocatorConflict,
+            Self::CoverageStarted { .. } => FactKind::CoverageStarted,
+            Self::CollectorHeartbeat { .. } => FactKind::CollectorHeartbeat,
+            Self::CoverageEnded { .. } => FactKind::CoverageEnded,
         }
     }
 }
@@ -665,6 +686,7 @@ mod tests {
             IngestTrigger::Wake,
             IngestTrigger::Discovery,
             IngestTrigger::Backfill,
+            IngestTrigger::Sample,
         ] {
             assert!(!t.is_live());
         }

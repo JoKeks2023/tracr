@@ -42,6 +42,8 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Collect live until Ctrl-C: transcript hints, sweeps, the OS sensor, heartbeats.
+    Run,
     /// Rebuild derived.sqlite from the ledger (normalization, copy election, agent timelines).
     Rebuild,
     /// Days with derived agent activity (reporting timezone).
@@ -327,6 +329,29 @@ fn main() -> Result<()> {
                 );
             }
             println!("{} sources", rows.len());
+        }
+        Command::Run => {
+            let runtime = tracr_app::runtime::Runtime::start(&dir, "tracr-cli")?;
+            let (tx, rx) = std::sync::mpsc::channel();
+            ctrlc::set_handler(move || {
+                let _ = tx.send(());
+            })?;
+            let s = runtime.status();
+            println!(
+                "collecting into {} (run {}); sensor {}; keys {:?}",
+                dir.display(),
+                s.run_id.as_deref().unwrap_or("-"),
+                s.sensor,
+                s.keys
+            );
+            println!("press Ctrl-C to stop (writes coverage_ended)");
+            let _ = rx.recv();
+            let s = runtime.status();
+            if let Some(e) = s.last_error {
+                eprintln!("last error: {e}");
+            }
+            runtime.stop("interrupted");
+            println!("stopped");
         }
         Command::Rebuild => {
             let mut app = App::open_writer(&dir, Box::new(SystemClock))?;

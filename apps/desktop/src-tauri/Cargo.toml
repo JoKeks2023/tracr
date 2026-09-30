@@ -12,5 +12,5 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tracr-app = { version = "0.9.0-dev", path = "../../../crates/tracr-app" }
