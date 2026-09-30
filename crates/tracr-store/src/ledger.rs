@@ -936,12 +936,14 @@ pub fn git_contexts(conn: &Connection) -> Result<Vec<(String, i64, String)>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// Occurrence times of transcript records first ingested by a non-live
-/// trigger (startup, sweep, wake, …) and received at or after `since`.
+/// Occurrence times of transcript records that **occurred** at or after
+/// `since` (the first collector run) but were first ingested by a non-live
+/// trigger (startup, sweep, wake, …). History from before collection began
+/// is backfill, not recovery.
 pub fn recovered_record_times(conn: &Connection, since: i64) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
-        "SELECT occurred_at FROM observation WHERE channel = 'transcript' AND occurred_at IS NOT NULL
-           AND observed_at >= ?1 AND ingest_trigger NOT IN ('hint', 'dir_hint')",
+        "SELECT occurred_at FROM observation WHERE channel = 'transcript' AND occurred_at >= ?1
+           AND ingest_trigger NOT IN ('hint', 'dir_hint')",
     )?;
     let rows = stmt.query_map([since], |r| r.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
