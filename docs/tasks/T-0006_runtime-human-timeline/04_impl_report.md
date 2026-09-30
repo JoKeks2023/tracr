@@ -51,4 +51,10 @@ Without these fixes the device lane stayed `unknown` after every start, and noth
 
 A literal reading of §7.3 turns every unbridged gap between consecutive prompts into `unknown`, and adjacent ones merge. On the real history, before the sensor ran, this yields one unknown window chaining weeks: 1,440 unknown minutes on every day, including nights and days without any prompt. With the sensor, a night with the Mac awake but idle (not locked, not asleep) would also be one unknown window.
 
-This is spec-conformant but useless in a timesheet. It is raised with the user as a product decision.
+This is spec-conformant but useless in a timesheet. It was raised with the user as a product decision.
+
+**Decision (2026-09-30):** unbridged gaps longer than 2 h are blank, and they separate unknown windows (`human-timeline@2`).
+
+- On the real history, September days now show 2–10 h unknown (the hours actually worked), instead of 24 h.
+- History is still never counted: there was no sensor.
+- **Deviation from §7.3 / activity model §6:** those texts make every unbridged gap unknown. The decision adds a length cap.

@@ -16,7 +16,7 @@ M2: derivation
 - [x] End to end through the collector: 10 counted, 5 unknown (tested)
 - [x] INV-6 with human tables at a fixed `as_of` (tested)
 - [x] Day view lanes, counted/unknown summary; timesheet and export-everything CSVs
-- [ ] Product decision: long unknown windows (history without a sensor; idle nights). See 04_impl_report
+- [x] Product decision: long unbridged gaps (> 2 h) are blank (user, 2026-09-30); `human-timeline@2` (tested)
 - [ ] Completeness `recovered`/`verified`/`unverified` and the provisional flag (moved to M3)
 - [ ] Midnight/DST scenario at app level (core day bounds tested; atoms split at local midnight)
 

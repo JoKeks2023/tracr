@@ -725,10 +725,7 @@ pub fn device_in(conn: &Connection, start: i64, end: i64) -> Result<Vec<Interval
 pub type DayAtom = (AtomRow, Option<String>, Vec<(i64, String)>);
 
 /// Human atoms of a reporting day with their engaged session, if any.
-pub fn atoms_of_day(
-    conn: &Connection,
-    day: &str,
-) -> Result<Vec<DayAtom>> {
+pub fn atoms_of_day(conn: &Connection, day: &str) -> Result<Vec<DayAtom>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, a.day, a.start_at, a.end_at, a.work_status, a.counting_basis, a.unknown_reason,
                 a.duration_basis, a.candidate_status, a.candidate_reason, a.candidate_basis, a.start_boundary,

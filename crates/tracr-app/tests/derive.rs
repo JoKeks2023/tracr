@@ -142,7 +142,10 @@ fn parallel_sessions_overlap_and_are_never_merged() {
     // No collector ran: nothing is counted, and the time between the
     // prompts is unknown for lack of coverage, never zero and never work.
     assert_eq!(day.human.counted_ms, 0);
-    assert_eq!(day.human.unknown_by_reason.get("coverage_gap"), Some(&(2 * 60_000)));
+    assert_eq!(
+        day.human.unknown_by_reason.get("coverage_gap"),
+        Some(&(2 * 60_000))
+    );
 }
 
 #[test]

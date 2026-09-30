@@ -11,6 +11,9 @@
 //!    `coverage_gap` → `conflicting_evidence` (interior instants from ≥ 2
 //!    sessions) → `unresolved_window`. Other reasons are kept.
 //! 4. Before the first instant and after the last: blank (no interval).
+//!    An unbridged gap longer than `max_unknown_gap` is blank too: a break
+//!    with no evidence either way (user decision 2026-09-30). It also
+//!    separates unknown windows, so they never chain across it.
 //! 5. Idle inside an unknown window adds a proposal at the last input. It
 //!    never creates minutes.
 //!
@@ -23,13 +26,15 @@ use crate::coverage::{CoverageInterval, CoverageState};
 use crate::device::{DeviceInterval, LaneState};
 use crate::time::UtcMillis;
 
-pub const HUMAN_RULE: &str = "human-timeline@1";
+pub const HUMAN_RULE: &str = "human-timeline@2";
 
 /// Rule parameters (AD-13; provisional dogfooding values, OQ-P-02).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HumanParams {
     pub continuation_max_ms: i64,
     pub idle_threshold_ms: i64,
+    /// Longer unbridged gaps are blank, not unknown.
+    pub max_unknown_gap_ms: i64,
 }
 
 impl Default for HumanParams {
@@ -37,6 +42,7 @@ impl Default for HumanParams {
         Self {
             continuation_max_ms: 20 * 60_000,
             idle_threshold_ms: 5 * 60_000,
+            max_unknown_gap_ms: 2 * 3_600_000,
         }
     }
 }
@@ -44,8 +50,8 @@ impl Default for HumanParams {
 impl HumanParams {
     pub fn rule_ref(&self) -> String {
         format!(
-            "{HUMAN_RULE}#continuation_max_ms={},idle_threshold_ms={}",
-            self.continuation_max_ms, self.idle_threshold_ms
+            "{HUMAN_RULE}#continuation_max_ms={},idle_threshold_ms={},max_unknown_gap_ms={}",
+            self.continuation_max_ms, self.idle_threshold_ms, self.max_unknown_gap_ms
         )
     }
 }
@@ -287,9 +293,18 @@ pub fn human_timeline(instants: &[Instant], ev: &Evidence<'_>, p: &HumanParams) 
             i += 1;
             continue;
         }
+        let too_long = |g: &Gap| g.b - g.a > p.max_unknown_gap_ms;
+        if too_long(g) {
+            i += 1; // a break: blank, and a separator between unknown windows
+            continue;
+        }
         // A run of adjacent unbridged gaps is one window.
         let mut j = i;
-        while j + 1 < gaps.len() && !gaps[j + 1].bridged && gaps[j + 1].a == gaps[j].b {
+        while j + 1 < gaps.len()
+            && !gaps[j + 1].bridged
+            && !too_long(&gaps[j + 1])
+            && gaps[j + 1].a == gaps[j].b
+        {
             j += 1;
         }
         let run = &gaps[i..=j];
@@ -510,6 +525,24 @@ mod tests {
         let c = run(&inst("A", &[(9, 0), (9, 10)]), &w, HumanParams::default());
         assert_eq!(mins(&c), (0, 10));
         assert_eq!(c[0].status, WorkStatus::Unknown(UnknownReason::CoverageGap));
+    }
+
+    #[test]
+    fn gaps_longer_than_the_maximum_are_blank_and_split_unknown_windows() {
+        // A 09:00, B 09:10 (unknown 10), then 3 h nothing, A 12:10, B 12:20 (unknown 10).
+        let mut i = inst("A", &[(9, 0), (12, 10)]);
+        i.extend(inst("B", &[(9, 10), (12, 20)]));
+        let c = run(&i, &active_all_day(), HumanParams::default());
+        assert_eq!(mins(&c), (0, 20));
+        let spans: Vec<(i64, i64)> = c.iter().map(|x| (x.start.0, x.end.0)).collect();
+        assert_eq!(spans, vec![(hm(9, 0), hm(9, 10)), (hm(12, 10), hm(12, 20))]);
+        // A 1-hour gap (a meeting) stays unknown for review.
+        let c = run(
+            &inst("A", &[(9, 0), (10, 0)]),
+            &active_all_day(),
+            HumanParams::default(),
+        );
+        assert_eq!(mins(&c), (0, 60));
     }
 
     #[test]
