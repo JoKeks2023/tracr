@@ -492,6 +492,11 @@ impl Reader {
         day::day_agents(&self.derived()?, &self.reporting_zone()?, day)
     }
 
+    /// Approved provider roots (a single settings read; cheap enough to poll).
+    pub fn provider_roots(&self) -> Result<Vec<String>> {
+        read_roots(&self.conn, RootKind::Provider)
+    }
+
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {
         Ok(ledger::source_summaries(&self.conn, kind)?)
     }

@@ -40,8 +40,7 @@ impl Ctx {
         self.data_dir
             .as_ref()
             .and_then(|d| Reader::open(d).ok())
-            .and_then(|r| r.stats().ok())
-            .map(|s| s.approved_provider_roots)
+            .and_then(|r| r.provider_roots().ok())
             .unwrap_or_default()
     }
 
@@ -95,8 +94,10 @@ struct Status {
     runtime: Option<RuntimeStatus>,
 }
 
+// Read commands are async: Tauri runs sync commands on the main thread, and
+// the UI polls `status` every 5 s. They must never block the event loop.
 #[tauri::command]
-fn status(ctx: tauri::State<'_, Ctx>) -> Status {
+async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
     let approved = ctx.approved_roots();
     let runtime = ctx
         .runtime
@@ -121,7 +122,7 @@ fn status(ctx: tauri::State<'_, Ctx>) -> Status {
         _ if approved.is_empty() => "not_configured",
         _ => "stopped",
     };
-    Status {
+    Ok(Status {
         data_dir: ctx.data_dir.as_ref().map(|d| d.display().to_string()),
         data_dir_from_env: ctx.from_env,
         ledger_present: ctx
@@ -142,7 +143,7 @@ fn status(ctx: tauri::State<'_, Ctx>) -> Status {
         collector,
         collector_detail: error,
         runtime,
-    }
+    })
 }
 
 /// Approves one proposed provider root (PS-02: an explicit user action).
@@ -169,14 +170,14 @@ async fn approve_root(ctx: tauri::State<'_, Ctx>, path: String) -> Result<(), St
 }
 
 #[tauri::command]
-fn days(ctx: tauri::State<'_, Ctx>) -> Result<DayList, String> {
+async fn days(ctx: tauri::State<'_, Ctx>) -> Result<DayList, String> {
     Reader::open(&ctx.dir()?)
         .and_then(|r| r.days())
         .map_err(err)
 }
 
 #[tauri::command]
-fn day_agents(ctx: tauri::State<'_, Ctx>, day: String) -> Result<DayAgents, String> {
+async fn day_agents(ctx: tauri::State<'_, Ctx>, day: String) -> Result<DayAgents, String> {
     Reader::open(&ctx.dir()?)
         .and_then(|r| r.day_agents(&day))
         .map_err(err)
