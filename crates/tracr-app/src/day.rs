@@ -777,7 +777,7 @@ pub fn day_agents(
         .into_iter()
         .map(lane)
         .collect();
-    let mut provisional_reasons = vec!["not reviewed (review arrives with S2)".to_owned()];
+    let mut provisional_reasons = vec!["not reviewed".to_owned()];
     if !ingestion_complete {
         provisional_reasons.push("ingestion not verified to the end of the day".to_owned());
     }

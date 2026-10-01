@@ -11,6 +11,7 @@ pub mod derive_human;
 pub mod export;
 pub mod manual;
 pub mod pricing;
+pub mod report;
 pub mod review;
 pub mod runtime;
 
@@ -497,6 +498,22 @@ impl Reader {
     }
 
     /// Agent activity of one reporting day (`YYYY-MM-DD`), every session individually.
+    /// Quarantined and key-conflict records observed within the day.
+    pub fn ledger_counts(&self, d: &day::DayAgents) -> Result<report::LedgerCounts> {
+        let n = |kind: &str| -> Result<i64> {
+            Ok(self.conn.query_row(
+                "SELECT COUNT(*) FROM observation o JOIN observation_facts f ON f.observation_id = o.id
+                 WHERE f.kind = ?1 AND o.observed_at >= ?2 AND o.observed_at < ?3",
+                rusqlite::params![kind, d.start, d.end],
+                |r| r.get(0),
+            )?)
+        };
+        Ok(report::LedgerCounts {
+            quarantined: n("quarantined")?,
+            key_conflicts: n("key_content_conflict")?,
+        })
+    }
+
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
         let manual = ledger::manual_entries(&self.conn)?;

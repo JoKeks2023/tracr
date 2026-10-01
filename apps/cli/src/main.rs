@@ -58,6 +58,11 @@ enum Command {
     },
     /// Days with derived agent activity (reporting timezone).
     Days,
+    /// The day report: human time, agent activity, cost, quality footer.
+    Day {
+        /// Reporting day, YYYY-MM-DD (default: the latest day with data).
+        day: Option<String>,
+    },
     /// Agent sessions of one day, each listed individually. Agent time is never human time.
     Sessions {
         /// Reporting day, YYYY-MM-DD (default: the latest day with data).
@@ -568,6 +573,23 @@ fn main() -> Result<()> {
                 println!("  {day}");
             }
             println!("{} days", d.days.len());
+        }
+        Command::Day { day } => {
+            let reader = Reader::open(&dir)?;
+            let day = match day {
+                Some(d) => d.clone(),
+                None => reader
+                    .days()?
+                    .days
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("no day with data yet"))?,
+            };
+            let v = reader.day_agents(&day)?;
+            print!(
+                "{}",
+                tracr_app::report::day_text(&v, &reader.ledger_counts(&v)?)
+            );
         }
         Command::Sessions { day, json } => {
             let reader = Reader::open(&dir)?;
