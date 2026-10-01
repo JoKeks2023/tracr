@@ -89,6 +89,29 @@ export interface HumanAtom {
   /** The derivation underneath: work | unknown | non_work | blank. */
   candidate_status: string | null;
   candidate_reason: string | null;
+  /** The manual entry that counts this time, if any. */
+  manual_entry: string | null;
+}
+
+export interface ManualEntryInfo {
+  id: string;
+  rev: number;
+  kind: "timer" | "retroactive";
+  start: number;
+  end: number | null;
+  running: boolean;
+  target: string | null;
+  target_label: string | null;
+  note: string | null;
+}
+
+export interface ManualRequest {
+  op: "start_timer" | "stop_timer" | "add" | "edit" | "delete";
+  id?: string;
+  start?: number;
+  end?: number;
+  target?: string;
+  note?: string;
 }
 
 export interface CorrectionInfo {
@@ -150,6 +173,7 @@ export interface DayAgents {
   device: LaneInterval[];
   coverage: Record<string, LaneInterval[]>;
   corrections: CorrectionInfo[];
+  manual_entries: ManualEntryInfo[];
   quality: {
     provisional: boolean;
     provisional_reasons: string[];
@@ -180,6 +204,7 @@ export interface Status {
   collector: "collecting" | "stalled" | "elsewhere" | "stopped" | "not_configured";
   collector_detail: string | null;
   runtime: RuntimeStatus | null;
+  running_timer: ManualEntryInfo | null;
 }
 
 export interface Refreshed {

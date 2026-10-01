@@ -1,10 +1,10 @@
 //! `derived.sqlite` (architecture §3.1, §3.4): rebuildable, never migrated.
 //!
 //! A rebuild writes `derived.next.sqlite` from scratch and renames it over
-//! `derived.sqlite` (only the holder of `tracr.lock` does this). The
-//! installed file uses rollback journaling and is not written again until
-//! the next rebuild, so read-only openers never see a half-built store: an
-//! open handle keeps reading the file it opened.
+//! `derived.sqlite` (only the holder of `tracr.lock` does this); an update
+//! writes the installed file in place. The store is in WAL mode, so readers
+//! (the UI) never wait for a writer, and an open handle keeps reading the
+//! file it opened across a rename.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use crate::{Result, StoreError};
 pub const DERIVED_FILE: &str = "derived.sqlite";
 pub const DERIVED_NEXT_FILE: &str = "derived.next.sqlite";
 /// Bumped whenever `schema/derived.sql` changes; a mismatch means "rebuild".
-pub const DERIVED_SCHEMA_VERSION: i64 = 4;
+pub const DERIVED_SCHEMA_VERSION: i64 = 5;
 const SCHEMA: &str = include_str!("../schema/derived.sql");
 
 fn sidecars(path: &Path) -> [PathBuf; 3] {
@@ -47,7 +47,9 @@ pub fn create_next(data_dir: &Path) -> Result<Connection> {
         remove_if_exists(&s)?;
     }
     let conn = Connection::open(&path)?;
-    conn.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = NORMAL;")?;
+    // WAL: readers (the UI) never wait for an update in progress. Closing the
+    // last connection checkpoints, so the installed file carries no -wal.
+    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
     conn.execute_batch(SCHEMA)?;
     conn.pragma_update(None, "user_version", DERIVED_SCHEMA_VERSION)?;
     Ok(conn)

@@ -1034,3 +1034,65 @@ pub fn max_action_seq(conn: &Connection) -> Result<i64> {
         })?,
     )
 }
+
+// ---------------------------------------------------------------------------
+// Manual entries (timers and retroactive entries): append-only revisions
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualRev {
+    pub entry_id: String,
+    pub rev: i64,
+    pub action_seq: i64,
+    /// `timer` or `retroactive`.
+    pub kind: String,
+    pub start_at: i64,
+    /// `None` while a timer runs.
+    pub end_at: Option<i64>,
+    pub target: Option<String>,
+    pub note: Option<String>,
+    pub deleted: bool,
+}
+
+pub fn append_manual_rev(conn: &Connection, m: &ManualRev) -> Result<()> {
+    conn.execute(
+        "INSERT INTO manual_entry_rev (entry_id, rev, action_seq, kind, start_at, end_at, target, note, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            m.entry_id,
+            m.rev,
+            m.action_seq,
+            m.kind,
+            m.start_at,
+            m.end_at,
+            m.target,
+            m.note,
+            m.deleted
+        ],
+    )?;
+    Ok(())
+}
+
+/// The current (latest) revision of every manual entry, deleted ones included.
+pub fn manual_entries(conn: &Connection) -> Result<Vec<ManualRev>> {
+    let mut stmt = conn.prepare(
+        "SELECT m.entry_id, m.rev, m.action_seq, m.kind, m.start_at, m.end_at, m.target, m.note, m.deleted
+         FROM manual_entry_rev m
+         WHERE m.rev = (SELECT MAX(rev) FROM manual_entry_rev x WHERE x.entry_id = m.entry_id)
+         ORDER BY m.start_at",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ManualRev {
+            entry_id: r.get(0)?,
+            rev: r.get(1)?,
+            action_seq: r.get(2)?,
+            kind: r.get(3)?,
+            start_at: r.get(4)?,
+            end_at: r.get(5)?,
+            target: r.get(6)?,
+            note: r.get(7)?,
+            deleted: r.get(8)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

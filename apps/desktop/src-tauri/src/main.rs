@@ -92,6 +92,7 @@ struct Status {
     collector: &'static str,
     collector_detail: Option<String>,
     runtime: Option<RuntimeStatus>,
+    running_timer: Option<tracr_app::day::ManualEntryInfo>,
 }
 
 // Read commands are async: Tauri runs sync commands on the main thread, and
@@ -143,6 +144,11 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
         collector,
         collector_detail: error,
         runtime,
+        running_timer: ctx
+            .data_dir
+            .as_ref()
+            .and_then(|d| Reader::open(d).ok())
+            .and_then(|r| r.running_timer().ok().flatten()),
     })
 }
 
@@ -290,12 +296,104 @@ async fn correct(
         .map_err(err)
 }
 
+/// Timer and manual-entry operations through the collector.
+#[tauri::command]
+async fn manual(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+    req: tracr_app::manual::ManualRequest,
+) -> Result<String, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("manual entries need the collector of this app; it is not running here".into());
+    };
+    let id = tauri::async_runtime::spawn_blocking(move || handle.manual(req))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)?;
+    refresh_tray(&app);
+    Ok(id)
+}
+
 /// Targets time can be assigned to (dropdown, UI-01).
 #[tauri::command]
 async fn targets(ctx: tauri::State<'_, Ctx>) -> Result<Vec<tracr_app::day::TargetOption>, String> {
     Reader::open(&ctx.dir()?)
         .and_then(|r| r.targets())
         .map_err(err)
+}
+
+fn running_timer(app: &tauri::AppHandle) -> Option<tracr_app::day::ManualEntryInfo> {
+    let ctx = app.state::<Ctx>();
+    ctx.data_dir
+        .as_ref()
+        .and_then(|d| Reader::open(d).ok())
+        .and_then(|r| r.running_timer().ok().flatten())
+}
+
+/// The menu-bar item shows the running timer's elapsed time; its menu
+/// offers start or stop.
+fn refresh_tray(app: &tauri::AppHandle) {
+    let Some(tray) = app.tray_by_id("tracr") else {
+        return;
+    };
+    let running = running_timer(app);
+    let title = running.as_ref().map(|t| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(t.start);
+        let mins = (now - t.start).max(0) / 60_000;
+        format!("{}:{:02}", mins / 60, mins % 60)
+    });
+    let _ = tray.set_title(title.as_deref());
+    let label = if running.is_some() {
+        "Stop timer"
+    } else {
+        "Start timer"
+    };
+    if let (Ok(open), Ok(timer), Ok(quit)) = (
+        MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>),
+        MenuItem::with_id(app, "timer", label, true, None::<&str>),
+        MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>),
+    ) && let Ok(menu) = Menu::with_items(app, &[&open, &timer, &quit])
+    {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn toggle_timer(app: &tauri::AppHandle) {
+    let op = if running_timer(app).is_some() {
+        "stop_timer"
+    } else {
+        "start_timer"
+    };
+    let handle = app
+        .state::<Ctx>()
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let app = app.clone();
+    if let Some(handle) = handle {
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = handle.manual(tracr_app::manual::ManualRequest {
+                op: op.into(),
+                id: None,
+                start: None,
+                end: None,
+                target: None,
+                note: None,
+            });
+            refresh_tray(&app);
+        });
+    }
 }
 
 fn show_main(app: &tauri::AppHandle) {
@@ -325,7 +423,8 @@ fn main() {
             export_csv,
             export_everything,
             correct,
-            targets
+            targets,
+            manual
         ])
         .setup(|app| {
             app.state::<Ctx>().start_runtime();
@@ -338,6 +437,7 @@ fn main() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main(app),
+                    "timer" => toggle_timer(app),
                     "quit" => app.exit(0),
                     _ => {}
                 });
@@ -345,6 +445,15 @@ fn main() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+            refresh_tray(app.handle());
+            // Keep the elapsed time in the menu bar current.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    refresh_tray(&handle);
+                }
+            });
             Ok(())
         })
         .on_window_event(|window, event| {

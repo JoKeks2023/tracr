@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { compact, dayLabel, duration } from "./format";
 import { ExportSheet } from "./ExportSheet";
+import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
+import { TimerControl } from "./TimerControl";
 import { ReviewList } from "./ReviewList";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
-import type { DayAgents, DayList, HumanAtom, Status, TargetOption } from "./types";
+import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
@@ -86,13 +88,18 @@ export function App() {
   const [atom, setAtom] = useState<HumanAtom | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [targets, setTargets] = useState<TargetOption[]>([]);
+  const [entry, setEntry] = useState<ManualEntryInfo | "new" | null>(null);
+  const loadTargets = () => void api.targets().then(setTargets).catch(() => setTargets([]));
   const openAtom = (a: HumanAtom) => {
     setAtom(a);
     void api.targets().then(setTargets).catch(() => setTargets([]));
   };
   const corrected = (text: string, error?: boolean) => {
     setNotice({ text, error });
-    if (!error) void loadDays(day);
+    if (!error) {
+      void loadDays(day);
+      void api.status().then(setStatus);
+    }
   };
 
   const loadDays = useCallback(async (keep?: string | null) => {
@@ -225,6 +232,9 @@ export function App() {
         <div className="spacer" />
         <div className="header-actions">
           {notice && <span className={`notice${notice.error ? " error" : ""}`}>{notice.text}</span>}
+          {status && status.collector === "collecting" && (
+            <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
+          )}
           {status && load.state !== "setup" && <CollectorStatus status={status} />}
           {load.state === "ready" && load.days.days.length > 0 && (
             <select
@@ -246,6 +256,17 @@ export function App() {
           {view && view.human.atoms.some((a) => a.status === "unknown") && (
             <button className="button ghost" onClick={() => setReviewing(true)}>
               {view.human.atoms.filter((a) => a.status === "unknown").length} to review
+            </button>
+          )}
+          {view && status?.collector === "collecting" && (
+            <button
+              className="button ghost"
+              onClick={() => {
+                loadTargets();
+                setEntry("new");
+              }}
+            >
+              Add time
             </button>
           )}
           {load.state === "ready" && load.days.days.length > 0 && (
@@ -346,7 +367,27 @@ export function App() {
         />
       )}
       {atom && view && (
-        <IntervalSheet atom={atom} day={view} targets={targets} onClose={() => setAtom(null)} onChanged={corrected} />
+        <IntervalSheet
+          atom={atom}
+          day={view}
+          targets={targets}
+          onClose={() => setAtom(null)}
+          onChanged={corrected}
+          onEditEntry={(e) => {
+            setAtom(null);
+            setEntry(e);
+          }}
+        />
+      )}
+      {entry && view && (
+        <EntrySheet
+          day={view.day}
+          tz={view.timezone}
+          entry={entry === "new" ? null : entry}
+          targets={targets}
+          onClose={() => setEntry(null)}
+          onChanged={corrected}
+        />
       )}
       {session && view && <SessionSheet s={session} tz={view.timezone} onClose={() => setSelected(null)} />}
     </div>

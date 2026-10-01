@@ -467,3 +467,108 @@ fn corrections_confirm_and_undo_without_touching_agent_records() {
     assert!(status.contains(&("revoke".into(), "effective".into())));
     c.end("test done").unwrap();
 }
+
+/// S2.2 end to end: a timer and a retroactive entry on a day without
+/// agents (walkthrough A shape); edit and delete are new revisions; agent
+/// records never change (INV-5).
+#[test]
+fn timer_and_manual_entries_count_as_user_asserted_time() {
+    use std::sync::Arc;
+    use tracr_app::manual::ManualRequest;
+    use tracr_platform::ManualClock;
+
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().join("data");
+    let at = |hhmm: &str| UtcMillis::parse_rfc3339(&tracr_testkit::collector::at(hhmm)).unwrap();
+    let clock = Arc::new(ManualClock::new(at("08:30")));
+    let app = App::open_writer(&data, Box::new(clock.clone())).unwrap();
+    let mut c = Collector::begin(app, "test", true).unwrap();
+    let req = |op: &str| ManualRequest {
+        op: op.into(),
+        id: None,
+        start: None,
+        end: None,
+        target: None,
+        note: None,
+    };
+    let timer = c
+        .manual(&ManualRequest {
+            target: Some("other:TRACR-12 design".into()),
+            ..req("start_timer")
+        })
+        .unwrap();
+    clock.set(at("09:45"));
+    c.manual(&req("stop_timer")).unwrap();
+    clock.set(at("14:05"));
+    let meeting = c
+        .manual(&ManualRequest {
+            start: Some(at("13:00").0),
+            end: Some(at("14:00").0),
+            target: Some("category:meeting".into()),
+            ..req("add")
+        })
+        .unwrap();
+    let day = || {
+        tracr_app::Reader::open(&data)
+            .unwrap()
+            .day_agents("2026-09-28")
+            .unwrap()
+    };
+    let d = day();
+    assert_eq!(d.human.counted_ms, 135 * 60_000, "walkthrough A: 75 + 60");
+    assert_eq!(d.human.unknown_ms, 0, "blank stays blank");
+    assert_eq!(
+        d.human.counted_by_target.get("TRACR-12 design"),
+        Some(&(75 * 60_000))
+    );
+    assert_eq!(
+        d.human.counted_by_target.get("Meeting"),
+        Some(&(60 * 60_000))
+    );
+    let bases: Vec<&str> = d
+        .human
+        .atoms
+        .iter()
+        .map(|a| a.duration_basis.as_str())
+        .collect();
+    assert_eq!(bases, vec!["timer_measured", "user_asserted"]);
+    assert_eq!(d.manual_entries.len(), 2);
+    assert_eq!(
+        d.human.atoms[0].manual_entry.as_deref(),
+        Some(timer.as_str())
+    );
+
+    // Edit shortens the meeting; delete removes the timer. Both are revisions.
+    c.manual(&ManualRequest {
+        id: Some(meeting.clone()),
+        start: Some(at("13:00").0),
+        end: Some(at("13:30").0),
+        target: Some("category:meeting".into()),
+        ..req("edit")
+    })
+    .unwrap();
+    c.manual(&ManualRequest {
+        id: Some(timer),
+        ..req("delete")
+    })
+    .unwrap();
+    let d = day();
+    assert_eq!(d.human.counted_ms, 30 * 60_000);
+    assert_eq!(d.manual_entries.len(), 1);
+
+    // A second timer start stops a running one (at most one runs).
+    clock.set(at("15:00"));
+    c.manual(&req("start_timer")).unwrap();
+    clock.set(at("15:10"));
+    c.manual(&req("start_timer")).unwrap();
+    clock.set(at("15:20"));
+    let d = day();
+    assert_eq!(d.manual_entries.iter().filter(|m| m.running).count(), 1);
+    c.rebuild().unwrap();
+    assert_eq!(
+        day().human.counted_ms,
+        (30 + 20) * 60_000,
+        "the running timer counts up to now"
+    );
+    c.end("test done").unwrap();
+}

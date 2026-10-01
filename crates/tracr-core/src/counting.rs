@@ -12,6 +12,11 @@
 //!   in `seq` order; set replaces the target, reject removes it. It never
 //!   changes minutes, and the counting axis never reads it.
 //! * `revoke(k)` removes k's effect; k stays in history.
+//! * Manual entries (timer or retroactive) come second on both axes: they
+//!   count their interval (`timer_measured` / `user_asserted`) and give their
+//!   target, unless a correction decides. Overlapping entries count once;
+//!   different targets stay `conflicting` (TW-04). Idle and lock never end
+//!   them.
 //!
 //! The candidate underneath stays on every atom, so "overridden by …" comes
 //! from stored rows.
@@ -107,6 +112,19 @@ pub struct Correction {
     pub op: CorrectionOp,
 }
 
+/// The current revision of a manual entry. A running timer has its end
+/// resolved to `as_of` by the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualEntry {
+    pub id: String,
+    pub rev: i64,
+    pub start: UtcMillis,
+    pub end: UtcMillis,
+    /// A timer (`timer_measured`) or a retroactive entry (`user_asserted`).
+    pub timer: bool,
+    pub target: Option<TargetRef>,
+}
+
 /// A counted atom: constant status, candidate and target over `[start, end)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom {
@@ -121,6 +139,10 @@ pub struct Atom {
     pub target: Option<(TargetRef, String)>,
     /// Targets rejected by corrections covering this atom (a suppression set).
     pub rejected: BTreeSet<TargetRef>,
+    /// Manual entries covering this atom, as `id@rev`.
+    pub manual: Vec<String>,
+    /// Targets of the covering manual entries, minus rejected ones.
+    pub manual_targets: BTreeSet<TargetRef>,
 }
 
 /// IDs of corrections removed by a non-revoked `revoke` (a revoke can itself be revoked).
@@ -140,6 +162,15 @@ pub fn revoked(corrections: &[Correction]) -> BTreeSet<String> {
 }
 
 pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -> Vec<Atom> {
+    count(candidates, &[], corrections)
+}
+
+/// Counting precedence (§7.4): correction → manual entry → inferred → unknown/blank.
+pub fn count(
+    candidates: &[Candidate],
+    manual: &[ManualEntry],
+    corrections: &[Correction],
+) -> Vec<Atom> {
     let gone = revoked(corrections);
     let mut live: Vec<&Correction> = corrections
         .iter()
@@ -156,6 +187,9 @@ pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -
     for c in &live {
         bounds.extend([c.start.0, c.end.0]);
     }
+    for m in manual.iter().filter(|m| m.end > m.start) {
+        bounds.extend([m.start.0, m.end.0]);
+    }
     bounds.sort_unstable();
     bounds.dedup();
 
@@ -168,11 +202,19 @@ pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -
             covers(c.start.0, c.end.0)
                 && matches!(c.op, CorrectionOp::ConfirmWork | CorrectionOp::MarkNonWork)
         });
-        let status = match (counting.map(|c| &c.op), candidate) {
-            (Some(CorrectionOp::ConfirmWork), _) => WorkStatus::Work(WorkBasis::UserAsserted),
-            (Some(_), _) => WorkStatus::NonWork,
-            (None, Some(c)) => c.status,
-            (None, None) => continue, // blank
+        let entries: Vec<&ManualEntry> = manual
+            .iter()
+            .filter(|m| covers(m.start.0, m.end.0))
+            .collect();
+        let status = match (counting.map(|c| &c.op), entries.is_empty(), candidate) {
+            (Some(CorrectionOp::ConfirmWork), _, _) => WorkStatus::Work(WorkBasis::UserAsserted),
+            (Some(_), _, _) => WorkStatus::NonWork,
+            (None, false, _) if entries.iter().all(|m| m.timer) => {
+                WorkStatus::Work(WorkBasis::TimerMeasured)
+            }
+            (None, false, _) => WorkStatus::Work(WorkBasis::UserAsserted),
+            (None, true, Some(c)) => c.status,
+            (None, true, None) => continue, // blank
         };
         let mut target: Option<(TargetRef, String)> = None;
         let mut rejected = BTreeSet::new();
@@ -191,6 +233,11 @@ pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -
                 _ => {}
             }
         }
+        let manual_targets: BTreeSet<TargetRef> = entries
+            .iter()
+            .filter_map(|m| m.target.clone())
+            .filter(|t| !rejected.contains(t))
+            .collect();
         let atom = Atom {
             start: UtcMillis(a),
             end: UtcMillis(b),
@@ -199,6 +246,11 @@ pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -
             decided_by: counting.map(|c| c.id.clone()),
             target,
             rejected,
+            manual: entries
+                .iter()
+                .map(|m| format!("{}@{}", m.id, m.rev))
+                .collect(),
+            manual_targets,
         };
         match out.last_mut() {
             Some(last)
@@ -207,7 +259,8 @@ pub fn apply_corrections(candidates: &[Candidate], corrections: &[Correction]) -
                     && last.candidate == atom.candidate
                     && last.decided_by == atom.decided_by
                     && last.target == atom.target
-                    && last.rejected == atom.rejected =>
+                    && last.rejected == atom.rejected
+                    && last.manual == atom.manual =>
             {
                 last.end = atom.end;
             }
@@ -446,6 +499,92 @@ mod tests {
             CorrectionOp::RejectTarget(t.clone()),
         ));
         assert_eq!(target_minutes(&apply_corrections(&cand, &r), &t), 0);
+    }
+
+    fn entry(
+        id: &str,
+        from: (i64, i64),
+        to: (i64, i64),
+        timer: bool,
+        target: Option<TargetRef>,
+    ) -> ManualEntry {
+        ManualEntry {
+            id: id.into(),
+            rev: 1,
+            start: UtcMillis(hm(from.0, from.1)),
+            end: UtcMillis(hm(to.0, to.1)),
+            timer,
+            target,
+        }
+    }
+
+    #[test]
+    fn walkthrough_a_manual_only_day_counts_135_and_leaves_the_rest_blank() {
+        let design = TargetRef::Other("TRACR-12 design".into());
+        let meeting = TargetRef::Category("meeting".into());
+        let atoms = count(
+            &[],
+            &[
+                entry("t1", (8, 30), (9, 45), true, Some(design.clone())),
+                entry("m1", (13, 0), (14, 0), false, Some(meeting.clone())),
+            ],
+            &[],
+        );
+        assert_eq!(mins(&atoms), (135, 0, 0));
+        assert_eq!(atoms.len(), 2, "nothing else: blank has no atom");
+        assert_eq!(atoms[0].status, WorkStatus::Work(WorkBasis::TimerMeasured));
+        assert_eq!(atoms[1].status, WorkStatus::Work(WorkBasis::UserAsserted));
+        assert_eq!(
+            atoms[0].manual_targets.iter().collect::<Vec<_>>(),
+            vec![&design]
+        );
+        assert_eq!(
+            atoms[1].manual_targets.iter().collect::<Vec<_>>(),
+            vec![&meeting]
+        );
+    }
+
+    #[test]
+    fn a_manual_entry_overrides_inferred_and_unknown_time_and_corrections_override_it() {
+        let cand = walkthrough_b();
+        // Manual 09:20–09:40 over inferred A (5), unknown (7) and inferred B (8).
+        let m = [entry(
+            "m1",
+            (9, 20),
+            (9, 40),
+            false,
+            Some(TargetRef::Category("meeting".into())),
+        )];
+        let atoms = count(&cand, &m, &[]);
+        assert_eq!(
+            mins(&atoms),
+            (87 + 7, 13, 0),
+            "counted once, the unknown 7 becomes asserted"
+        );
+        // A later break correction wins over the manual entry for its overlap.
+        let k = [c("k1", 1, (9, 30), (9, 40), CorrectionOp::MarkNonWork)];
+        assert_eq!(mins(&count(&cand, &m, &k)), (87 + 7 - 10, 13, 10));
+    }
+
+    #[test]
+    fn overlapping_manual_entries_count_once_and_conflict_on_targets() {
+        let a = TargetRef::Category("meeting".into());
+        let b = TargetRef::Category("support".into());
+        let atoms = count(
+            &[],
+            &[
+                entry("x", (10, 0), (11, 0), false, Some(a)),
+                entry("y", (10, 30), (11, 30), false, Some(b)),
+            ],
+            &[],
+        );
+        assert_eq!(mins(&atoms), (90, 0, 0), "the overlap counts once");
+        let overlap = atoms.iter().find(|x| x.start.0 == hm(10, 30)).unwrap();
+        assert_eq!(
+            overlap.manual_targets.len(),
+            2,
+            "two targets: conflicting until resolved"
+        );
     }
 
     #[test]

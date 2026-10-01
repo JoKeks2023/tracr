@@ -102,6 +102,8 @@ pub enum Job {
         crate::correct::CorrectionRequest,
         Sender<Result<String, String>>,
     ),
+    /// A manual entry or timer operation, then an immediate update.
+    Manual(crate::manual::ManualRequest, Sender<Result<String, String>>),
     Stop(String),
 }
 
@@ -116,6 +118,7 @@ impl Job {
             Self::Overflow => "overflow",
             Self::Refresh(_) => "refresh",
             Self::Correct(..) => "correct",
+            Self::Manual(..) => "manual",
             Self::Stop(_) => "stop",
         }
     }
@@ -428,6 +431,10 @@ impl Collector {
         if let Err(e) = self.probe_git() {
             self.note_error(&e);
         }
+        // A running timer counts up to `as_of`: its minutes grow every beat.
+        if self.app.running_timer()?.is_some() {
+            self.dirty = true;
+        }
         let keys = key_states(&self.app, self.sensor_available);
         let env = IngestEnv {
             clock: &*self.app.clock,
@@ -451,6 +458,14 @@ impl Collector {
     /// Records a user correction and updates the derived store at once.
     pub fn correct(&mut self, req: &crate::correct::CorrectionRequest) -> Result<String> {
         let id = self.app.correct(req)?;
+        self.dirty = true;
+        self.rebuild()?;
+        Ok(id)
+    }
+
+    /// Applies a manual-entry operation and updates the derived store at once.
+    pub fn manual(&mut self, req: &crate::manual::ManualRequest) -> Result<String> {
+        let id = self.app.manual(req)?;
         self.dirty = true;
         self.rebuild()?;
         Ok(id)
@@ -511,6 +526,11 @@ impl Collector {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
+            Job::Manual(req, reply) => {
+                let result = self.manual(&req);
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
             Job::Stop(_) => Ok(()),
         }
     }
@@ -524,6 +544,17 @@ pub struct RuntimeHandle {
 }
 
 impl RuntimeHandle {
+    /// Applies a manual-entry or timer operation through the collector.
+    pub fn manual(&self, req: crate::manual::ManualRequest) -> Result<String> {
+        let (tx, rx) = mpsc::channel();
+        self.jobs
+            .send(Job::Manual(req, tx))
+            .map_err(|_| anyhow!("collector stopped"))?;
+        rx.recv()
+            .map_err(|_| anyhow!("collector stopped"))?
+            .map_err(|e| anyhow!(e))
+    }
+
     /// Records a correction through the collector (it holds the writer lock).
     pub fn correct(&self, req: crate::correct::CorrectionRequest) -> Result<String> {
         let (tx, rx) = mpsc::channel();

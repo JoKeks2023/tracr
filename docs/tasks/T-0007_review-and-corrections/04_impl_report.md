@@ -13,3 +13,18 @@
 | UI: clickable human intervals → interval panel (count / break / undo, target dropdown with "Other…", history); "N to review" → review list with quick Work and Break | `apps/desktop/ui/src/{IntervalSheet,ReviewList,Timeline,App}.tsx` |
 
 Corrections are range-anchored (§6.4): they survive every re-derivation and can never become orphans. Orphans appear only with segment- or turn-anchored corrections (later).
+
+## S2.2 manual entries and the timer (2026-10-01)
+
+| Part | Where |
+|---|---|
+| `ManualEntry`; counting precedence correction → manual → inferred → unknown; timer → `timer_measured`, retroactive → `user_asserted`; manual targets (one confirmed, several conflicting) | `crates/tracr-core/src/counting.rs` (`count`) |
+| Ledger: `manual_entry_rev` revisions (`append_manual_rev`, `manual_entries` = current revision) | `crates/tracr-store/src/ledger.rs` |
+| `App::manual`: start timer (stops a running one at the same instant, AD-15), stop, add, edit, delete, each as one user action plus revisions | `crates/tracr-app/src/manual.rs` |
+| Derivation: running timer ends at `as_of`; `decided_by = manual_entry:<id>@<rev>`; explicit attribution with origin `manual` | `crates/tracr-app/src/derive_human.rs` |
+| Runtime `Job::Manual`; a running timer marks the store dirty every heartbeat, so its minutes grow | `crates/tracr-app/src/runtime.rs` |
+| Desktop: `manual` command; `running_timer` in status; menu-bar item shows elapsed time, its menu has Start/Stop timer | `apps/desktop/src-tauri/src/main.rs` |
+| UI: timer control in the header (start with target, live clock, stop), "Add time" sheet, edit or delete from the interval panel | `apps/desktop/ui/src/{TimerControl,EntrySheet,TargetSelect,IntervalSheet,App}.tsx` |
+| `derived.sqlite` in WAL mode (schema v5): readers never wait for an update | `crates/tracr-store/src/derived.rs` |
+
+**Decision (conservative default):** starting a timer while one runs stops the running one at the same instant. AD-15 allows at most one running timer and does not say how a second start is handled.

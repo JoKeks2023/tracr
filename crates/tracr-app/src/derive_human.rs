@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
-use tracr_core::counting::{Atom, Correction, TargetRef, apply_corrections};
+use tracr_core::counting::{Atom, Correction, ManualEntry, TargetRef, count};
 use tracr_core::coverage::{CoverageInterval, CoverageState, Run, coverage_for_key};
 use tracr_core::device::{DeviceEvent, DeviceFacts, device_lane};
 use tracr_core::evidence::{CollectorFacts, Facts, GitFacts};
@@ -58,6 +58,9 @@ struct Piece {
     candidate_status: Option<WorkStatus>,
     decided_by: Option<String>,
     target: Option<(TargetRef, String)>,
+    /// Covering manual entries (`id@rev`) and their targets.
+    manual: Vec<String>,
+    manual_targets: BTreeSet<TargetRef>,
 }
 
 impl Piece {
@@ -84,12 +87,16 @@ impl Piece {
         cand.proposals.retain(|(t, _)| *t >= a.start && *t < a.end);
         if a.decided_by.is_some() {
             cand.reasons.push("user_correction");
+        } else if !a.manual.is_empty() {
+            cand.reasons.push("manual_entry");
         }
         Self {
             cand,
             candidate_status: a.candidate.as_ref().map(|c| c.status),
             decided_by: a.decided_by.clone(),
             target: a.target.clone(),
+            manual: a.manual.clone(),
+            manual_targets: a.manual_targets.clone(),
         }
     }
 }
@@ -419,7 +426,20 @@ pub fn derive(
         .iter()
         .filter_map(crate::correct::from_row)
         .collect();
-    let atoms = apply_corrections(&candidates, &corrections);
+    // Manual entries (current revisions, not deleted); a running timer counts up to `as_of`.
+    let manual: Vec<ManualEntry> = ledger::manual_entries(ledger)?
+        .into_iter()
+        .filter(|m| !m.deleted)
+        .map(|m| ManualEntry {
+            id: m.entry_id,
+            rev: m.rev,
+            start: UtcMillis(m.start_at),
+            end: UtcMillis(m.end_at.unwrap_or(as_of.0).max(m.start_at)),
+            timer: m.kind == "timer",
+            target: m.target.as_deref().and_then(TargetRef::parse),
+        })
+        .collect();
+    let atoms = count(&candidates, &manual, &corrections);
     let git = GitMap::load(ledger)?;
     for atom in &atoms {
         let piece = Piece::from_atom(atom);
@@ -486,7 +506,33 @@ fn attribute_atom(
     if !matches!(c.status, WorkStatus::Work(_)) {
         return Ok(()); // unknown and non-work carry no effective attribution
     }
-    // Explicit level first (§7.5): a target the user set wins the report.
+    // Explicit level first (§7.5): a target the user set wins the report;
+    // then the targets of covering manual entries (one: confirmed; several:
+    // conflicting, TW-04).
+    let manual_explicit = p.target.is_none() && !p.manual_targets.is_empty();
+    if manual_explicit {
+        let keys: Vec<String> = p.manual_targets.iter().map(TargetRef::key).collect();
+        let state = if keys.len() == 1 {
+            "confirmed"
+        } else {
+            "conflicting"
+        };
+        w.attribution(
+            "human_atom",
+            atom_id,
+            "explicit",
+            state,
+            &serde_json::to_string(&keys)?,
+            "manual",
+            p.manual
+                .first()
+                .map(|m| format!("manual_entry:{m}"))
+                .as_deref(),
+            true,
+            true,
+            run_id,
+        )?;
+    }
     let explicit = p.target.as_ref();
     if let Some((t, by)) = explicit {
         let targets = serde_json::to_string(&[t.key()])?;
@@ -503,8 +549,9 @@ fn attribute_atom(
             run_id,
         )?;
     }
+    let explicit_any = explicit.is_some() || manual_explicit;
     let Some(session) = &c.engaged else {
-        if explicit.is_none() {
+        if !explicit_any {
             w.attribution(
                 "human_atom",
                 atom_id,
@@ -538,7 +585,7 @@ fn attribute_atom(
     let evidence = (unresolved > 0).then(|| format!("{unresolved} instant(s) without git context"));
     let state = |n: usize| if n == 1 { "confirmed" } else { "conflicting" };
     let json = |set: &BTreeSet<String>| serde_json::to_string(set).expect("json");
-    let report = if explicit.is_some() {
+    let report = if explicit_any {
         "explicit"
     } else if !repos.is_empty() {
         "repository"
@@ -613,10 +660,11 @@ fn write_atom(
         }
         None => ("blank", None, "none"),
     };
-    let decided_by = p
-        .decided_by
-        .as_ref()
-        .map_or_else(|| "inference".to_owned(), |id| format!("correction:{id}"));
+    let decided_by = match (&p.decided_by, p.manual.first()) {
+        (Some(id), _) => format!("correction:{id}"),
+        (None, Some(m)) => format!("manual_entry:{m}"),
+        (None, None) => "inference".to_owned(),
+    };
     let target_key = p.target.as_ref().map(|t| t.0.key()).unwrap_or_default();
     let id = derived_id(
         "atm_",

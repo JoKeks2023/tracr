@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
-import type { CorrectionInfo, CorrectionRequest, DayAgents, HumanAtom, TargetOption } from "./types";
+import type { CorrectionInfo, CorrectionRequest, DayAgents, HumanAtom, ManualEntryInfo, TargetOption } from "./types";
 
 const REASON: Record<string, string> = {
   coverage_gap: "tracr was not collecting everything needed",
@@ -19,7 +19,9 @@ const OP_TEXT: Record<CorrectionInfo["op"], string> = {
 
 export function statusText(a: HumanAtom): string {
   if (a.status === "work") {
-    return a.duration_basis === "inferred_continuity" ? "Counted · inferred" : "Counted · confirmed by you";
+    if (a.duration_basis === "inferred_continuity") return "Counted · inferred";
+    if (a.duration_basis === "timer_measured") return "Counted · your timer";
+    return a.manual_entry && !a.decided_by ? "Counted · your entry" : "Counted · confirmed by you";
   }
   if (a.status === "non_work") return "Break · excluded by you";
   return `Unknown · ${REASON[a.unknown_reason ?? ""] ?? a.unknown_reason}`;
@@ -34,12 +36,13 @@ function targetText(a: HumanAtom): string {
   return at.state === "conflicting" ? `conflicting: ${at.labels.join(", ")}` : "unattributed";
 }
 
-export function IntervalSheet({ atom, day, targets, onClose, onChanged }: {
+export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEntry }: {
   atom: HumanAtom;
   day: DayAgents;
   targets: TargetOption[];
   onClose: () => void;
   onChanged: (message: string, error?: boolean) => void;
+  onEditEntry: (e: ManualEntryInfo) => void;
 }) {
   const tz = day.timezone;
   const [busy, setBusy] = useState(false);
@@ -110,6 +113,24 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged }: {
               {atom.candidate_reason ? ` (${atom.candidate_reason.replaceAll("_", " ")})` : ""}.
             </p>
           )}
+
+          {atom.manual_entry &&
+            (() => {
+              const e = day.manual_entries.find((m) => m.id === atom.manual_entry);
+              return e ? (
+                <section>
+                  <h3>{e.kind === "timer" ? "Your timer" : "Your entry"}</h3>
+                  <p className="current">
+                    {hhmm(e.start, tz)}–{e.end ? hhmm(e.end, tz) : "running"}
+                    {e.target_label ? ` · ${e.target_label}` : ""}
+                    {e.note ? ` · ${e.note}` : ""}
+                  </p>
+                  <button className="button secondary" onClick={() => onEditEntry(e)}>
+                    Edit or delete
+                  </button>
+                </section>
+              ) : null;
+            })()}
 
           <section>
             <h3>Does this time count?</h3>

@@ -9,6 +9,7 @@ pub mod day;
 pub mod derive;
 pub mod derive_human;
 pub mod export;
+pub mod manual;
 pub mod runtime;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -491,7 +492,14 @@ impl Reader {
     /// Agent activity of one reporting day (`YYYY-MM-DD`), every session individually.
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
-        day::day_agents(&self.derived()?, &self.reporting_zone()?, day, &corrections)
+        let manual = ledger::manual_entries(&self.conn)?;
+        day::day_agents(
+            &self.derived()?,
+            &self.reporting_zone()?,
+            day,
+            &corrections,
+            &manual,
+        )
     }
 
     /// Targets time can be assigned to (S2): repositories seen in sessions,
@@ -542,6 +550,14 @@ impl Reader {
             });
         }
         Ok(out)
+    }
+
+    /// The running timer, if any (cheap enough to poll).
+    pub fn running_timer(&self) -> Result<Option<day::ManualEntryInfo>> {
+        Ok(ledger::manual_entries(&self.conn)?
+            .iter()
+            .find(|m| m.kind == "timer" && m.end_at.is_none() && !m.deleted)
+            .map(day::ManualEntryInfo::from))
     }
 
     /// Approved provider roots (a single settings read; cheap enough to poll).

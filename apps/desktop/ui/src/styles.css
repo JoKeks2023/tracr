@@ -351,3 +351,18 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 .review-row.unknown .review-status { color: var(--text-secondary); }
 .review-row.work .review-status { color: var(--accent-11); }
 .review-actions { display: flex; gap: var(--space-1); padding-right: var(--space-2); }
+
+/* ---- Timer and manual entries (S2.2) -------------------------------------- */
+
+.timer { position: relative; display: inline-flex; align-items: center; gap: var(--space-2); font-size: 13px; }
+.dot.recording { background: var(--accent-10); animation: pulse 1.6s var(--ease-standard) infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.recording { animation: none; } }
+.popover {
+  position: absolute; top: calc(100% + var(--space-2)); right: 0; z-index: 12; width: 20rem;
+  background: var(--surface-raised); border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--space-4); transform-origin: top right; animation: pop var(--duration-base) var(--ease-standard);
+}
+@keyframes pop { from { opacity: 0; transform: scale(0.97); } }
+.popover .actions { padding-top: var(--space-3); }
+.field .target-row { width: 100%; }

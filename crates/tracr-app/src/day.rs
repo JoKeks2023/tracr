@@ -180,7 +180,41 @@ pub struct HumanAtom {
     pub decided_by: Option<String>,
     /// The derivation underneath: `work`, `unknown`, `non_work` or `blank`.
     pub candidate_status: Option<String>,
+    /// The manual entry that counts this time, if any.
+    pub manual_entry: Option<String>,
     pub candidate_reason: Option<String>,
+}
+
+/// A manual entry (timer or retroactive) overlapping the day.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManualEntryInfo {
+    pub id: String,
+    pub rev: i64,
+    /// `timer` or `retroactive`.
+    pub kind: String,
+    pub start: i64,
+    /// `None` while the timer runs.
+    pub end: Option<i64>,
+    pub running: bool,
+    pub target: Option<String>,
+    pub target_label: Option<String>,
+    pub note: Option<String>,
+}
+
+impl From<&tracr_store::ledger::ManualRev> for ManualEntryInfo {
+    fn from(m: &tracr_store::ledger::ManualRev) -> Self {
+        Self {
+            id: m.entry_id.clone(),
+            rev: m.rev,
+            kind: m.kind.clone(),
+            start: m.start_at,
+            end: m.end_at,
+            running: m.kind == "timer" && m.end_at.is_none(),
+            target_label: m.target.as_deref().map(target_label),
+            target: m.target.clone(),
+            note: m.note.clone(),
+        }
+    }
 }
 
 /// One user correction overlapping the day, with its current effect.
@@ -372,6 +406,7 @@ pub struct DayAgents {
     pub coverage: BTreeMap<String, Vec<LaneInterval>>,
     pub quality: DayQuality,
     pub corrections: Vec<CorrectionInfo>,
+    pub manual_entries: Vec<ManualEntryInfo>,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -423,6 +458,7 @@ pub fn day_agents(
     zone: &ReportingZone,
     day: &str,
     corrections: &[tracr_store::ledger::CorrectionRow],
+    manual: &[tracr_store::ledger::ManualRev],
 ) -> Result<DayAgents> {
     let date: Date = day
         .parse()
@@ -562,6 +598,11 @@ pub fn day_agents(
                 .collect(),
             attribution,
             decided_by: a.decided_by.strip_prefix("correction:").map(str::to_owned),
+            manual_entry: a
+                .decided_by
+                .strip_prefix("manual_entry:")
+                .and_then(|m| m.split('@').next())
+                .map(str::to_owned),
             candidate_status: a.candidate_status.clone(),
             candidate_reason: a.candidate_reason.clone(),
         });
@@ -609,6 +650,11 @@ pub fn day_agents(
     };
     Ok(DayAgents {
         corrections: correction_infos(corrections, start, end),
+        manual_entries: manual
+            .iter()
+            .filter(|m| !m.deleted && m.start_at < end && m.end_at.is_none_or(|e| e > start))
+            .map(ManualEntryInfo::from)
+            .collect(),
         quality,
         human,
         device: derived::device_in(conn, start, end)?
