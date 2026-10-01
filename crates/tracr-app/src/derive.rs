@@ -51,6 +51,16 @@ pub fn normalizers() -> Vec<Arc<dyn Normalizer>> {
     ]
 }
 
+/// The normalizer versions and segment rule a derived store was built with.
+fn normalizer_versions() -> String {
+    let mut v: Vec<&str> = normalizers()
+        .iter()
+        .map(|n| n.normalizer_version())
+        .collect();
+    v.sort_unstable();
+    format!("{}|{}", v.join(","), SegmentParams::default().rule_ref())
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RebuildReport {
     pub as_of: String,
@@ -179,9 +189,10 @@ pub fn update(
     else {
         return Ok(None);
     };
-    // A new pricing catalog re-estimates every record: rebuild.
+    // A new pricing catalog or normalizer version re-derives everything: rebuild.
     if derived::meta(&conn, "pricing_revision")?.as_deref()
         != Some(crate::pricing::bundled().revision.as_str())
+        || derived::meta(&conn, "normalizers")?.as_deref() != Some(normalizer_versions().as_str())
     {
         return Ok(None);
     }
@@ -835,6 +846,7 @@ fn derive_into(
         )?;
         w.meta("as_of", &as_of.0.to_string())?;
         w.meta("pricing_revision", &pricing.revision)?;
+        w.meta("normalizers", &normalizer_versions())?;
         w.meta("obs_watermark", &report.obs_watermark.to_string())?;
         w.commit()?;
     }

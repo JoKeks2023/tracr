@@ -157,3 +157,45 @@ fn an_incremental_update_keeps_the_estimates() {
         before.sessions[0].cost.amount_nano.map(|n| n + 1_240_000)
     );
 }
+
+/// INV-7: no API sums different money kinds or successive reported
+/// snapshots. The day DTO has no total across kinds, and the reported figure
+/// is the latest one, never added to anything.
+#[test]
+fn inv7_no_total_across_money_kinds() {
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    setup(&data, &root);
+    let day = Reader::open(&data).unwrap().day_agents(DAY).unwrap();
+    let json = serde_json::to_value(&day).unwrap();
+
+    fn keys(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                for (k, x) in m {
+                    out.push(k.clone());
+                    keys(x, out);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| keys(x, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    keys(&json, &mut all);
+    for k in &all {
+        let k = k.to_lowercase();
+        assert!(
+            !(k.contains("total")
+                && (k.contains("cost") || k.contains("money") || k.contains("spend"))),
+            "a key that totals money: {k}"
+        );
+    }
+    // The estimate and the reported figure live in separate places.
+    assert!(json["cost"].get("reported").is_none());
+    assert_eq!(
+        json["sessions"][0]["reported"][0]["value_nano"],
+        950_000_000
+    );
+    assert_eq!(json["sessions"][0]["cost"]["amount_nano"], 6_980_000);
+}

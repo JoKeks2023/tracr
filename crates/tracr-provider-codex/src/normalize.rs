@@ -29,7 +29,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use tracr_core::adapter::StreamRef;
 use tracr_core::events::{FactKind, PROMPT_SUBMITTED};
 use tracr_core::evidence::{
-    Marker, ModelSource, SourceKind, TemporalExtent, UsageFacts, UsageScope, UsageSemantics,
+    ContextFacts, Marker, ModelSource, SourceKind, TemporalExtent, UsageFacts, UsageScope,
+    UsageSemantics,
 };
 use tracr_core::manifest::CapabilityManifest;
 use tracr_core::normalize::{
@@ -41,7 +42,7 @@ use tracr_core::time::UtcMillis;
 use crate::manifest::{self, version_core};
 use crate::{PRODUCER, SOURCE_KIND};
 
-pub const NORMALIZER_VERSION: &str = "codex-normalize/1";
+pub const NORMALIZER_VERSION: &str = "codex-normalize/2";
 pub const RECORD_ELECTION_RULE: &str = "codex.last_record_per_response@1";
 pub const DELTA_ELECTION_RULE: &str = "codex.cumulative_delta@1";
 
@@ -197,6 +198,9 @@ impl Normalizer for CodexNormalizer {
         let mut by_response: BTreeMap<String, (usize, Vec<usize>)> = BTreeMap::new();
         let mut response_order: Vec<String> = Vec::new();
         let mut prev_cwd: Option<String> = None;
+        // Codex states the working directory on thread and turn records only:
+        // every event carries the thread's latest context.
+        let mut ctx: Option<ContextFacts> = None;
         let mut model: Option<String> = None;
         let mut tier: Option<String> = None;
         let mut last_total: Option<Totals> = None;
@@ -205,6 +209,16 @@ impl Normalizer for CodexNormalizer {
         let mut resets = 0u64;
 
         for (i, r) in records.iter().enumerate() {
+            if let Some(c) = &r.facts.context {
+                let cur = ctx.get_or_insert_with(ContextFacts::default);
+                if c.cwd.is_some() {
+                    cur.cwd = c.cwd.clone();
+                }
+                if c.git_branch.is_some() {
+                    cur.git_branch = c.git_branch.clone();
+                }
+            }
+            let event_ctx = ctx.clone();
             let mut ordinal = 0u32;
             let mut push = |events: &mut Vec<NormEvent>,
                             kind: EventKind,
@@ -222,7 +236,7 @@ impl Normalizer for CodexNormalizer {
                     native_id: native,
                     model: None,
                     tool: None,
-                    context: r.facts.context.clone(),
+                    context: event_ctx.clone(),
                 });
                 ordinal += 1;
                 events.len() - 1
