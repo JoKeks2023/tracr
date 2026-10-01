@@ -97,6 +97,11 @@ pub enum Job {
     /// Watcher error or overflow: events may have been lost.
     Overflow,
     Refresh(Sender<Result<Refreshed, String>>),
+    /// A user correction: recorded, then the derived store is updated at once.
+    Correct(
+        crate::correct::CorrectionRequest,
+        Sender<Result<String, String>>,
+    ),
     Stop(String),
 }
 
@@ -110,6 +115,7 @@ impl Job {
             Self::Discovery => "discovery",
             Self::Overflow => "overflow",
             Self::Refresh(_) => "refresh",
+            Self::Correct(..) => "correct",
             Self::Stop(_) => "stop",
         }
     }
@@ -442,6 +448,14 @@ impl Collector {
         self.rebuild_if_due()
     }
 
+    /// Records a user correction and updates the derived store at once.
+    pub fn correct(&mut self, req: &crate::correct::CorrectionRequest) -> Result<String> {
+        let id = self.app.correct(req)?;
+        self.dirty = true;
+        self.rebuild()?;
+        Ok(id)
+    }
+
     /// `coverage_ended` (a clean stop).
     pub fn end(mut self, reason: &str) -> Result<()> {
         let env = IngestEnv {
@@ -492,6 +506,11 @@ impl Collector {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
+            Job::Correct(req, reply) => {
+                let result = self.correct(&req);
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
             Job::Stop(_) => Ok(()),
         }
     }
@@ -505,6 +524,17 @@ pub struct RuntimeHandle {
 }
 
 impl RuntimeHandle {
+    /// Records a correction through the collector (it holds the writer lock).
+    pub fn correct(&self, req: crate::correct::CorrectionRequest) -> Result<String> {
+        let (tx, rx) = mpsc::channel();
+        self.jobs
+            .send(Job::Correct(req, tx))
+            .map_err(|_| anyhow!("collector stopped"))?;
+        rx.recv()
+            .map_err(|_| anyhow!("collector stopped"))?
+            .map_err(|e| anyhow!(e))
+    }
+
     pub fn status(&self) -> RuntimeStatus {
         self.status.lock().map(|s| s.clone()).unwrap_or_default()
     }

@@ -4,6 +4,7 @@
 //! approving roots, importing, rebuilding the derived store, and reading
 //! statistics and day views.
 
+pub mod correct;
 pub mod day;
 pub mod derive;
 pub mod derive_human;
@@ -489,7 +490,58 @@ impl Reader {
 
     /// Agent activity of one reporting day (`YYYY-MM-DD`), every session individually.
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
-        day::day_agents(&self.derived()?, &self.reporting_zone()?, day)
+        let corrections = ledger::corrections(&self.conn)?;
+        day::day_agents(&self.derived()?, &self.reporting_zone()?, day, &corrections)
+    }
+
+    /// Targets time can be assigned to (S2): repositories seen in sessions,
+    /// the fixed categories, and "Other…" labels used before.
+    pub fn targets(&self) -> Result<Vec<day::TargetOption>> {
+        let mut out = Vec::new();
+        if let Some(d) = tracr_store::derived::open_read_only(&self.data_dir)? {
+            let mut stmt = d.prepare(
+                "SELECT DISTINCT repository_key FROM agent_session WHERE repository_key IS NOT NULL ORDER BY 1",
+            )?;
+            let repos: Vec<String> = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for k in repos {
+                let key = tracr_core::counting::TargetRef::Repository(k).key();
+                out.push(day::TargetOption {
+                    label: day::target_label(&key),
+                    key,
+                    group: "repository".into(),
+                });
+            }
+        }
+        for c in tracr_core::counting::CATEGORIES {
+            let key = tracr_core::counting::TargetRef::Category((*c).to_owned()).key();
+            out.push(day::TargetOption {
+                label: day::target_label(&key),
+                key,
+                group: "category".into(),
+            });
+        }
+        let mut others: Vec<String> = ledger::corrections(&self.conn)?
+            .iter()
+            .filter_map(correct::from_row)
+            .filter_map(|c| match c.op {
+                tracr_core::counting::CorrectionOp::SetTarget(
+                    t @ tracr_core::counting::TargetRef::Other(_),
+                ) => Some(t.key()),
+                _ => None,
+            })
+            .collect();
+        others.sort();
+        others.dedup();
+        for key in others {
+            out.push(day::TargetOption {
+                label: day::target_label(&key),
+                key,
+                group: "other".into(),
+            });
+        }
+        Ok(out)
     }
 
     /// Approved provider roots (a single settings read; cheap enough to poll).

@@ -948,3 +948,89 @@ pub fn recovered_record_times(conn: &Connection, since: i64) -> Result<Vec<i64>>
     let rows = stmt.query_map([since], |r| r.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
+
+// ---------------------------------------------------------------------------
+// Corrections (§6.5): append-only, anchored to ranges of the human timeline
+// ---------------------------------------------------------------------------
+
+pub struct NewCorrection<'a> {
+    pub id: &'a str,
+    pub action_seq: i64,
+    pub axis: &'a str,
+    pub op: &'a str,
+    pub ui_op: Option<&'a str>,
+    pub subject_kind: &'a str,
+    pub range_start: Option<i64>,
+    pub range_end: Option<i64>,
+    pub data: Option<&'a str>,
+    pub against: Option<&'a str>,
+}
+
+pub fn append_correction(conn: &Connection, c: &NewCorrection<'_>) -> Result<()> {
+    conn.execute(
+        "INSERT INTO correction (id, action_seq, axis, op, ui_op, subject_kind, range_start, range_end, data, against)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            c.id,
+            c.action_seq,
+            c.axis,
+            c.op,
+            c.ui_op,
+            c.subject_kind,
+            c.range_start,
+            c.range_end,
+            c.data,
+            c.against
+        ],
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrectionRow {
+    pub id: String,
+    pub action_seq: i64,
+    pub at: UtcMillis,
+    pub axis: String,
+    pub op: String,
+    pub ui_op: Option<String>,
+    pub range_start: Option<i64>,
+    pub range_end: Option<i64>,
+    pub data: Option<String>,
+    pub reason: Option<String>,
+    pub client: String,
+}
+
+/// Every correction with its user action, in action order.
+pub fn corrections(conn: &Connection) -> Result<Vec<CorrectionRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.action_seq, a.at, c.axis, c.op, c.ui_op, c.range_start, c.range_end, c.data,
+                a.reason, a.client
+         FROM correction c JOIN user_action a ON a.seq = c.action_seq ORDER BY c.action_seq",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(CorrectionRow {
+            id: r.get(0)?,
+            action_seq: r.get(1)?,
+            at: UtcMillis(r.get(2)?),
+            axis: r.get(3)?,
+            op: r.get(4)?,
+            ui_op: r.get(5)?,
+            range_start: r.get(6)?,
+            range_end: r.get(7)?,
+            data: r.get(8)?,
+            reason: r.get(9)?,
+            client: r.get(10)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The highest `user_action.seq` (the user-record watermark), 0 if none.
+pub fn max_action_seq(conn: &Connection) -> Result<i64> {
+    Ok(
+        conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM user_action", [], |r| {
+            r.get(0)
+        })?,
+    )
+}

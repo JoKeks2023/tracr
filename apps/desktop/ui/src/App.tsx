@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { compact, dayLabel, duration } from "./format";
 import { ExportSheet } from "./ExportSheet";
+import { IntervalSheet } from "./IntervalSheet";
+import { ReviewList } from "./ReviewList";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
-import type { DayAgents, DayList, Status } from "./types";
+import type { DayAgents, DayList, HumanAtom, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
@@ -81,6 +83,17 @@ export function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [atom, setAtom] = useState<HumanAtom | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [targets, setTargets] = useState<TargetOption[]>([]);
+  const openAtom = (a: HumanAtom) => {
+    setAtom(a);
+    void api.targets().then(setTargets).catch(() => setTargets([]));
+  };
+  const corrected = (text: string, error?: boolean) => {
+    setNotice({ text, error });
+    if (!error) void loadDays(day);
+  };
 
   const loadDays = useCallback(async (keep?: string | null) => {
     const status = await api.status();
@@ -230,6 +243,11 @@ export function App() {
               ))}
             </select>
           )}
+          {view && view.human.atoms.some((a) => a.status === "unknown") && (
+            <button className="button ghost" onClick={() => setReviewing(true)}>
+              {view.human.atoms.filter((a) => a.status === "unknown").length} to review
+            </button>
+          )}
           {load.state === "ready" && load.days.days.length > 0 && (
             <button className="button ghost" onClick={() => setExporting(true)}>
               Export CSV
@@ -304,7 +322,7 @@ export function App() {
                 ))}
             </div>
           )}
-          <Timeline day={view} selected={selected} onSelect={setSelected} />
+          <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
         </>
       )}
 
@@ -315,6 +333,20 @@ export function App() {
           onClose={() => setExporting(false)}
           onDone={(text, error) => setNotice({ text, error })}
         />
+      )}
+      {reviewing && view && (
+        <ReviewList
+          day={view}
+          onOpen={(a) => {
+            setReviewing(false);
+            openAtom(a);
+          }}
+          onClose={() => setReviewing(false)}
+          onChanged={corrected}
+        />
+      )}
+      {atom && view && (
+        <IntervalSheet atom={atom} day={view} targets={targets} onClose={() => setAtom(null)} onChanged={corrected} />
       )}
       {session && view && <SessionSheet s={session} tz={view.timezone} onClose={() => setSelected(null)} />}
     </div>

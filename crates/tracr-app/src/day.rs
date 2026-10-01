@@ -176,6 +176,136 @@ pub struct HumanAtom {
     pub proposals: Vec<Proposal>,
     /// Report-target attribution (work only): level, state and target labels.
     pub attribution: Option<Attribution>,
+    /// The correction that decided the status, if any (else inference).
+    pub decided_by: Option<String>,
+    /// The derivation underneath: `work`, `unknown`, `non_work` or `blank`.
+    pub candidate_status: Option<String>,
+    pub candidate_reason: Option<String>,
+}
+
+/// One user correction overlapping the day, with its current effect.
+#[derive(Debug, Clone, Serialize)]
+pub struct CorrectionInfo {
+    pub id: String,
+    pub op: String,
+    pub start: Option<i64>,
+    pub end: Option<i64>,
+    pub target: Option<String>,
+    pub target_label: Option<String>,
+    /// For `revoke`: the correction it undoes.
+    pub revokes: Option<String>,
+    pub at: i64,
+    /// `effective`, `partly superseded`, `superseded` or `revoked`.
+    pub status: String,
+    pub reason: Option<String>,
+}
+
+/// A target the user can choose (dropdown, UI-01).
+#[derive(Debug, Clone, Serialize)]
+pub struct TargetOption {
+    pub key: String,
+    pub label: String,
+    /// `repository`, `category` or `other`.
+    pub group: String,
+}
+
+/// Display label of a target key.
+pub fn target_label(key: &str) -> String {
+    match tracr_core::counting::TargetRef::parse(key) {
+        Some(tracr_core::counting::TargetRef::Repository(k)) => tracr_git::repository_label(&k),
+        Some(tracr_core::counting::TargetRef::Category(c)) => {
+            let mut ch = c.chars();
+            ch.next()
+                .map(|f| f.to_uppercase().chain(ch).collect())
+                .unwrap_or_default()
+        }
+        Some(tracr_core::counting::TargetRef::Other(t)) => t,
+        None => key.to_owned(),
+    }
+}
+
+/// Corrections overlapping `[start, end)` with their status (AD-10: nothing
+/// is replaced silently).
+pub fn correction_infos(
+    rows: &[tracr_store::ledger::CorrectionRow],
+    start: i64,
+    end: i64,
+) -> Vec<CorrectionInfo> {
+    use tracr_core::counting::{Correction, CorrectionOp, revoked};
+    let parsed: Vec<Correction> = rows.iter().filter_map(crate::correct::from_row).collect();
+    let gone = revoked(&parsed);
+    let by_id: BTreeMap<&str, &Correction> = parsed.iter().map(|c| (c.id.as_str(), c)).collect();
+    let range_of = |c: &Correction| -> (i64, i64) {
+        match &c.op {
+            CorrectionOp::Revoke(t) => by_id
+                .get(t.as_str())
+                .map_or((0, 0), |x| (x.start.0, x.end.0)),
+            _ => (c.start.0, c.end.0),
+        }
+    };
+    let mut out = Vec::new();
+    for c in &parsed {
+        let (s, e) = range_of(c);
+        if !(s < end && e > start) {
+            continue;
+        }
+        let status = if gone.contains(&c.id) {
+            "revoked".to_owned()
+        } else if matches!(c.op, CorrectionOp::Revoke(_)) {
+            "effective".to_owned()
+        } else {
+            // Later live corrections on the same axis covering this range.
+            let mut covers: Vec<(i64, i64)> = parsed
+                .iter()
+                .filter(|o| o.seq > c.seq && !gone.contains(&o.id) && o.op.axis() == c.op.axis())
+                .filter(|o| o.start.0 < e && o.end.0 > s)
+                .map(|o| (o.start.0.max(s), o.end.0.min(e)))
+                .collect();
+            covers.sort_unstable();
+            let mut covered = 0;
+            let mut cur: Option<(i64, i64)> = None;
+            for (a, b) in covers {
+                match cur {
+                    Some((ca, cb)) if a <= cb => cur = Some((ca, cb.max(b))),
+                    Some((ca, cb)) => {
+                        covered += cb - ca;
+                        cur = Some((a, b));
+                    }
+                    None => cur = Some((a, b)),
+                }
+            }
+            covered += cur.map_or(0, |(a, b)| b - a);
+            if covered == 0 {
+                "effective"
+            } else if covered >= e - s {
+                "superseded"
+            } else {
+                "partly superseded"
+            }
+            .to_owned()
+        };
+        let row = rows.iter().find(|r| r.id == c.id);
+        let target = match &c.op {
+            CorrectionOp::SetTarget(t) | CorrectionOp::RejectTarget(t) => Some(t.key()),
+            _ => None,
+        };
+        out.push(CorrectionInfo {
+            id: c.id.clone(),
+            op: c.op.name().to_owned(),
+            start: (!matches!(c.op, CorrectionOp::Revoke(_))).then_some(c.start.0),
+            end: (!matches!(c.op, CorrectionOp::Revoke(_))).then_some(c.end.0),
+            target_label: target.as_deref().map(target_label),
+            target,
+            revokes: match &c.op {
+                CorrectionOp::Revoke(t) => Some(t.clone()),
+                _ => None,
+            },
+            at: row.map_or(0, |r| r.at.0),
+            status,
+            reason: row.and_then(|r| r.reason.clone()),
+        });
+    }
+    out
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -241,6 +371,7 @@ pub struct DayAgents {
     /// Coverage per source kind (e.g. `claude_transcript`, `os_sensor`).
     pub coverage: BTreeMap<String, Vec<LaneInterval>>,
     pub quality: DayQuality,
+    pub corrections: Vec<CorrectionInfo>,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -287,7 +418,12 @@ pub fn days(conn: &Connection, zone: &ReportingZone) -> Result<DayList> {
     })
 }
 
-pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<DayAgents> {
+pub fn day_agents(
+    conn: &Connection,
+    zone: &ReportingZone,
+    day: &str,
+    corrections: &[tracr_store::ledger::CorrectionRow],
+) -> Result<DayAgents> {
     let date: Date = day
         .parse()
         .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))?;
@@ -374,12 +510,10 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
                 let targets: Vec<String> = serde_json::from_str(&targets).unwrap_or_default();
                 let labels = targets
                     .iter()
-                    .map(|t| {
-                        if level == "repository" {
-                            tracr_git::repository_label(t)
-                        } else {
-                            t.rsplit('/').next().unwrap_or(t).to_owned()
-                        }
+                    .map(|t| match level.as_str() {
+                        "repository" => tracr_git::repository_label(t),
+                        "explicit" => target_label(t),
+                        _ => t.rsplit('/').next().unwrap_or(t).to_owned(),
                     })
                     .collect();
                 Attribution {
@@ -427,6 +561,9 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
                 .map(|(at, kind)| Proposal { at, kind })
                 .collect(),
             attribution,
+            decided_by: a.decided_by.strip_prefix("correction:").map(str::to_owned),
+            candidate_status: a.candidate_status.clone(),
+            candidate_reason: a.candidate_reason.clone(),
         });
     }
     let instants: Vec<i64> = sessions
@@ -471,6 +608,7 @@ pub fn day_agents(conn: &Connection, zone: &ReportingZone, day: &str) -> Result<
         stream_extents,
     };
     Ok(DayAgents {
+        corrections: correction_infos(corrections, start, end),
         quality,
         human,
         device: derived::device_in(conn, start, end)?

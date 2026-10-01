@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
+use tracr_core::counting::{Atom, Correction, TargetRef, apply_corrections};
 use tracr_core::coverage::{CoverageInterval, CoverageState, Run, coverage_for_key};
 use tracr_core::device::{DeviceEvent, DeviceFacts, device_lane};
 use tracr_core::evidence::{CollectorFacts, Facts, GitFacts};
@@ -46,6 +47,74 @@ pub struct AgentContext {
     pub segments: Vec<(String, i64, i64)>,
     /// (session ID, first evidence, cwd) of every session.
     pub sessions: Vec<(String, Option<i64>, Option<String>)>,
+}
+
+/// A counted atom as written: the candidate fields (status, engaged session,
+/// boundaries, reasons, proposals) plus what corrections decided.
+#[derive(Clone)]
+struct Piece {
+    cand: Candidate,
+    /// Status of the derivation underneath (`None` = blank).
+    candidate_status: Option<WorkStatus>,
+    decided_by: Option<String>,
+    target: Option<(TargetRef, String)>,
+}
+
+impl Piece {
+    fn from_atom(a: &Atom) -> Self {
+        let mut cand = a.candidate.clone().unwrap_or(Candidate {
+            start: a.start,
+            end: a.end,
+            status: a.status,
+            engaged: None,
+            reasons: Vec::new(),
+            start_boundary: "user",
+            end_boundary: "user",
+            proposals: Vec::new(),
+        });
+        if a.candidate.as_ref().is_some_and(|c| c.start != a.start) {
+            cand.start_boundary = "user";
+        }
+        if a.candidate.as_ref().is_some_and(|c| c.end != a.end) {
+            cand.end_boundary = "user";
+        }
+        cand.start = a.start;
+        cand.end = a.end;
+        cand.status = a.status;
+        cand.proposals.retain(|(t, _)| *t >= a.start && *t < a.end);
+        if a.decided_by.is_some() {
+            cand.reasons.push("user_correction");
+        }
+        Self {
+            cand,
+            candidate_status: a.candidate.as_ref().map(|c| c.status),
+            decided_by: a.decided_by.clone(),
+            target: a.target.clone(),
+        }
+    }
+}
+
+fn status_text(
+    s: WorkStatus,
+) -> (
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+    &'static str,
+) {
+    match s {
+        WorkStatus::Work(WorkBasis::InferredContinuity) => {
+            ("work", Some("inferred"), None, "inferred_continuity")
+        }
+        WorkStatus::Work(WorkBasis::TimerMeasured) => {
+            ("work", Some("user_asserted"), None, "timer_measured")
+        }
+        WorkStatus::Work(WorkBasis::UserAsserted) => {
+            ("work", Some("user_asserted"), None, "user_asserted")
+        }
+        WorkStatus::Unknown(r) => ("unknown", None, Some(r.as_str()), "none"),
+        WorkStatus::NonWork => ("non_work", None, None, "none"),
+    }
 }
 
 /// Git context per working directory over time (§9): `(observed_at, facts)`.
@@ -345,11 +414,22 @@ pub fn derive(
     report.counted_minutes = counted(&candidates).0 as f64 / 60_000.0;
     report.unknown_minutes = unknown(&candidates).0 as f64 / 60_000.0;
 
+    // Counting (§7.4): user corrections over the candidates.
+    let corrections: Vec<Correction> = ledger::corrections(ledger)?
+        .iter()
+        .filter_map(crate::correct::from_row)
+        .collect();
+    let atoms = apply_corrections(&candidates, &corrections);
     let git = GitMap::load(ledger)?;
-    for c in &candidates {
-        for piece in split_by_day(c, zone) {
-            let id = write_atom(w, &piece, zone, &rule_ref, &run_id, agents)?;
-            attribute_atom(w, &piece, &id, &run_id, agents, &git)?;
+    for atom in &atoms {
+        let piece = Piece::from_atom(atom);
+        for day_piece in split_by_day(&piece.cand, zone) {
+            let p = Piece {
+                cand: day_piece,
+                ..piece.clone()
+            };
+            let id = write_atom(w, &p, zone, &rule_ref, &run_id, agents)?;
+            attribute_atom(w, &p, &id, &run_id, agents, &git)?;
             report.atoms += 1;
         }
     }
@@ -396,16 +476,48 @@ fn split_by_day(c: &Candidate, zone: &ReportingZone) -> Vec<Candidate> {
 /// the report target (repository > worktree > conflicting > unattributed).
 fn attribute_atom(
     w: &DerivedWriter<'_>,
-    c: &Candidate,
+    p: &Piece,
     atom_id: &str,
     run_id: &str,
     agents: &AgentContext,
     git: &GitMap,
 ) -> Result<()> {
+    let c = &p.cand;
     if !matches!(c.status, WorkStatus::Work(_)) {
         return Ok(()); // unknown and non-work carry no effective attribution
     }
+    // Explicit level first (§7.5): a target the user set wins the report.
+    let explicit = p.target.as_ref();
+    if let Some((t, by)) = explicit {
+        let targets = serde_json::to_string(&[t.key()])?;
+        w.attribution(
+            "human_atom",
+            atom_id,
+            "explicit",
+            "confirmed",
+            &targets,
+            "correction",
+            Some(&format!("correction:{by}")),
+            true,
+            true,
+            run_id,
+        )?;
+    }
     let Some(session) = &c.engaged else {
+        if explicit.is_none() {
+            w.attribution(
+                "human_atom",
+                atom_id,
+                "none",
+                "unattributed",
+                "[]",
+                "none",
+                Some("no engaged session and no target set"),
+                true,
+                true,
+                run_id,
+            )?;
+        }
         return Ok(());
     };
     let mut repos: BTreeSet<String> = BTreeSet::new();
@@ -426,7 +538,9 @@ fn attribute_atom(
     let evidence = (unresolved > 0).then(|| format!("{unresolved} instant(s) without git context"));
     let state = |n: usize| if n == 1 { "confirmed" } else { "conflicting" };
     let json = |set: &BTreeSet<String>| serde_json::to_string(set).expect("json");
-    let report = if !repos.is_empty() {
+    let report = if explicit.is_some() {
+        "explicit"
+    } else if !repos.is_empty() {
         "repository"
     } else if !worktrees.is_empty() {
         "worktree"
@@ -480,29 +594,30 @@ fn attribute_atom(
 
 fn write_atom(
     w: &DerivedWriter<'_>,
-    c: &Candidate,
+    p: &Piece,
     zone: &ReportingZone,
     rule_ref: &str,
     run_id: &str,
     agents: &AgentContext,
 ) -> Result<String> {
+    let c = &p.cand;
     let day = zone
         .day_of(c.start.0)
         .map(|d| d.to_string())
         .unwrap_or_default();
-    let (status, counting, reason, duration) = match c.status {
-        WorkStatus::Work(WorkBasis::InferredContinuity) => {
-            ("work", Some("inferred"), None, "inferred_continuity")
+    let (status, counting, reason, duration) = status_text(c.status);
+    let (cand_status, cand_reason, cand_basis) = match p.candidate_status {
+        Some(s) => {
+            let (st, _, r, b) = status_text(s);
+            (st, r, b)
         }
-        WorkStatus::Work(WorkBasis::TimerMeasured) => {
-            ("work", Some("user_asserted"), None, "timer_measured")
-        }
-        WorkStatus::Work(WorkBasis::UserAsserted) => {
-            ("work", Some("user_asserted"), None, "user_asserted")
-        }
-        WorkStatus::Unknown(r) => ("unknown", None, Some(r.as_str()), "none"),
-        WorkStatus::NonWork => ("non_work", None, None, "none"),
+        None => ("blank", None, "none"),
     };
+    let decided_by = p
+        .decided_by
+        .as_ref()
+        .map_or_else(|| "inference".to_owned(), |id| format!("correction:{id}"));
+    let target_key = p.target.as_ref().map(|t| t.0.key()).unwrap_or_default();
     let id = derived_id(
         "atm_",
         &[
@@ -512,6 +627,8 @@ fn write_atom(
             &c.end.0.to_string(),
             status,
             c.engaged.as_deref().unwrap_or(""),
+            &decided_by,
+            &target_key,
         ],
     );
     w.atom(&AtomRow {
@@ -523,14 +640,14 @@ fn write_atom(
         counting_basis: counting.map(str::to_owned),
         unknown_reason: reason.map(str::to_owned),
         duration_basis: duration.into(),
-        // No correction or manual entry exists yet: the candidate stands.
-        candidate_status: Some(status.into()),
-        candidate_reason: reason.map(str::to_owned),
-        candidate_basis: Some(duration.into()),
+        // The derivation underneath stays on the atom ("overridden by …").
+        candidate_status: Some(cand_status.into()),
+        candidate_reason: cand_reason.map(str::to_owned),
+        candidate_basis: Some(cand_basis.into()),
         start_boundary: Some(c.start_boundary.into()),
         end_boundary: Some(c.end_boundary.into()),
         reasons: Some(serde_json::to_string(&c.reasons)?),
-        decided_by: "inference".into(),
+        decided_by,
         rule_ref: rule_ref.into(),
         run: run_id.into(),
     })?;

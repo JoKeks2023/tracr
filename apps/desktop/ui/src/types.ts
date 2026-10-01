@@ -79,11 +79,45 @@ export interface HumanAtom {
   proposals: { at: number; kind: string }[];
   /** Report-target attribution; work only. */
   attribution: {
-    level: "repository" | "worktree" | "none";
+    level: "explicit" | "repository" | "worktree" | "none";
     state: "confirmed" | "conflicting" | "unattributed";
     targets: string[];
     labels: string[];
   } | null;
+  /** The correction that decided the status (else inference). */
+  decided_by: string | null;
+  /** The derivation underneath: work | unknown | non_work | blank. */
+  candidate_status: string | null;
+  candidate_reason: string | null;
+}
+
+export interface CorrectionInfo {
+  id: string;
+  op: "confirm_work" | "mark_non_work" | "set_target" | "reject_target" | "revoke";
+  start: number | null;
+  end: number | null;
+  target: string | null;
+  target_label: string | null;
+  revokes: string | null;
+  at: number;
+  status: "effective" | "partly superseded" | "superseded" | "revoked";
+  reason: string | null;
+}
+
+export interface TargetOption {
+  key: string;
+  label: string;
+  group: "repository" | "category" | "other";
+}
+
+export interface CorrectionRequest {
+  op: CorrectionInfo["op"];
+  start?: number;
+  end?: number;
+  target?: string;
+  revokes?: string;
+  ui_op?: string;
+  reason?: string;
 }
 
 /** Counted and unknown are separate figures and are never added together. */
@@ -115,6 +149,7 @@ export interface DayAgents {
   human: HumanDay;
   device: LaneInterval[];
   coverage: Record<string, LaneInterval[]>;
+  corrections: CorrectionInfo[];
   quality: {
     provisional: boolean;
     provisional_reasons: string[];

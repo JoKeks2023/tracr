@@ -268,6 +268,36 @@ async fn export_everything(
     Ok(Some(dir.display().to_string()))
 }
 
+/// Records a user correction through the collector (it holds the writer
+/// lock); returns once the derived store reflects it.
+#[tauri::command]
+async fn correct(
+    ctx: tauri::State<'_, Ctx>,
+    req: tracr_app::correct::CorrectionRequest,
+) -> Result<String, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("corrections need the collector of this app; it is not running here".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || handle.correct(req))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+/// Targets time can be assigned to (dropdown, UI-01).
+#[tauri::command]
+async fn targets(ctx: tauri::State<'_, Ctx>) -> Result<Vec<tracr_app::day::TargetOption>, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.targets())
+        .map_err(err)
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -293,7 +323,9 @@ fn main() {
             day_agents,
             refresh,
             export_csv,
-            export_everything
+            export_everything,
+            correct,
+            targets
         ])
         .setup(|app| {
             app.state::<Ctx>().start_runtime();

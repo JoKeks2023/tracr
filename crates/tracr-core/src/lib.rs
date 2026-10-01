@@ -7,6 +7,7 @@
 pub mod adapter;
 pub mod agent;
 pub mod copy;
+pub mod counting;
 pub mod coverage;
 pub mod device;
 pub mod events;

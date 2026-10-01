@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { duration, hhmm, shortId } from "./format";
-import type { ActorDay, DayAgents, LaneInterval, Segment, SessionDay } from "./types";
+import type { ActorDay, DayAgents, HumanAtom, LaneInterval, Segment, SessionDay } from "./types";
 
 const HOUR = 3_600_000;
 const REASON_LABEL: Record<string, string> = {
@@ -205,10 +205,11 @@ function SessionLane({ s, range, tz, marks, selected, onSelect }: {
   );
 }
 
-export function Timeline({ day, selected, onSelect }: {
+export function Timeline({ day, selected, onSelect, onAtom }: {
   day: DayAgents;
   selected: string | null;
   onSelect: (id: string) => void;
+  onAtom: (a: HumanAtom) => void;
 }) {
   const tz = day.timezone;
   const range = useMemo(() => visibleRange(day), [day]);
@@ -242,7 +243,11 @@ export function Timeline({ day, selected, onSelect }: {
           {day.human.atoms.map((a, i) => (
             <div
               key={i}
-              className={`human ${a.status}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onAtom(a)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAtom(a)}
+              className={`human ${a.status}${a.decided_by ? " corrected" : ""}`}
               style={{ left: pct(range, Math.max(a.start, range.start)), width: width(range, Math.max(a.start, range.start), Math.min(a.end, range.end)) }}
               title={
                 a.status === "work"
@@ -330,7 +335,11 @@ export function Timeline({ day, selected, onSelect }: {
           <span className="swatch unknown-sw" />
           Unknown, not counted
         </span>
-        <span>Blank: no evidence, or locked or asleep</span>
+        <span>
+          <span className="swatch nonwork-sw" />
+          Break (excluded by you)
+        </span>
+        <span>Blank: no evidence, or locked or asleep · click human time to correct it</span>
       </div>
     </div>
   );
