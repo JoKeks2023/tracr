@@ -56,3 +56,4 @@ New: `tracr-provider-codex` discovery (2), extraction (5: kind mapping, no conte
 - `tracr day 2026-09-16` on the real-data copy: renders human, agent, cost and quality blocks. That day: 6 sessions (2 Codex), ≥ $37.50 identified estimate, 9% of tokens unpriced (Codex).
 - Deployed. After the forced rebuild, all 20 live Codex sessions have a cwd and 7 a repository (the rest are outside approved roots or not git). The quality footer renders (screenshot `s17.png`); the root banner is gone because the user approved the Codex roots.
 - **Not verified by hand:** the menu-bar rows (tray menu not opened by me).
+- S1 exit check "a second import adds 0 provider-source observations": on a snapshot of the live ledger (534 sources, Claude and Codex), two consecutive `tracr import` runs: 0 inserted, 0 quarantined, 0 key conflicts, 108,986 → 108,986.
