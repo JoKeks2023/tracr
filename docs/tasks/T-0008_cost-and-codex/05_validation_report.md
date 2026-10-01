@@ -49,3 +49,10 @@ New: `tracr-provider-codex` discovery (2), extraction (5: kind mapping, no conte
 - Copied context: 1 Codex event (the forked child's copy of its parent's turn).
 
 **Not verified at runtime:** the approval banner and the Codex sessions in the running app. They need the user to approve the Codex root.
+
+## S1 closure items (2026-10-01)
+
+- Tests: 169 passed, 0 failed; clippy clean; typecheck clean.
+- `tracr day 2026-09-16` on the real-data copy: renders human, agent, cost and quality blocks. That day: 6 sessions (2 Codex), ≥ $37.50 identified estimate, 9% of tokens unpriced (Codex).
+- Deployed. After the forced rebuild, all 20 live Codex sessions have a cwd and 7 a repository (the rest are outside approved roots or not git). The quality footer renders (screenshot `s17.png`); the root banner is gone because the user approved the Codex roots.
+- **Not verified by hand:** the menu-bar rows (tray menu not opened by me).

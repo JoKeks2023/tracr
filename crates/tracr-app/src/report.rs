@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use crate::day::{CostView, DayAgents, SessionDay};
 
 /// Ledger counts the day view does not carry (reporting §4).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct LedgerCounts {
     /// Lines kept with bounded facts only, recorded during the day.
     pub quarantined: i64,
@@ -84,7 +84,8 @@ pub fn estimate(c: &CostView, currency: &str) -> String {
     }
 }
 
-pub fn day_text(d: &DayAgents, counts: &LedgerCounts) -> String {
+pub fn day_text(d: &DayAgents) -> String {
+    let counts = &d.ledger_counts;
     let tz = d.timezone.as_str();
     let mut o = String::new();
     let state = match (&d.review, &d.discrepancy) {

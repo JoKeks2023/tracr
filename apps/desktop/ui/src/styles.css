@@ -377,3 +377,11 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
   background: color-mix(in srgb, var(--warning-9) 14%, var(--surface-raised)); font-size: 13px;
 }
 .banner .spacer { flex: 1; }
+
+/* Quality footer: calm metadata, no alarms (§13.4). */
+.quality { margin-top: var(--space-8); padding-top: var(--space-4); border-top: 1px solid var(--gray-4); font-size: 12px; color: var(--text-muted); }
+.quality h3 { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin: 0 0 var(--space-2); }
+.quality dl { margin: 0; display: grid; gap: var(--space-1); }
+.quality-row { display: grid; grid-template-columns: 7rem 1fr; gap: var(--space-3); }
+.quality-row dt { color: var(--text-secondary); }
+.quality-row dd { margin: 0; }

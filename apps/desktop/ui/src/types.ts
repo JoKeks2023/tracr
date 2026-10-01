@@ -263,6 +263,7 @@ export interface DayAgents {
     stream_extents: LaneInterval[];
   };
   cost: DayCost;
+  ledger_counts: { quarantined: number; key_conflicts: number };
   pending: PendingLane[];
 }
 

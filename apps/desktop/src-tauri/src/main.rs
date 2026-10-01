@@ -373,8 +373,58 @@ fn running_timer(app: &tauri::AppHandle) -> Option<tracr_app::day::ManualEntryIn
         .and_then(|r| r.running_timer().ok().flatten())
 }
 
-/// The menu-bar item shows the running timer's elapsed time; its menu
-/// offers start or stop.
+fn hm(ms: i64) -> String {
+    let m = (ms + 30_000) / 60_000;
+    if m < 60 {
+        format!("{m}m")
+    } else {
+        format!("{}h {:02}m", m / 60, m % 60)
+    }
+}
+
+/// Today's counted and unknown human minutes, for the menu (S1.7).
+fn today_line(app: &tauri::AppHandle) -> String {
+    let ctx = app.state::<Ctx>();
+    let Some(reader) = ctx.data_dir.as_ref().and_then(|d| Reader::open(d).ok()) else {
+        return "Today: no data yet".into();
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let today = reader
+        .reporting_zone()
+        .ok()
+        .and_then(|z| z.day_of(now))
+        .map(|d| d.to_string());
+    match today.and_then(|d| reader.day_agents(&d).ok()) {
+        Some(v) => format!(
+            "Today: {} counted · {} unknown, not counted",
+            hm(v.human.counted_ms),
+            hm(v.human.unknown_ms)
+        ),
+        None => "Today: no data yet".into(),
+    }
+}
+
+fn collector_line(app: &tauri::AppHandle) -> &'static str {
+    let collecting = app
+        .state::<Ctx>()
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::status)
+        .is_some_and(|s| s.collecting);
+    if collecting {
+        "Collecting"
+    } else {
+        "Not collecting"
+    }
+}
+
+/// The menu-bar item shows the running timer's elapsed time; its menu shows
+/// today's minutes and the collector state, and offers start or stop.
 fn refresh_tray(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("tracr") else {
         return;
@@ -394,11 +444,13 @@ fn refresh_tray(app: &tauri::AppHandle) {
     } else {
         "Start timer"
     };
-    if let (Ok(open), Ok(timer), Ok(quit)) = (
+    if let (Ok(today), Ok(state), Ok(open), Ok(timer), Ok(quit)) = (
+        MenuItem::with_id(app, "today", today_line(app), false, None::<&str>),
+        MenuItem::with_id(app, "state", collector_line(app), false, None::<&str>),
         MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>),
         MenuItem::with_id(app, "timer", label, true, None::<&str>),
         MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>),
-    ) && let Ok(menu) = Menu::with_items(app, &[&open, &timer, &quit])
+    ) && let Ok(menu) = Menu::with_items(app, &[&today, &state, &open, &timer, &quit])
     {
         let _ = tray.set_menu(Some(menu));
     }

@@ -1,3 +1,4 @@
+import { QualityFooter } from "./QualityFooter";
 import { useMemo, useState } from "react";
 import { duration, hhmm, shortId } from "./format";
 import type { ActorDay, DayAgents, HumanAtom, LaneInterval, Segment, SessionDay } from "./types";
@@ -357,6 +358,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
         </span>
         <span>Blank: no evidence, or locked or asleep · click human time to correct it</span>
       </div>
+      <QualityFooter day={day} />
     </div>
   );
 }

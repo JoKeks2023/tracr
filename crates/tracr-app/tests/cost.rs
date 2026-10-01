@@ -209,7 +209,7 @@ fn day_report_keeps_money_kinds_apart() {
     setup(&data, &root);
     let reader = Reader::open(&data).unwrap();
     let day = reader.day_agents(DAY).unwrap();
-    let text = tracr_app::report::day_text(&day, &reader.ledger_counts(&day).unwrap());
+    let text = tracr_app::report::day_text(&day);
     assert!(text.contains("API-equivalent estimate, not spend · catalog 2026-10-01.1"));
     assert!(text.contains(">= 0.01 USD"), "{text}");
     assert!(text.contains("0.95 USD (totalCostUSD"), "{text}");

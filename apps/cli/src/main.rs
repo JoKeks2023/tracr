@@ -586,10 +586,7 @@ fn main() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("no day with data yet"))?,
             };
             let v = reader.day_agents(&day)?;
-            print!(
-                "{}",
-                tracr_app::report::day_text(&v, &reader.ledger_counts(&v)?)
-            );
+            print!("{}", tracr_app::report::day_text(&v));
         }
         Command::Sessions { day, json } => {
             let reader = Reader::open(&dir)?;

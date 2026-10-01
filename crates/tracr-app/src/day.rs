@@ -525,6 +525,8 @@ pub struct DayAgents {
     /// The current derivation differs from the reviewed revision.
     pub discrepancy: Option<crate::review::Discrepancy>,
     pub cost: DayCost,
+    /// Quarantined and key-conflict records observed within the day (set by the reader).
+    pub ledger_counts: crate::report::LedgerCounts,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -825,6 +827,7 @@ pub fn day_agents(
                 spanning: spanning.into(),
             }
         },
+        ledger_counts: Default::default(),
         pending: PENDING_LANES.to_vec(),
     })
 }

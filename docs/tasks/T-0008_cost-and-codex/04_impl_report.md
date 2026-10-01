@@ -50,3 +50,16 @@
 - A `UserMessage` in a non-interactive or child thread is counted as `prompt_from_non_interactive_source`, never engagement.
 - No OpenAI prices in the catalog: Codex usage shows "unpriced", which never means zero.
 - The live app does not approve `~/.codex/sessions` by itself: a banner offers it (PS-02).
+
+## S1 closure items (2026-10-01, after S1.6)
+
+| Part | Where |
+|---|---|
+| Architecture §8.1 / §13.2 corrected: Codex copy markers and prompt rule (TRACR-9) | `docs/architecture.md` (`8c9c352`) |
+| Walkthrough C before review across providers; Codex events carry the thread's cwd and branch (fix: Codex sessions had no cwd/repository); a normalizer version change forces a rebuild | `crates/tracr-app/tests/walkthrough_c.rs`, `crates/tracr-provider-codex/src/normalize.rs`, `crates/tracr-app/src/derive.rs` (`7293706`) |
+| INV-7 DTO test | `crates/tracr-app/tests/cost.rs` |
+| `tracr day [date]`: text day report with quality footer | `crates/tracr-app/src/report.rs`, `apps/cli/src/main.rs` (`7aa4e0d`) |
+| Menu bar (S1.7): today's counted and unknown minutes, collector state | `apps/desktop/src-tauri/src/main.rs` |
+| Desktop quality footer (§13.4); `DayAgents.ledger_counts` | `apps/desktop/ui/src/QualityFooter.tsx`, `crates/tracr-app/src/day.rs` |
+
+**Walkthrough C execution minutes:** 60 · 41 · 40 instead of the walkthrough's illustrative 59 · 38 · 37. A segment opens at its turn's start (the prompt), while the walkthrough starts each run one minute after its prompt. Human results match exactly: 52 counted, 13 unknown, targets 25 / 27, C 0.

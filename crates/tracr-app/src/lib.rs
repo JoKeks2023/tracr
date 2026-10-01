@@ -499,7 +499,7 @@ impl Reader {
 
     /// Agent activity of one reporting day (`YYYY-MM-DD`), every session individually.
     /// Quarantined and key-conflict records observed within the day.
-    pub fn ledger_counts(&self, d: &day::DayAgents) -> Result<report::LedgerCounts> {
+    fn ledger_counts(&self, d: &day::DayAgents) -> Result<report::LedgerCounts> {
         let n = |kind: &str| -> Result<i64> {
             Ok(self.conn.query_row(
                 "SELECT COUNT(*) FROM observation o JOIN observation_facts f ON f.observation_id = o.id
@@ -525,6 +525,7 @@ impl Reader {
             &manual,
         )?;
         review::attach(&self.conn, &mut v)?;
+        v.ledger_counts = self.ledger_counts(&v)?;
         Ok(v)
     }
 
