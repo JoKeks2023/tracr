@@ -6,6 +6,7 @@
 //! (the UI) never wait for a writer, and an open handle keeps reading the
 //! file it opened across a rename.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,7 +19,7 @@ use crate::{Result, StoreError};
 pub const DERIVED_FILE: &str = "derived.sqlite";
 pub const DERIVED_NEXT_FILE: &str = "derived.next.sqlite";
 /// Bumped whenever `schema/derived.sql` changes; a mismatch means "rebuild".
-pub const DERIVED_SCHEMA_VERSION: i64 = 5;
+pub const DERIVED_SCHEMA_VERSION: i64 = 6;
 const SCHEMA: &str = include_str!("../schema/derived.sql");
 
 fn sidecars(path: &Path) -> [PathBuf; 3] {
@@ -252,6 +253,37 @@ pub struct UsageRow {
     pub run: String,
 }
 
+/// One estimate of one usage record (architecture §8.2).
+#[derive(Debug, Clone, Default)]
+pub struct CostRow {
+    pub usage_id: String,
+    pub session_id: Option<String>,
+    pub pricing_revision: String,
+    pub currency: String,
+    pub status: String,
+    pub amount_nano: Option<i64>,
+    pub priced_tokens: i64,
+    pub unpriced_tokens: i64,
+    pub reasons: Option<String>,
+    pub assumptions: Option<String>,
+    pub price_basis: Option<String>,
+    pub rule_id: Option<String>,
+}
+
+/// The latest provider-reported figure of one session and field.
+#[derive(Debug, Clone, Default)]
+pub struct ReportedRow {
+    pub session_id: String,
+    pub source_field: String,
+    pub value_as_stated: String,
+    pub value_nano: Option<i64>,
+    pub currency: String,
+    pub semantics: String,
+    pub scope: String,
+    pub observation_id: String,
+    pub observed_at: i64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AtomRow {
     pub id: String,
@@ -318,6 +350,8 @@ impl<'c> DerivedWriter<'c> {
         for table in [
             "norm_event",
             "usage_record",
+            "cost_estimate",
+            "reported_cost",
             "agent_actor",
             "turn",
             "tool_call",
@@ -672,6 +706,43 @@ impl<'c> DerivedWriter<'c> {
     }
 }
 
+impl DerivedWriter<'_> {
+    pub fn cost(&self, c: &CostRow) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT INTO cost_estimate (usage_id, session_id, pricing_revision, currency, status,
+                   amount_nano, priced_tokens, unpriced_tokens, reasons, assumptions, price_basis, rule_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            )?
+            .execute(params![
+                c.usage_id, c.session_id, c.pricing_revision, c.currency, c.status, c.amount_nano,
+                c.priced_tokens, c.unpriced_tokens, c.reasons, c.assumptions, c.price_basis, c.rule_id
+            ])?;
+        Ok(())
+    }
+
+    pub fn reported(&self, r: &ReportedRow) -> Result<()> {
+        self.tx
+            .prepare_cached(
+                "INSERT OR REPLACE INTO reported_cost (session_id, source_field, value_as_stated,
+                   value_nano, currency, semantics, scope, observation_id, observed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?
+            .execute(params![
+                r.session_id,
+                r.source_field,
+                r.value_as_stated,
+                r.value_nano,
+                r.currency,
+                r.semantics,
+                r.scope,
+                r.observation_id,
+                r.observed_at
+            ])?;
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Readers
 // ---------------------------------------------------------------------------
@@ -820,9 +891,9 @@ pub fn activity_counts_in(
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// Token sums of canonical usage records whose extent starts in `[start, end)`
-/// (AD-16), grouped by actor and model. Each category has its sum over
-/// records that state it, and the number of records that do not.
+/// Token sums of canonical usage records, grouped by actor and model. Each
+/// category has its sum over records that state it, and the number of
+/// records that do not.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UsageSum {
     pub actor_id: Option<String>,
@@ -833,25 +904,76 @@ pub struct UsageSum {
     pub cache_creation: (i64, i64),
     pub cache_read: (i64, i64),
     pub output: (i64, i64),
+    pub cost: CostSum,
 }
 
+/// Estimates of a group of usage records under one pricing revision.
+/// `amount_nano` sums the priced parts only; it is `None` when nothing in
+/// the group was priced (unpriced, not zero).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CostSum {
+    pub amount_nano: Option<i64>,
+    pub priced_records: i64,
+    pub partially_priced_records: i64,
+    pub unpriced_records: i64,
+    /// Records without an estimate under this revision.
+    pub not_estimated_records: i64,
+    pub priced_tokens: i64,
+    pub unpriced_tokens: i64,
+    pub reasons: Vec<String>,
+    pub assumptions: Vec<String>,
+}
+
+const COST_COLUMNS: &str = "SUM(c.amount_nano), SUM(c.status = 'priced'), SUM(c.status = 'partially_priced'),
+     SUM(c.status = 'unpriced'), SUM(c.usage_id IS NULL), COALESCE(SUM(c.priced_tokens), 0),
+     COALESCE(SUM(c.unpriced_tokens), 0), GROUP_CONCAT(c.reasons, '\x1f'), GROUP_CONCAT(c.assumptions, '\x1f')";
+
+fn json_lists(joined: Option<String>) -> Vec<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for part in joined.iter().flat_map(|j| j.split('\x1f')) {
+        if let Ok(v) = serde_json::from_str::<Vec<String>>(part) {
+            out.extend(v);
+        }
+    }
+    out.into_iter().collect()
+}
+
+fn cost_sum(r: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<CostSum> {
+    Ok(CostSum {
+        amount_nano: r.get(at)?,
+        priced_records: r.get::<_, Option<i64>>(at + 1)?.unwrap_or(0),
+        partially_priced_records: r.get::<_, Option<i64>>(at + 2)?.unwrap_or(0),
+        unpriced_records: r.get::<_, Option<i64>>(at + 3)?.unwrap_or(0),
+        not_estimated_records: r.get::<_, Option<i64>>(at + 4)?.unwrap_or(0),
+        priced_tokens: r.get(at + 5)?,
+        unpriced_tokens: r.get(at + 6)?,
+        reasons: json_lists(r.get(at + 7)?),
+        assumptions: json_lists(r.get(at + 8)?),
+    })
+}
+
+/// Canonical usage of one session whose extent lies within `[start, end)`
+/// (AD-16), grouped by actor and model, with estimates under `revision`.
 pub fn usage_sums_in(
     conn: &Connection,
     session_id: &str,
     start: i64,
     end: i64,
+    revision: &str,
 ) -> Result<Vec<UsageSum>> {
-    let mut stmt = conn.prepare(
-        "SELECT actor_id, model, identified, COUNT(*),
-                COALESCE(SUM(input_fresh), 0), SUM(input_fresh IS NULL),
-                COALESCE(SUM(cache_creation), 0), SUM(cache_creation IS NULL),
-                COALESCE(SUM(cache_read), 0), SUM(cache_read IS NULL),
-                COALESCE(SUM(output), 0), SUM(output IS NULL)
-         FROM usage_record
-         WHERE session_id = ?1 AND canonical = 1 AND extent_start >= ?2 AND extent_start < ?3
-         GROUP BY actor_id, model, identified ORDER BY actor_id, model, identified DESC",
-    )?;
-    let rows = stmt.query_map(params![session_id, start, end], |r| {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT u.actor_id, u.model, u.identified, COUNT(*),
+                COALESCE(SUM(u.input_fresh), 0), SUM(u.input_fresh IS NULL),
+                COALESCE(SUM(u.cache_creation), 0), SUM(u.cache_creation IS NULL),
+                COALESCE(SUM(u.cache_read), 0), SUM(u.cache_read IS NULL),
+                COALESCE(SUM(u.output), 0), SUM(u.output IS NULL), {COST_COLUMNS}
+         FROM usage_record u
+         LEFT JOIN cost_estimate c ON c.usage_id = u.id AND c.pricing_revision = ?4
+         WHERE u.session_id = ?1 AND u.canonical = 1 AND u.extent_start >= ?2 AND u.extent_start < ?3
+           AND COALESCE(u.extent_end, u.extent_start) <= ?3
+         GROUP BY u.actor_id, u.model, u.identified ORDER BY u.actor_id, u.model, u.identified DESC"
+    ))?;
+    let rows = stmt.query_map(params![session_id, start, end, revision], |r| {
         Ok(UsageSum {
             actor_id: r.get(0)?,
             model: r.get(1)?,
@@ -861,6 +983,50 @@ pub fn usage_sums_in(
             cache_creation: (r.get(6)?, r.get(7)?),
             cache_read: (r.get(8)?, r.get(9)?),
             output: (r.get(10)?, r.get(11)?),
+            cost: cost_sum(r, 12)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Canonical usage whose extent crosses a boundary of `[start, end)`: it
+/// belongs to no single day (AD-16), so it is shown on its own line.
+pub fn spanning_usage(
+    conn: &Connection,
+    start: i64,
+    end: i64,
+    revision: &str,
+) -> Result<(i64, CostSum)> {
+    let sql = format!(
+        "SELECT COUNT(*), {COST_COLUMNS}
+         FROM usage_record u
+         LEFT JOIN cost_estimate c ON c.usage_id = u.id AND c.pricing_revision = ?3
+         WHERE u.canonical = 1 AND u.extent_start < ?2 AND u.extent_end > ?1
+           AND (u.extent_start < ?1 OR u.extent_end > ?2)"
+    );
+    Ok(conn.query_row(&sql, params![start, end, revision], |r| {
+        Ok((r.get(0)?, cost_sum(r, 1)?))
+    })?)
+}
+
+/// The latest provider-reported figure per field of a session.
+pub fn reported_costs(conn: &Connection, session_id: &str) -> Result<Vec<ReportedRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT session_id, source_field, value_as_stated, value_nano, currency, semantics, scope,
+                observation_id, observed_at
+         FROM reported_cost WHERE session_id = ?1 ORDER BY source_field",
+    )?;
+    let rows = stmt.query_map([session_id], |r| {
+        Ok(ReportedRow {
+            session_id: r.get(0)?,
+            source_field: r.get(1)?,
+            value_as_stated: r.get(2)?,
+            value_nano: r.get(3)?,
+            currency: r.get(4)?,
+            semantics: r.get(5)?,
+            scope: r.get(6)?,
+            observation_id: r.get(7)?,
+            observed_at: r.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

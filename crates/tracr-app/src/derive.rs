@@ -175,6 +175,12 @@ pub fn update(
     else {
         return Ok(None);
     };
+    // A new pricing catalog re-estimates every record: rebuild.
+    if derived::meta(&conn, "pricing_revision")?.as_deref()
+        != Some(crate::pricing::bundled().revision.as_str())
+    {
+        return Ok(None);
+    }
     let scope = dirty_sources(ledger, watermark)?;
     Ok(Some(derive_into(ledger, &mut conn, as_of, Some(&scope))?))
 }
@@ -226,6 +232,7 @@ fn derive_into(
     scope: Option<&BTreeSet<String>>,
 ) -> Result<RebuildReport> {
     let normalizers = normalizers();
+    let pricing = crate::pricing::bundled();
     let params = SegmentParams::default();
     let rule_ref = params.rule_ref();
     let mut report = RebuildReport {
@@ -641,7 +648,7 @@ fn derive_into(
                     report.usage_records += 1;
                     report.usage_duplicates += u64::from(duplicate_of.is_some());
                     report.usage_unidentified += u64::from(u.identity.is_none());
-                    w.usage(&UsageRow {
+                    let row = UsageRow {
                         id,
                         provider: provider.to_owned(),
                         stream_key: s.order.stream_key.clone(),
@@ -685,8 +692,80 @@ fn derive_into(
                             .map(|&i| s.inputs[i].observation_id.clone())
                             .collect(),
                         run: run_id.clone(),
+                    };
+                    w.usage(&row)?;
+                    let e = tracr_core::pricing::estimate(
+                        &pricing.catalog,
+                        &tracr_core::pricing::PricedUsage {
+                            provider,
+                            model: row.model.as_deref(),
+                            service_tier: row.service_tier.as_deref(),
+                            // Not retained by the extractor yet: stated as assumptions.
+                            speed: None,
+                            inference_geo: None,
+                            at: start,
+                            input_fresh: f.input_fresh,
+                            input_total: f.input_total,
+                            cache_read: f.cache_read,
+                            cache_creation: f.cache_creation,
+                            cache_creation_tiers: Some(&f.cache_creation_tiers),
+                            output: f.output,
+                            tool_charges: Some(&f.tool_charges),
+                        },
+                    );
+                    let list = |v: &Vec<String>| opt_json(v, v.is_empty());
+                    w.cost(&derived::CostRow {
+                        usage_id: row.id.clone(),
+                        session_id: row.session_id.clone(),
+                        pricing_revision: pricing.revision.clone(),
+                        currency: pricing.catalog.currency.clone(),
+                        status: e.status.as_str().to_owned(),
+                        amount_nano: e
+                            .amount
+                            .as_ref()
+                            .map(|a| i64::try_from(a.0.nano).unwrap_or(i64::MAX)),
+                        priced_tokens: tok(Some(e.priced_tokens)).unwrap_or(0),
+                        unpriced_tokens: tok(Some(e.unpriced_tokens)).unwrap_or(0),
+                        reasons: list(&e.reasons),
+                        assumptions: list(&e.assumptions),
+                        price_basis: e.price_basis.clone(),
+                        rule_id: e.rule_id.clone(),
                     })?;
                 }
+            }
+            // Provider-reported cost: the latest figure per field, never summed.
+            let mut latest: BTreeMap<
+                String,
+                (i64, i64, String, &tracr_core::evidence::ReportedCostFacts),
+            > = BTreeMap::new();
+            for &si in members {
+                for input in &streams[si].inputs {
+                    if let Some(c) = &input.facts.reported_cost {
+                        let key = (input.observed_at.0, input.seq);
+                        let newer = latest
+                            .get(&c.source_field)
+                            .is_none_or(|(t, q, _, _)| key > (*t, *q));
+                        if newer {
+                            latest.insert(
+                                c.source_field.clone(),
+                                (key.0, key.1, input.observation_id.clone(), c),
+                            );
+                        }
+                    }
+                }
+            }
+            for (field, (observed_at, _, observation_id, c)) in latest {
+                w.reported(&derived::ReportedRow {
+                    session_id: session_id.clone(),
+                    source_field: field,
+                    value_as_stated: c.value_as_stated.clone(),
+                    value_nano: c.value_nano,
+                    currency: c.unit_as_stated.clone(),
+                    semantics: c.semantics.as_str().to_owned(),
+                    scope: c.scope.as_str().to_owned(),
+                    observation_id,
+                    observed_at,
+                })?;
             }
             for (k, v) in diagnostics {
                 *report.diagnostics.entry(k).or_default() += v;
@@ -735,6 +814,7 @@ fn derive_into(
             &derived::DERIVED_SCHEMA_VERSION.to_string(),
         )?;
         w.meta("as_of", &as_of.0.to_string())?;
+        w.meta("pricing_revision", &pricing.revision)?;
         w.meta("obs_watermark", &report.obs_watermark.to_string())?;
         w.commit()?;
     }

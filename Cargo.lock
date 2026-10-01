@@ -3989,6 +3989,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml 1.1.6+spec-1.1.0",
  "tracr-core",
  "tracr-git",
  "tracr-ingest",
@@ -4009,6 +4010,7 @@ dependencies = [
  "jiff",
  "serde_json",
  "tracr-app",
+ "tracr-core",
 ]
 
 [[package]]

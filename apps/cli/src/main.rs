@@ -161,6 +161,19 @@ fn tokens(t: tracr_app::day::TokenCount) -> String {
     }
 }
 
+/// An estimate as text: unpriced is never printed as zero; a partial estimate is a floor.
+fn est(c: &tracr_app::day::CostView, currency: &str) -> String {
+    match (c.amount_nano, c.status()) {
+        (_, None) => "-".into(),
+        (None, _) => "unpriced".into(),
+        (Some(n), Some(status)) => format!(
+            "{}{} {currency}",
+            if status == "priced" { "" } else { ">= " },
+            tracr_core::money::Money::new(n.into(), currency).display(2)
+        ),
+    }
+}
+
 fn print_day(v: &tracr_app::day::DayAgents) {
     let tz = v.timezone.as_str();
     println!("{}  ({})  {} agent sessions", v.day, tz, v.sessions.len());
@@ -213,16 +226,24 @@ fn print_day(v: &tracr_app::day::DayAgents) {
                 a.tool_calls
             );
         }
+        let currency = v.cost.pricing.currency.as_str();
         for u in &s.usage {
             println!(
-                "    tokens {:<28} in {:>8}  cache+ {:>8}  cache↺ {:>8}  out {:>8}  ({} records{})",
+                "    tokens {:<28} in {:>8}  cache+ {:>8}  cache↺ {:>8}  out {:>8}  est. {:>12}  ({} records{})",
                 u.model.as_deref().unwrap_or("(model unknown)"),
                 tokens(u.input_fresh),
                 tokens(u.cache_creation),
                 tokens(u.cache_read),
                 tokens(u.output),
+                est(&u.cost, currency),
                 u.records,
                 if u.identified { "" } else { ", unidentified" }
+            );
+        }
+        for r in &s.reported {
+            println!(
+                "    provider-reported {} {} {} (its own running total, not spend; never summed)",
+                r.source_field, r.value_as_stated, r.currency
             );
         }
         if !s.diagnostics.is_empty() {
@@ -234,8 +255,29 @@ fn print_day(v: &tracr_app::day::DayAgents) {
             println!("    diagnostics: {}", d.join(", "));
         }
     }
-    let h = &v.human;
+    let c = &v.cost;
     println!();
+    println!(
+        "estimated API cost: {} (API-equivalent estimate, not spend; catalog {} as of {})",
+        est(&c.identified, &c.pricing.currency),
+        c.pricing.catalog_version,
+        c.pricing.oldest_fetched_at.as_deref().unwrap_or("unknown"),
+    );
+    if c.identified.unpriced_tokens > 0 {
+        println!(
+            "    {} tokens unpriced: {}",
+            c.identified.unpriced_tokens,
+            c.identified.reasons.join(", ")
+        );
+    }
+    if c.spanning_records > 0 {
+        println!(
+            "    usage spanning the day boundary, not included: {} records, {}",
+            c.spanning_records,
+            est(&c.spanning, &c.pricing.currency)
+        );
+    }
+    let h = &v.human;
     println!(
         "human time: counted {} (inferred, provisional) · unknown {} (not counted){}",
         minutes(h.counted_ms),

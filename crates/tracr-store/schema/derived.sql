@@ -68,6 +68,25 @@ CREATE INDEX usage_record_extent ON usage_record (extent_start);
 CREATE TABLE usage_record_source (usage_id TEXT NOT NULL, observation_id TEXT NOT NULL,
   PRIMARY KEY (usage_id, observation_id));
 
+-- Estimated API cost per usage record and pricing revision (architecture §8.2).
+-- An API-equivalent estimate, never spend. amount_nano is NULL when unpriced:
+-- unpriced is never zero.
+CREATE TABLE cost_estimate (usage_id TEXT NOT NULL, session_id TEXT,
+  pricing_revision TEXT NOT NULL, currency TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('priced', 'partially_priced', 'unpriced')),
+  amount_nano INTEGER, priced_tokens INTEGER NOT NULL, unpriced_tokens INTEGER NOT NULL,
+  reasons TEXT, assumptions TEXT, price_basis TEXT, rule_id TEXT,
+  PRIMARY KEY (usage_id, pricing_revision),
+  CHECK ((status = 'unpriced') = (amount_nano IS NULL)));
+CREATE INDEX cost_estimate_session ON cost_estimate (session_id);
+
+-- Provider-reported cost figures: the latest per (session, field), never summed.
+CREATE TABLE reported_cost (session_id TEXT NOT NULL, source_field TEXT NOT NULL,
+  value_as_stated TEXT NOT NULL, value_nano INTEGER, currency TEXT NOT NULL,
+  semantics TEXT NOT NULL, scope TEXT NOT NULL,
+  observation_id TEXT NOT NULL, observed_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, source_field));
+
 CREATE TABLE coverage_interval (machine_id TEXT NOT NULL, source_kind TEXT NOT NULL,
   source_id TEXT,                                      -- NULL = kind-level state
   start_at INTEGER NOT NULL, end_at INTEGER NOT NULL,

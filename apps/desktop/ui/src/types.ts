@@ -42,6 +42,52 @@ export interface UsageLine {
   cache_creation: TokenCount;
   cache_read: TokenCount;
   output: TokenCount;
+  cost: CostView;
+}
+
+/** Estimates of usage records under one pricing revision. Not spend.
+ * `amount_nano` covers the priced parts only; null means unpriced, never zero. */
+export interface CostView {
+  amount_nano: number | null;
+  priced_records: number;
+  partially_priced_records: number;
+  unpriced_records: number;
+  not_estimated_records: number;
+  priced_tokens: number;
+  unpriced_tokens: number;
+  reasons: string[];
+  assumptions: string[];
+}
+
+/** The provider's own running cost figure: never summed, not spend. */
+export interface ReportedView {
+  source_field: string;
+  value_as_stated: string;
+  value_nano: number | null;
+  currency: string;
+  semantics: string;
+  scope: string;
+  recorded_at: number;
+  label: string;
+}
+
+export interface PricingInfo {
+  revision: string;
+  catalog_version: string;
+  currency: string;
+  source_urls: string[];
+  oldest_fetched_at: string | null;
+  label: string;
+}
+
+export interface DayCost {
+  pricing: PricingInfo;
+  identified: CostView;
+  /** Usage without a dedup identity: its own line (AD-17). */
+  unidentified: CostView;
+  /** Usage whose extent crosses a day boundary: belongs to no single day (AD-16). */
+  spanning_records: number;
+  spanning: CostView;
 }
 
 export interface SessionDay {
@@ -59,6 +105,8 @@ export interface SessionDay {
   engagement_instants: number[];
   actors: ActorDay[];
   usage: UsageLine[];
+  cost: CostView;
+  reported: ReportedView[];
 }
 
 export interface PendingLane {
@@ -214,6 +262,7 @@ export interface DayAgents {
     recovered_records: number;
     stream_extents: LaneInterval[];
   };
+  cost: DayCost;
   pending: PendingLane[];
 }
 

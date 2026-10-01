@@ -10,6 +10,7 @@ pub mod derive;
 pub mod derive_human;
 pub mod export;
 pub mod manual;
+pub mod pricing;
 pub mod review;
 pub mod runtime;
 
@@ -166,6 +167,7 @@ impl App {
         let mut conn = open_ledger(&data_dir.join(LEDGER_FILE))?;
         let stamp = clock.now().to_rfc3339().replace(':', "-");
         migrate_ledger(&mut conn, &data_dir.join("backups"), &stamp)?;
+        pricing::bundled().record(&conn, clock.now())?;
         let fid = file_identity();
         let machine = {
             let env = IngestEnv {

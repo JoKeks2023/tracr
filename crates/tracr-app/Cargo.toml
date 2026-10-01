@@ -14,6 +14,7 @@ notify = "8"
 rusqlite = "0.40.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+toml = "1.1.6"
 tracr-core = { version = "0.9.0-dev", path = "../tracr-core" }
 tracr-git = { version = "0.9.0-dev", path = "../tracr-git" }
 tracr-ingest = { version = "0.9.0-dev", path = "../tracr-ingest" }

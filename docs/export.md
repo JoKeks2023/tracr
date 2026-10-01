@@ -38,11 +38,12 @@ One row per **human-time interval** of each day with data. A **reviewed** day ex
 
 ## `all` (everything)
 
-A folder with one CSV per data set and a `README.txt`: `sessions`, `agents`, `agent_execution_segments`, `turns`, `tool_calls`, `token_usage`, `human_prompts`, `human_time` (+ `_contexts`, `_proposals`), `device`, `coverage`, `events`.
+A folder with one CSV per data set and a `README.txt`: `sessions`, `agents`, `agent_execution_segments`, `turns`, `tool_calls`, `token_usage`, `estimated_api_cost`, `provider_reported_cost`, `human_prompts`, `human_time` (+ `_contexts`, `_proposals`), `device`, `coverage`, `events`, plus `pricing_catalog.toml` (the prices the estimates used).
 
 - All columns of the derived store (architecture §3.4). IDs link the files.
 - Every `*_at` column is epoch milliseconds and is followed by `*_at_local` (ISO 8601, reporting timezone).
 - In `token_usage.csv`, only rows with `canonical = 1` count. Rows with `canonical = 0` are copies of another stream's occurrence.
+- `estimated_api_cost.csv` has one estimate per usage record (`usage_id`), in nano-units (`amount_nano`, 1e-9 of the currency). Empty = unpriced, never zero. Join with `canonical = 1` usage rows before summing.
 - The raw ledger (evidence envelopes and facts) is not part of this export.
 
 ## `agent-sessions`
@@ -71,6 +72,14 @@ Agent execution is **agent time, not human time**. Rows of parallel sessions and
 | `input_tokens`, `cache_write_tokens`, `cache_read_tokens`, `output_tokens` | Sums over the records that state the category. Each API request is counted once: streamed repeats are elected, and copies in resumed or forked sessions are excluded. |
 | `*_unknown_records` | Usage records that do not state that category |
 | `unidentified_usage_records` | Usage records without a request identity (never merged, AD-17) |
+| `estimated_api_cost` | API-equivalent estimate at list prices, **not spend**: exact decimal of the priced part. Empty = unpriced (never zero) |
+| `estimated_api_cost_currency` | Currency of the estimate (the catalog's) |
+| `estimate_status` | `priced`, `partially_priced` (the amount is a floor) or `unpriced` |
+| `unpriced_tokens` | Tokens with no price: unknown model, cache writes without a duration, … |
+| `pricing_revision` | Catalog version + content hash; the catalog text is in the ledger and in `all` exports |
+| `provider_reported_cost` | The provider's own running total (Claude Code `totalCostUSD`), as written, main-chain row only. Not spend; can carry over into a resumed session or restart. Never sum it, never add it to the estimate |
+| `provider_reported_cost_currency` | As stated by the provider |
+| `provider_reported_cost_recorded_at` | When tracr recorded the figure (the provider states no time) |
 | `derived_as_of` | When the derived data was built |
 
-There is no cost column yet. Estimated API cost (S1.5) will be its own column, labeled as an estimate, not spend.
+Estimates are per usage record, from `pricing/catalog.toml` (exact model match, no family guessing). Speed (fast mode) and inference region are not retained from transcripts yet; the estimate assumes standard speed and global routing and says so in its assumptions.

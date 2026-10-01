@@ -28,6 +28,11 @@ pub const LEDGER_MIGRATIONS: &[Migration] = &[
         name: "worklog",
         sql: include_str!("../migrations/ledger/0002_worklog.sql"),
     },
+    Migration {
+        version: 3,
+        name: "pricing",
+        sql: include_str!("../migrations/ledger/0003_pricing.sql"),
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

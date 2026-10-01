@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
-import { compact, dayLabel, duration } from "./format";
+import { compact, dayLabel, duration, estimate, reasonText } from "./format";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
@@ -9,7 +9,7 @@ import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
-import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
+import type { DayAgents, DayCost, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
@@ -24,6 +24,34 @@ const COLLECTOR_LABEL: Record<Status["collector"], string> = {
   stopped: "Not collecting",
   not_configured: "No approved history",
 };
+
+function CostMetric({ cost }: { cost: DayCost }) {
+  const c = cost.identified;
+  const p = cost.pricing;
+  const tokens = c.priced_tokens + c.unpriced_tokens;
+  const unpricedShare = tokens > 0 ? c.unpriced_tokens / tokens : 0;
+  const lines = [
+    `${p.label}.`,
+    `Prices: catalog ${p.catalog_version} as of ${p.oldest_fetched_at ?? "unknown"} (${p.source_urls.join(", ")}).`,
+    ...c.reasons.map((r) => `Unpriced: ${reasonText(r)}`),
+    ...c.assumptions.map((a) => `Assumed: ${reasonText(a)}`),
+    cost.unidentified.priced_records + cost.unidentified.unpriced_records + cost.unidentified.partially_priced_records > 0
+      ? `Unidentified usage, not included: ${estimate(cost.unidentified, p.currency)}`
+      : null,
+    cost.spanning_records > 0
+      ? `Usage spanning the day boundary, not included: ${cost.spanning_records} records, ${estimate(cost.spanning, p.currency)}`
+      : null,
+  ].filter(Boolean);
+  return (
+    <div className="metric" title={lines.join("\n")}>
+      <div className="value">{estimate(c, p.currency)}</div>
+      <div className="label">
+        est. API cost · not spend
+        {unpricedShare > 0 && ` · ${unpricedShare < 0.01 ? "<1" : Math.round(unpricedShare * 100)}% of tokens unpriced`}
+      </div>
+    </div>
+  );
+}
 
 function CollectorStatus({ status }: { status: Status }) {
   const rt = status.runtime;
@@ -350,6 +378,7 @@ export function App() {
               <div className="value">{compact(totals.output)}</div>
               <div className="label">output tokens</div>
             </div>
+            <CostMetric cost={view.cost} />
           </div>
           {Object.keys(totals.human.counted_by_target).length > 0 && (
             <div className="by-target">
@@ -437,7 +466,7 @@ export function App() {
           onChanged={corrected}
         />
       )}
-      {session && view && <SessionSheet s={session} tz={view.timezone} onClose={() => setSelected(null)} />}
+      {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} onClose={() => setSelected(null)} />}
     </div>
   );
 }

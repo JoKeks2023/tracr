@@ -1176,3 +1176,36 @@ pub fn is_dismissed(conn: &Connection, revision_id: &str, fingerprint: &str) -> 
         .optional()?
         .is_some())
 }
+
+// ---------------------------------------------------------------------------
+// Pricing catalogs (architecture §8.3)
+// ---------------------------------------------------------------------------
+
+/// Copies a catalog into the ledger once, by content hash. Returns whether
+/// it was new.
+pub fn ensure_pricing_catalog(
+    conn: &Connection,
+    revision: &str,
+    catalog_version: &str,
+    content_hash: &str,
+    content: &str,
+    at: UtcMillis,
+) -> Result<bool> {
+    let n = conn.execute(
+        "INSERT OR IGNORE INTO pricing_catalog (revision, catalog_version, content_hash, content, first_used_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![revision, catalog_version, content_hash, content, at.0],
+    )?;
+    Ok(n == 1)
+}
+
+/// The stored text of a pricing revision.
+pub fn pricing_catalog(conn: &Connection, revision: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT content FROM pricing_catalog WHERE revision = ?1",
+            [revision],
+            |r| r.get(0),
+        )
+        .optional()?)
+}

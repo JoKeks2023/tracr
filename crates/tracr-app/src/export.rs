@@ -53,8 +53,29 @@ pub const AGENT_SESSIONS_COLUMNS: &[&str] = &[
     "cache_read_unknown_records",
     "output_unknown_records",
     "unidentified_usage_records",
+    "estimated_api_cost",
+    "estimated_api_cost_currency",
+    "estimate_status",
+    "unpriced_tokens",
+    "pricing_revision",
+    "provider_reported_cost",
+    "provider_reported_cost_currency",
+    "provider_reported_cost_recorded_at",
     "derived_as_of",
 ];
+
+/// Nano-units as an exact decimal (`1.25`, `0.000004`), trailing zeros trimmed.
+pub fn decimal(nano: i64) -> String {
+    let sign = if nano < 0 { "-" } else { "" };
+    let n = nano.unsigned_abs();
+    let frac = format!("{:09}", n % 1_000_000_000);
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        format!("{sign}{}", n / 1_000_000_000)
+    } else {
+        format!("{sign}{}.{frac}", n / 1_000_000_000)
+    }
+}
 
 /// RFC 4180 field quoting.
 fn field(out: &mut String, value: &str) {
@@ -120,6 +141,11 @@ fn day_rows(out: &mut String, zone: &ReportingZone, v: &DayAgents) {
                 .filter(|u| !u.identified)
                 .map(|u| u.records)
                 .sum();
+            let mut cost = crate::day::CostView::default();
+            for u in &usage {
+                cost.absorb(&u.cost);
+            }
+            let reported = s.reported.first();
             let main_row = a.actor_kind != "known";
             let has_usage = !usage.is_empty();
             let tok = |n: i64| {
@@ -164,6 +190,32 @@ fn day_rows(out: &mut String, zone: &ReportingZone, v: &DayAgents) {
                     tok(cr_u),
                     tok(out_u),
                     tok(unidentified),
+                    cost.amount_nano.map(decimal).unwrap_or_default(),
+                    if cost.amount_nano.is_some() {
+                        v.cost.pricing.currency.clone()
+                    } else {
+                        String::new()
+                    },
+                    cost.status().unwrap_or_default().to_owned(),
+                    tok(cost.unpriced_tokens),
+                    if has_usage {
+                        v.cost.pricing.revision.clone()
+                    } else {
+                        String::new()
+                    },
+                    // The provider's running total: on the main row only, never summed.
+                    reported
+                        .filter(|_| main_row)
+                        .map(|r| r.value_as_stated.clone())
+                        .unwrap_or_default(),
+                    reported
+                        .filter(|_| main_row)
+                        .map(|r| r.currency.clone())
+                        .unwrap_or_default(),
+                    reported
+                        .filter(|_| main_row)
+                        .map(|r| local_iso(zone, r.recorded_at))
+                        .unwrap_or_default(),
                     as_of.clone(),
                 ],
             );
@@ -366,6 +418,8 @@ pub const EVERYTHING: &[(&str, &str)] = &[
     ("turn", "turns.csv"),
     ("tool_call", "tool_calls.csv"),
     ("usage_record", "token_usage.csv"),
+    ("cost_estimate", "estimated_api_cost.csv"),
+    ("reported_cost", "provider_reported_cost.csv"),
     ("engagement_instant", "human_prompts.csv"),
     ("human_atom", "human_time.csv"),
     ("human_atom_context", "human_time_contexts.csv"),
@@ -389,8 +443,18 @@ visible but never counted. Blank time has no row. Agent execution
 (agent_execution_segments.csv) is agent time, never human time.
 
 token_usage.csv: rows with canonical = 0 are copies of another stream's
-occurrence (duplicate_of); count only canonical = 1 rows. There is no cost
-column: estimated API cost is not derived yet.
+occurrence (duplicate_of); count only canonical = 1 rows.
+
+estimated_api_cost.csv: an API-equivalent estimate per usage record
+(usage_id -> token_usage.csv id), NOT spend. amount_nano is in nano-units
+(1e-9) of currency; it is empty when the record is unpriced, which never
+means zero. pricing_revision names the catalog in pricing_catalog.toml.
+Join with canonical = 1 usage rows before summing.
+
+provider_reported_cost.csv: the latest cost figure the provider (Claude Code)
+wrote into a session's transcript. It is the provider's own running total:
+it can carry over into a resumed session or restart, so it is not that
+session's cost. Not spend; never sum it and never add it to the estimate.
 
 No prompt, message or tool content exists in tracr, so none is exported.
 Column meanings: docs/export.md and docs/architecture.md section 3.4.
@@ -455,6 +519,10 @@ pub fn export_everything(
         written.push(((*file).to_owned(), n));
     }
     std::fs::write(dir.join("README.txt"), EVERYTHING_README)?;
+    std::fs::write(
+        dir.join("pricing_catalog.toml"),
+        crate::pricing::bundled_text(),
+    )?;
     Ok(written)
 }
 

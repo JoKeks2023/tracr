@@ -15,5 +15,7 @@ pub mod evidence;
 pub mod human;
 pub mod ids;
 pub mod manifest;
+pub mod money;
 pub mod normalize;
+pub mod pricing;
 pub mod time;

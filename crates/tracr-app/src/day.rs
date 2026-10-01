@@ -123,6 +123,116 @@ pub struct UsageLine {
     pub cache_creation: TokenCount,
     pub cache_read: TokenCount,
     pub output: TokenCount,
+    /// API-equivalent estimate of these records, never spend.
+    pub cost: CostView,
+}
+
+/// Estimates of a group of usage records under one pricing revision
+/// (architecture §8.2). `amount_nano` covers the priced parts only and is
+/// `None` when nothing was priced: unpriced, never zero.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CostView {
+    pub amount_nano: Option<i64>,
+    pub priced_records: i64,
+    pub partially_priced_records: i64,
+    pub unpriced_records: i64,
+    pub not_estimated_records: i64,
+    pub priced_tokens: i64,
+    pub unpriced_tokens: i64,
+    pub reasons: Vec<String>,
+    pub assumptions: Vec<String>,
+}
+
+impl From<derived::CostSum> for CostView {
+    fn from(c: derived::CostSum) -> Self {
+        Self {
+            amount_nano: c.amount_nano,
+            priced_records: c.priced_records,
+            partially_priced_records: c.partially_priced_records,
+            unpriced_records: c.unpriced_records,
+            not_estimated_records: c.not_estimated_records,
+            priced_tokens: c.priced_tokens,
+            unpriced_tokens: c.unpriced_tokens,
+            reasons: c.reasons,
+            assumptions: c.assumptions,
+        }
+    }
+}
+
+impl CostView {
+    /// `priced`, `partially_priced` or `unpriced` for the group; `None`
+    /// without records.
+    pub fn status(&self) -> Option<&'static str> {
+        let all = self.priced_records
+            + self.partially_priced_records
+            + self.unpriced_records
+            + self.not_estimated_records;
+        if all == 0 {
+            None
+        } else if self.amount_nano.is_none() {
+            Some("unpriced")
+        } else if self.priced_records == all {
+            Some("priced")
+        } else {
+            Some("partially_priced")
+        }
+    }
+
+    /// Adds estimates of one kind and one pricing revision. Unpriced parts
+    /// stay unpriced; nothing is added across kinds.
+    pub fn absorb(&mut self, o: &CostView) {
+        self.amount_nano = match (self.amount_nano, o.amount_nano) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+        };
+        self.priced_records += o.priced_records;
+        self.partially_priced_records += o.partially_priced_records;
+        self.unpriced_records += o.unpriced_records;
+        self.not_estimated_records += o.not_estimated_records;
+        self.priced_tokens += o.priced_tokens;
+        self.unpriced_tokens += o.unpriced_tokens;
+        for r in &o.reasons {
+            if !self.reasons.contains(r) {
+                self.reasons.push(r.clone());
+            }
+        }
+        for a in &o.assumptions {
+            if !self.assumptions.contains(a) {
+                self.assumptions.push(a.clone());
+            }
+        }
+    }
+}
+
+/// A cost figure the provider displays itself: its own running total, never
+/// summed, not spend. Its scope is the provider's: Claude Code's figure was
+/// observed to carry over into resumed sessions and to restart in others, so
+/// it is not "this session's cost".
+#[derive(Debug, Clone, Serialize)]
+pub struct ReportedView {
+    pub source_field: String,
+    pub value_as_stated: String,
+    pub value_nano: Option<i64>,
+    pub currency: String,
+    pub semantics: String,
+    pub scope: String,
+    /// When tracr recorded the figure (the source states no time).
+    pub recorded_at: i64,
+    pub label: &'static str,
+}
+
+pub const REPORTED_LABEL: &str =
+    "provider-reported running total (provider's own scope), not spend";
+
+/// The day's estimated API cost: identified usage, unidentified usage on its
+/// own line (AD-17), and usage spanning the day boundary (AD-16).
+#[derive(Debug, Clone, Serialize)]
+pub struct DayCost {
+    pub pricing: crate::pricing::PricingInfo,
+    pub identified: CostView,
+    pub unidentified: CostView,
+    pub spanning_records: i64,
+    pub spanning: CostView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -143,6 +253,9 @@ pub struct SessionDay {
     pub engagement_instants: Vec<i64>,
     pub actors: Vec<ActorDay>,
     pub usage: Vec<UsageLine>,
+    /// Identified usage of the session on this day.
+    pub cost: CostView,
+    pub reported: Vec<ReportedView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -411,15 +524,13 @@ pub struct DayAgents {
     pub review: Option<crate::review::ReviewState>,
     /// The current derivation differs from the reviewed revision.
     pub discrepancy: Option<crate::review::Discrepancy>,
+    pub cost: DayCost,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
 }
 
-pub const PENDING_LANES: &[PendingLane] = &[PendingLane {
-    lane: "cost",
-    reason: "pricing catalog and API-equivalent estimates arrive with S1.5",
-}];
+pub const PENDING_LANES: &[PendingLane] = &[];
 
 fn union_ms(mut spans: Vec<(i64, i64)>) -> i64 {
     spans.sort_unstable();
@@ -468,6 +579,9 @@ pub fn day_agents(
         .parse()
         .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))?;
     let (start, end) = zone.bounds(date)?;
+    let pricing = crate::pricing::bundled();
+    let mut identified_cost = CostView::default();
+    let mut unidentified_cost = CostView::default();
     let mut sessions = Vec::new();
     for s in derived::sessions_active_in(conn, start, end)? {
         let counts: BTreeMap<Option<String>, (i64, i64)> =
@@ -504,21 +618,47 @@ pub fn day_agents(
                 tool_calls,
             });
         }
-        let usage = derived::usage_sums_in(conn, &s.id, start, end)?
+        let usage: Vec<UsageLine> =
+            derived::usage_sums_in(conn, &s.id, start, end, &pricing.revision)?
+                .into_iter()
+                .map(|u| UsageLine {
+                    cost: u.cost.into(),
+                    actor_id: u.actor_id,
+                    model: u.model,
+                    identified: u.identified,
+                    records: u.records,
+                    input_fresh: u.input_fresh.into(),
+                    cache_creation: u.cache_creation.into(),
+                    cache_read: u.cache_read.into(),
+                    output: u.output.into(),
+                })
+                .collect();
+        let mut cost = CostView::default();
+        for u in &usage {
+            if u.identified {
+                cost.absorb(&u.cost);
+            } else {
+                unidentified_cost.absorb(&u.cost);
+            }
+        }
+        identified_cost.absorb(&cost);
+        let reported = derived::reported_costs(conn, &s.id)?
             .into_iter()
-            .map(|u| UsageLine {
-                actor_id: u.actor_id,
-                model: u.model,
-                identified: u.identified,
-                records: u.records,
-                input_fresh: u.input_fresh.into(),
-                cache_creation: u.cache_creation.into(),
-                cache_read: u.cache_read.into(),
-                output: u.output.into(),
+            .map(|r| ReportedView {
+                source_field: r.source_field,
+                value_as_stated: r.value_as_stated,
+                value_nano: r.value_nano,
+                currency: r.currency,
+                semantics: r.semantics,
+                scope: r.scope,
+                recorded_at: r.observed_at,
+                label: REPORTED_LABEL,
             })
             .collect();
         let (repository, repository_label) = derived::session_repository(conn, &s.id)?;
         sessions.push(SessionDay {
+            cost,
+            reported,
             repository,
             repository_label,
             engagement_instants: derived::instants_in(conn, &s.id, start, end)?
@@ -674,6 +814,17 @@ pub fn day_agents(
         end,
         derived_as_of: derived_as_of(conn)?,
         sessions,
+        cost: {
+            let (spanning_records, spanning) =
+                derived::spanning_usage(conn, start, end, &pricing.revision)?;
+            DayCost {
+                pricing: pricing.info(),
+                identified: identified_cost,
+                unidentified: unidentified_cost,
+                spanning_records,
+                spanning: spanning.into(),
+            }
+        },
         pending: PENDING_LANES.to_vec(),
     })
 }

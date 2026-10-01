@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { duration, hhmm, shortId, tokens } from "./format";
-import type { SessionDay, TokenCount, UsageLine } from "./types";
+import { duration, estimate, hhmm, money, reasonText, shortId, tokens } from "./format";
+import type { PricingInfo, SessionDay, TokenCount, UsageLine } from "./types";
 
 function Tok({ t }: { t: TokenCount }) {
   const { text, unknown } = tokens(t);
@@ -22,7 +22,12 @@ function actorName(s: SessionDay, actorId: string | null): string {
   return a.actor_kind === "known" && a.native_agent_id ? `agent ${shortId(a.native_agent_id, 10)}` : "main chain";
 }
 
-export function SessionSheet({ s, tz, onClose }: { s: SessionDay; tz: string; onClose: () => void }) {
+export function SessionSheet({ s, tz, pricing, onClose }: {
+  s: SessionDay;
+  tz: string;
+  pricing: PricingInfo;
+  onClose: () => void;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -105,6 +110,7 @@ export function SessionSheet({ s, tz, onClose }: { s: SessionDay; tz: string; on
                   <th>Cache write</th>
                   <th>Cache read</th>
                   <th>Output</th>
+                  <th title={pricing.label}>Est. cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -126,14 +132,43 @@ export function SessionSheet({ s, tz, onClose }: { s: SessionDay; tz: string; on
                     <td>
                       <Tok t={u.output} />
                     </td>
+                    <td
+                      className={u.cost.amount_nano === null ? "muted" : undefined}
+                      title={[...u.cost.reasons, ...u.cost.assumptions].map(reasonText).join("\n") || undefined}
+                    >
+                      {estimate(u.cost, pricing.currency)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <p className="note">
-              Estimated API cost is not derived yet (S1.5). It will be labeled as an API-equivalent estimate, not spend.
+              Est. cost is an API-equivalent estimate at list prices, not spend: catalog {pricing.catalog_version} as of{" "}
+              {pricing.oldest_fetched_at ?? "unknown"}. “≥” marks a partial estimate; “unpriced” is never zero.
+              {s.cost.reasons.length > 0 && ` Unpriced here: ${s.cost.reasons.map(reasonText).join("; ")}.`}
+              {s.cost.assumptions.length > 0 && ` Assumed: ${s.cost.assumptions.map(reasonText).join("; ")}.`}
             </p>
           </section>
+
+          {s.reported.length > 0 && (
+            <section>
+              <h3>Reported by the provider · its own running total, not spend</h3>
+              <dl className="kv">
+                {s.reported.map((r) => (
+                  <div key={r.source_field} style={{ display: "contents" }}>
+                    <dt className="mono">{r.value_nano !== null ? money(r.value_nano, r.currency) : `${r.value_as_stated} ${r.currency}`}</dt>
+                    <dd>
+                      {r.source_field} · last seen {new Date(r.recorded_at).toLocaleString("en-GB", { timeZone: tz })}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="note">
+                Claude Code's figure can carry over into a resumed session or restart, so it is not this session's cost. It
+                is never added to the estimate.
+              </p>
+            </section>
+          )}
 
           {diagnostics.length > 0 && (
             <section>
