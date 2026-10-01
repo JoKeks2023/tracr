@@ -20,6 +20,7 @@ tracr-git = { version = "0.9.0-dev", path = "../tracr-git" }
 tracr-ingest = { version = "0.9.0-dev", path = "../tracr-ingest" }
 tracr-platform = { version = "0.9.0-dev", path = "../tracr-platform" }
 tracr-provider-claude = { version = "0.9.0-dev", path = "../tracr-provider-claude" }
+tracr-provider-codex = { version = "0.9.0-dev", path = "../tracr-provider-codex" }
 tracr-store = { version = "0.9.0-dev", path = "../tracr-store" }
 uuid = { version = "1.26.1", features = ["v7"] }
 

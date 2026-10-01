@@ -36,6 +36,7 @@ use tracr_core::normalize::{
 };
 use tracr_core::time::UtcMillis;
 use tracr_provider_claude::normalize::ClaudeNormalizer;
+use tracr_provider_codex::normalize::CodexNormalizer;
 use tracr_store::derived::{
     self, ActorRow, DerivedWriter, EventRow, InstantRow, RunRow, SegmentRow, SessionRow,
     ToolCallRow, TurnRow, UsageRow,
@@ -44,7 +45,10 @@ use tracr_store::ledger::{self, FactRow};
 
 /// The normalizers tracr ships (S1.3: Claude Code transcripts).
 pub fn normalizers() -> Vec<Arc<dyn Normalizer>> {
-    vec![Arc::new(ClaudeNormalizer::new())]
+    vec![
+        Arc::new(ClaudeNormalizer::new()),
+        Arc::new(CodexNormalizer::new()),
+    ]
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -201,6 +205,22 @@ fn dirty_sources(ledger: &Connection, watermark: i64) -> Result<BTreeSet<String>
             sources_of.entry(key).or_default().push(s.id.to_string());
         }
     }
+    // A child thread that names its parent is derived with the parent's
+    // session, whether or not the normalizer links it (over-inclusion is safe).
+    let kind_machine: HashMap<String, (String, String)> = ledger::sources(ledger, None)?
+        .into_iter()
+        .map(|s| (s.id.to_string(), (s.kind, s.machine_id.to_string())))
+        .collect();
+    for (child, parent) in ledger::parent_links(ledger)? {
+        if let Some((kind, machine)) = kind_machine.get(&child) {
+            let key = format!("{kind}|{machine}|{parent}");
+            sources_of
+                .entry(key.clone())
+                .or_default()
+                .push(child.clone());
+            session_of.insert(child, key);
+        }
+    }
     let mut scope: BTreeSet<String> = BTreeSet::new();
     let mut frontier: Vec<String> = ledger::sources_with_transcript_since(ledger, watermark)?;
     while !frontier.is_empty() {
@@ -282,7 +302,9 @@ fn derive_into(
                     .or_default() += 1;
                 continue;
             };
-            let Some(session_native) = n.session_of(&stream) else {
+            let (inputs, skipped) = elect_records(&rows);
+            report.record_versions_not_elected += skipped;
+            let Some(session_native) = n.session_of(&stream, &inputs) else {
                 report.streams_skipped += 1;
                 *report
                     .diagnostics
@@ -290,8 +312,6 @@ fn derive_into(
                     .or_default() += 1;
                 continue;
             };
-            let (inputs, skipped) = elect_records(&rows);
-            report.record_versions_not_elected += skipped;
             let birth = ledger::locators(ledger, &SourceId::new(source_id))?
                 .iter()
                 .filter_map(|l| l.birth_time)

@@ -110,6 +110,7 @@ function signed(ms: number): string {
 }
 
 export function App() {
+  const [hideRoots, setHideRoots] = useState(false);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [day, setDay] = useState<string | null>(null);
   const [view, setView] = useState<DayAgents | null>(null);
@@ -390,6 +391,39 @@ export function App() {
                     {target} <span className="mono">{duration(ms)}</span>
                   </span>
                 ))}
+            </div>
+          )}
+          {status && !hideRoots && status.proposed_roots.some((r) => !r.approved) && (
+            <div className="banner" role="status">
+              <span>
+                Agent history found that tracr does not read yet:{" "}
+                {status.proposed_roots
+                  .filter((r) => !r.approved)
+                  .map((r) => (
+                    <span key={r.path} className="mono">
+                      {r.path}{" "}
+                    </span>
+                  ))}
+                <span className="muted">· metadata only, never prompts or output</span>
+              </span>
+              <span className="spacer" />
+              {status.proposed_roots
+                .filter((r) => !r.approved)
+                .map((r) => (
+                  <button
+                    key={r.path}
+                    className="button secondary small"
+                    style={{ whiteSpace: "nowrap" }}
+                    disabled={approving !== null}
+                    onClick={() => approve(r.path)}
+                    title={r.path}
+                  >
+                    {approving === r.path ? <span className="spinner" aria-label="Approving" /> : `Approve ${r.path.split("/").pop()}`}
+                  </button>
+                ))}
+              <button className="button ghost small" onClick={() => setHideRoots(true)}>
+                Not now
+              </button>
             </div>
           )}
           {view.discrepancy && view.review && (

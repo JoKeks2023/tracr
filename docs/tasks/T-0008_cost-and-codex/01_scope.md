@@ -10,5 +10,11 @@
 ## S1.5 out of scope (unchanged phase plan)
 Actual expense, subscriptions, allocation (after S1); billing imports; currency conversion; finalized-report pricing snapshots (review snapshots do not carry cost yet).
 
-## S1.6
-See the S1.6 sections of the reports.
+## S1.6 in scope
+- New crate `tracr-provider-codex`: discovery (`sessions/YYYY/MM/DD/rollout-*.jsonl`, `archived_sessions/rollout-*.jsonl`; never `session_index.jsonl` or `transcription-history.jsonl`), allowlist extractor, manifest, normalizer.
+- Turns, human prompts (interactive source only), tools by call ID, usage (`token_usage_record`, else cumulative `token_count` deltas), subagent linkage gate, copy detection by global native IDs.
+- Incremental derivation keeps a parent thread and its children in one scope.
+- Desktop: a banner offers proposed but unapproved provider roots (PS-02: the user approves).
+
+## S1.6 out of scope
+Codex pricing (no OpenAI rules in the catalog: Codex usage is unpriced, not zero); hooks / App Server live observation (S4); `state_N.sqlite` reading.

@@ -1209,3 +1209,15 @@ pub fn pricing_catalog(conn: &Connection, revision: &str) -> Result<Option<Strin
         )
         .optional()?)
 }
+
+/// Transcript sources whose records name a parent session (e.g. a Codex
+/// child thread), with that parent's native ID. Used to keep a parent and
+/// its children in one incremental derivation scope.
+pub fn parent_links(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT source_id, native_parent_session FROM observation
+         WHERE channel = 'transcript' AND native_parent_session IS NOT NULL",
+    )?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

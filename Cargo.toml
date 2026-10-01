@@ -6,6 +6,7 @@ members = [
     "crates/tracr-store",
     "crates/tracr-ingest",
     "crates/tracr-provider-claude",
+    "crates/tracr-provider-codex",
     "crates/tracr-git",
     "crates/tracr-testkit",
     "crates/tracr-app",

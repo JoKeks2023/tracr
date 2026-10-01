@@ -30,3 +30,22 @@ Hand check: one 219-record opus-5-5 line (in 438, cache writes 1.94 M at 1 h, ca
 - The day summary shows "$75.03 · est. API cost · not spend" (screenshot `s15.png`).
 
 **Not verified by hand:** the session sheet's Est. cost column and provider-reported section, and the tooltip. They are type-checked only and have not been clicked in the running app.
+
+## S1.6 (2026-10-01)
+
+**Tests:** 166 passed, 0 failed; clippy clean; `pnpm typecheck` clean.
+New: `tracr-provider-codex` discovery (2), extraction (5: kind mapping, no content retained, usage fields, session origin and parent, quarantine); `tracr-app/tests/codex.rs` (8): D cumulative deltas, D record precedence, G-r gate on, G-r gate off, F5 archive, INV-8 symmetry, late child incremental update, repeated item IDs.
+
+**Dogfood: copy of the real ledger + local Codex rollouts** (roots approved on the copy only):
+- Import: 533 sources, 37 new, 7,661 observations, **0 quarantined, 0 key conflicts**.
+  - First run: 8 key conflicts, from two `turn_context` records in one turn. Fixed: the key includes the ordinal.
+  - First run: 10 alpha versions reported as unvalidated. Fixed: gating uses the numeric core.
+- Rebuild: 20 Codex sessions (37 threads; 17 children linked as known actors, 13 with activity), 0 `unlinked_subagent`.
+- Usage equals a direct count from the files:
+  - `token_usage_record`: 49,326,796 input / 234,404 output.
+  - cumulative deltas: 183,219,113 / 505,384.
+  - 13 unchanged totals suppressed, 2 resets.
+- Engagement: 130 instants, equal to the 130 `UserMessage` items in interactive threads (after the item-key fix; the first run had 114).
+- Copied context: 1 Codex event (the forked child's copy of its parent's turn).
+
+**Not verified at runtime:** the approval banner and the Codex sessions in the running app. They need the user to approve the Codex root.

@@ -178,8 +178,10 @@ pub trait Normalizer: Send + Sync {
 
     fn normalizer_version(&self) -> &'static str;
 
-    /// The native session a stream belongs to (its session unit).
-    fn session_of(&self, stream: &StreamRef) -> Option<String> {
+    /// The native session a stream belongs to (its session unit). A
+    /// provider may decide it from the stream's own records, e.g. a child
+    /// thread that names its parent.
+    fn session_of(&self, stream: &StreamRef, _records: &[ObservationInput]) -> Option<String> {
         stream.native_session.clone()
     }
 

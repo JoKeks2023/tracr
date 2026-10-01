@@ -2,6 +2,7 @@
 //! scenario time and file manipulations for ingestion scenarios.
 
 pub mod claude;
+pub mod codex;
 pub mod collector;
 
 use std::fs::{self, OpenOptions};

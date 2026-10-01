@@ -31,6 +31,7 @@ use tracr_ingest::{
 };
 use tracr_platform::{Clock, FileIdentity, file_identity};
 use tracr_provider_claude::ClaudeAdapter;
+use tracr_provider_codex::CodexAdapter;
 use tracr_store::connection::{LEDGER_FILE, open_ledger, open_ledger_read_only};
 use tracr_store::ledger::{self, NewUserAction, SourceSummary, UsageRecordStats};
 use tracr_store::migrate::{self, migrate_ledger};
@@ -61,7 +62,10 @@ const CLIENT: &str = "tracr-cli";
 
 /// The adapters tracr ships (T-0004: Claude Code transcripts).
 pub fn registry() -> Registry {
-    Registry::new(vec![Arc::new(ClaudeAdapter::new())])
+    Registry::new(vec![
+        Arc::new(ClaudeAdapter::new()),
+        Arc::new(CodexAdapter::new()),
+    ])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
