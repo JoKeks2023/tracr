@@ -19,19 +19,22 @@ Pulled forward from S4 (reporting §5) at the user's request on 2026-09-30.
 
 ## `timesheet` (human time)
 
-One row per **human-time interval** (atom) of each day with data. Blank time has **no row**: no evidence, locked or asleep.
+One row per **human-time interval** of each day with data. A **reviewed** day exports its latest reviewed revision (worklog time); a draft day exports its current derivation. Blank time (no evidence, locked, asleep) has **no row**.
 
 | Column | Meaning |
 |---|---|
-| `day`, `timezone`, `start`, `end` | The interval, split at local midnight |
-| `status` | `work` (counted) or `unknown` (visible, **not counted**) |
-| `counted_minutes` | Only on `work` rows |
-| `unknown_minutes` | Only on `unknown` rows. Never add it to `counted_minutes`. |
-| `counting_basis` | `inferred`: bridged between human prompts of one session (provisional until reviewed); `user_asserted` later (S2) |
-| `unknown_reason` | `coverage_gap` (tracr was not collecting what the rule needs, e.g. before the device sensor ran), `conflicting_evidence` (prompts of several sessions interleave), `unresolved_window` (a gap the rule cannot bridge) |
-| `session_id`, `native_session_id`, `project_label`, `cwd`, `git_branch` | The engaged session of a `work` row. This is evidence, not attribution: attribution comes later (M3/S2). |
-| `start_boundary`, `end_boundary` | `observed` (a prompt), `device` (lock/sleep cut), `day_boundary` |
-| `reasons` | All rule reasons, `;`-separated |
+| `day`, `timezone` | Reporting day and zone |
+| `worklog_state` | `draft`, or `reviewed rN` (with `+ discrepancy` if newer evidence differs) |
+| `start`, `end` | The interval, split at local midnight |
+| `status` | `work` (counted), `unknown` (visible, **not counted**) or `non_work` (break you marked) |
+| `counted_minutes`, `unknown_minutes`, `non_work_minutes` | Only on rows of that status. Never add them together. |
+| `counting_basis` | `inferred` (bridged between your prompts; provisional until reviewed) or `user_asserted` (you confirmed it, entered it or timed it) |
+| `duration_basis` | `inferred_continuity`, `user_asserted` or `timer_measured` |
+| `unknown_reason` | `coverage_gap`, `conflicting_evidence` or `unresolved_window` |
+| `target`, `target_key` | What the time was for: your explicit target (category, "Other…", repository), your manual entry's target, or the repository from git context |
+| `attribution_state` | `confirmed`, `conflicting` or `unattributed` (work rows) |
+| `repository` | Repository key, if the target is a repository |
+| `session_id`, `native_session_id`, `project_label`, `cwd`, `git_branch` | The engaged agent session of inferred work (evidence, not attribution) |
 
 ## `all` (everything)
 

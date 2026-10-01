@@ -366,3 +366,14 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 @keyframes pop { from { opacity: 0; transform: scale(0.97); } }
 .popover .actions { padding-top: var(--space-3); }
 .field .target-row { width: 100%; }
+
+/* ---- Review (S2.3) --------------------------------------------------------- */
+
+.human.reviewed { cursor: default; opacity: 0.9; }
+.human.reviewed.work { background: var(--accent-9); }
+.banner {
+  display: flex; align-items: center; gap: var(--space-3); margin: 0 var(--space-8) var(--space-4);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning-9) 14%, var(--surface-raised)); font-size: 13px;
+}
+.banner .spacer { flex: 1; }

@@ -28,3 +28,17 @@ Corrections are range-anchored (§6.4): they survive every re-derivation and can
 | `derived.sqlite` in WAL mode (schema v5): readers never wait for an update | `crates/tracr-store/src/derived.rs` |
 
 **Decision (conservative default):** starting a timer while one runs stops the running one at the same instant. AD-15 allows at most one running timer and does not say how a second start is handled.
+
+## S2.3 review (2026-10-01)
+
+| Part | Where |
+|---|---|
+| Ledger migration v2 (`worklog_revision`, `discrepancy_dismissal`, append-only triggers); the migration test is now version-generic | `crates/tracr-store/migrations/ledger/0002_worklog.sql`, `migrate.rs`, `tests/immutability.rs` |
+| Snapshot of the resolved day by value; fingerprint over intervals, status, basis and attribution; compare and attach; `review_day` (reason required from r2), `dismiss_discrepancy` | `crates/tracr-app/src/review.rs` |
+| A reviewed day is provisional only while a discrepancy is open | `review::attach` |
+| Runtime jobs Review and Dismiss (review brings the derived store up to date first); desktop `review` and `dismiss` commands | `runtime.rs`, `apps/desktop/src-tauri/src/main.rs` |
+| Timesheet: reviewed revision for reviewed days; new columns `worklog_state`, `non_work_minutes`, `duration_basis`, `target`, `target_key` (the boundary and reason columns were dropped) | `crates/tracr-app/src/export.rs` |
+| UI: "Review day" sheet (what gets frozen; unknown stays uncounted), read-only "Reviewed rN" lane, summary from the revision, discrepancy banner (Accept as rN+1, Keep rN) | `apps/desktop/ui/src/{ReviewDaySheet,App,Timeline}.tsx` |
+
+- **AD-18:** attribution is stored as shown, so inferred stays inferred. Review freezes counting and records attribution by value.
+- **Fingerprint.** Only what review freezes is part of it. A rebuild at a later `as_of` with the same resolved intervals produces no discrepancy.

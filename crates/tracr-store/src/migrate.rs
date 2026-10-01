@@ -17,11 +17,18 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
-pub const LEDGER_MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    sql: include_str!("../migrations/ledger/0001_init.sql"),
-}];
+pub const LEDGER_MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        sql: include_str!("../migrations/ledger/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "worklog",
+        sql: include_str!("../migrations/ledger/0002_worklog.sql"),
+    },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationReport {

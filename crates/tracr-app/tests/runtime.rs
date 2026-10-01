@@ -572,3 +572,159 @@ fn timer_and_manual_entries_count_as_user_asserted_time() {
     );
     c.end("test done").unwrap();
 }
+
+/// S2.3 end to end: review freezes the day; later changes show as a
+/// discrepancy; dismiss is per difference; accept creates r2; a full
+/// rebuild (renormalization, E-2) changes nothing reviewed.
+#[test]
+fn review_freezes_the_day_and_differences_show_as_discrepancies() {
+    use std::sync::Arc;
+    use tracr_app::correct::CorrectionRequest;
+    use tracr_platform::ManualClock;
+
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().join("data");
+    let root = dir.path().join("projects");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(&root).unwrap();
+    let at = |hhmm: &str| UtcMillis::parse_rfc3339(&tracr_testkit::collector::at(hhmm)).unwrap();
+    let clock = Arc::new(ManualClock::new(at("08:55")));
+    let mut app = App::open_writer(&data, Box::new(clock.clone())).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    let mut c = Collector::begin(app, "test", true).unwrap();
+    let mut a = ClaudeSession::new(A);
+    let mut b = ClaudeSession::new(B);
+    write_lines(
+        &transcript(&root, A),
+        &[
+            a.prompt("09:00"),
+            a.assistant("09:01", "m1", 1),
+            a.prompt("09:10"),
+        ],
+    );
+    write_lines(&transcript(&root, B), &[b.prompt("09:15")]);
+    let mut t = at("08:55");
+    while t <= at("09:20") {
+        clock.set(t);
+        c.sample(&DeviceSample {
+            at: t,
+            idle_ms: Some(1_000),
+            locked: Some(false),
+            last_sleep_wake: None,
+        })
+        .unwrap();
+        if (t.0 / 1000) % 60 == 0 {
+            c.heartbeat().unwrap();
+        }
+        t = UtcMillis(t.0 + 15_000);
+    }
+    c.reconcile_all(IngestTrigger::Startup).unwrap();
+    c.rebuild().unwrap();
+    // Review after the collector stopped looking at the day.
+    c.end("test done").unwrap();
+    let fixed = || Box::new(clock.clone());
+    let mut app = App::open_writer(&data, fixed()).unwrap();
+    let day = |app: &App| {
+        let _ = app;
+        tracr_app::Reader::open(&data)
+            .unwrap()
+            .day_agents("2026-09-28")
+            .unwrap()
+    };
+
+    let d = day(&app);
+    assert!(d.review.is_none() && d.quality.provisional);
+    app.review_day("2026-09-28", None).unwrap();
+    let d = day(&app);
+    let r1 = d.review.as_ref().expect("reviewed");
+    assert_eq!(
+        (r1.rev, r1.snapshot.counted_ms, r1.snapshot.unknown_ms),
+        (1, 10 * 60_000, 5 * 60_000)
+    );
+    assert!(d.discrepancy.is_none());
+    assert!(!d.quality.provisional, "reviewed and nothing differs");
+
+    // A correction after review: the revision stays, a discrepancy shows.
+    let window = d
+        .human
+        .atoms
+        .iter()
+        .find(|x| x.status == "unknown")
+        .unwrap()
+        .clone();
+    let k = app
+        .correct(&CorrectionRequest {
+            op: "confirm_work".into(),
+            start: Some(window.start),
+            end: Some(window.end),
+            target: None,
+            revokes: None,
+            ui_op: None,
+            reason: None,
+        })
+        .unwrap();
+    app.update_derived().unwrap();
+    let d = day(&app);
+    assert_eq!(
+        d.review.as_ref().unwrap().snapshot.counted_ms,
+        10 * 60_000,
+        "r1 never changes"
+    );
+    let disc = d.discrepancy.clone().expect("discrepancy");
+    assert_eq!(
+        (disc.counted_delta_ms, disc.unknown_delta_ms),
+        (5 * 60_000, -5 * 60_000)
+    );
+    assert!(d.quality.provisional);
+
+    // Dismiss keeps r1 for exactly this difference.
+    app.dismiss_discrepancy("2026-09-28", &disc.fingerprint)
+        .unwrap();
+    assert!(day(&app).discrepancy.is_none());
+
+    // A different change (undo) shows again; accept needs a reason and creates r2.
+    app.correct(&CorrectionRequest {
+        op: "mark_non_work".into(),
+        start: Some(window.start),
+        end: Some(window.end),
+        target: None,
+        revokes: None,
+        ui_op: None,
+        reason: Some(format!("instead of {k}")),
+    })
+    .unwrap();
+    app.update_derived().unwrap();
+    let disc = day(&app).discrepancy.expect("a new difference shows again");
+    assert_eq!(disc.non_work_delta_ms, 5 * 60_000);
+    assert!(
+        app.review_day("2026-09-28", None).is_err(),
+        "r2 needs a reason"
+    );
+    app.review_day("2026-09-28", Some("break confirmed"))
+        .unwrap();
+    let d = day(&app);
+    assert_eq!(d.review.as_ref().unwrap().rev, 2);
+    assert!(d.discrepancy.is_none());
+
+    // E-2: a full rebuild (renormalization) leaves the reviewed day as it is.
+    app.rebuild().unwrap();
+    let d = day(&app);
+    assert_eq!(d.review.as_ref().unwrap().rev, 2);
+    assert!(d.discrepancy.is_none(), "same evidence, same resolved day");
+
+    // The timesheet exports the reviewed revision (worklog time).
+    let csv = tracr_app::export::timesheet_csv(
+        &tracr_app::Reader::open(&data).unwrap(),
+        "2026-09-28",
+        "2026-09-28",
+    )
+    .unwrap();
+    assert!(
+        csv.lines().skip(1).all(|l| l.contains(",reviewed r2,")),
+        "{csv}"
+    );
+    assert!(
+        csv.contains(",non_work,"),
+        "the break of r2 is exported as non-work"
+    );
+}

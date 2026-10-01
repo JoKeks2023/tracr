@@ -320,6 +320,43 @@ async fn manual(
     Ok(id)
 }
 
+fn runtime_handle(ctx: &Ctx) -> Result<tracr_app::runtime::RuntimeHandle, String> {
+    ctx.runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle)
+        .ok_or_else(|| "this needs the collector of this app; it is not running here".into())
+}
+
+/// Reviews a day: stores its current resolved state as the next revision.
+#[tauri::command]
+async fn review(
+    ctx: tauri::State<'_, Ctx>,
+    day: String,
+    reason: Option<String>,
+) -> Result<String, String> {
+    let handle = runtime_handle(&ctx)?;
+    tauri::async_runtime::spawn_blocking(move || handle.review(day, reason))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+/// Keeps the reviewed revision for exactly this difference.
+#[tauri::command]
+async fn dismiss(
+    ctx: tauri::State<'_, Ctx>,
+    day: String,
+    fingerprint: String,
+) -> Result<String, String> {
+    let handle = runtime_handle(&ctx)?;
+    tauri::async_runtime::spawn_blocking(move || handle.dismiss(day, fingerprint))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
 /// Targets time can be assigned to (dropdown, UI-01).
 #[tauri::command]
 async fn targets(ctx: tauri::State<'_, Ctx>) -> Result<Vec<tracr_app::day::TargetOption>, String> {
@@ -424,7 +461,9 @@ fn main() {
             export_everything,
             correct,
             targets,
-            manual
+            manual,
+            review,
+            dismiss
         ])
         .setup(|app| {
             app.state::<Ctx>().start_runtime();

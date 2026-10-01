@@ -1096,3 +1096,83 @@ pub fn manual_entries(conn: &Connection) -> Result<Vec<ManualRev>> {
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
+
+// ---------------------------------------------------------------------------
+// Reviewed day revisions and dismissed discrepancies (schema v2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorklogRevision {
+    pub id: String,
+    pub day: String,
+    pub rev: i64,
+    pub action_seq: i64,
+    pub at: UtcMillis,
+    pub timezone: String,
+    pub state: String,
+    pub reason: Option<String>,
+    pub snapshot: String,
+    pub fingerprint: String,
+}
+
+pub fn append_worklog_revision(conn: &Connection, r: &WorklogRevision) -> Result<()> {
+    conn.execute(
+        "INSERT INTO worklog_revision (id, day, rev, action_seq, timezone, state, reason, snapshot, fingerprint)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![r.id, r.day, r.rev, r.action_seq, r.timezone, r.state, r.reason, r.snapshot, r.fingerprint],
+    )?;
+    Ok(())
+}
+
+/// The latest revision of a day, if it was reviewed.
+pub fn latest_worklog_revision(conn: &Connection, day: &str) -> Result<Option<WorklogRevision>> {
+    Ok(conn
+        .query_row(
+            "SELECT w.id, w.day, w.rev, w.action_seq, a.at, w.timezone, w.state, w.reason, w.snapshot, w.fingerprint
+             FROM worklog_revision w JOIN user_action a ON a.seq = w.action_seq
+             WHERE w.day = ?1 ORDER BY w.rev DESC LIMIT 1",
+            [day],
+            |r| {
+                Ok(WorklogRevision {
+                    id: r.get(0)?,
+                    day: r.get(1)?,
+                    rev: r.get(2)?,
+                    action_seq: r.get(3)?,
+                    at: UtcMillis(r.get(4)?),
+                    timezone: r.get(5)?,
+                    state: r.get(6)?,
+                    reason: r.get(7)?,
+                    snapshot: r.get(8)?,
+                    fingerprint: r.get(9)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
+pub fn append_dismissal(
+    conn: &Connection,
+    id: &str,
+    day: &str,
+    revision_id: &str,
+    fingerprint: &str,
+    action_seq: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO discrepancy_dismissal (id, day, revision_id, fingerprint, action_seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, day, revision_id, fingerprint, action_seq],
+    )?;
+    Ok(())
+}
+
+/// Whether the difference `fingerprint` was dismissed against `revision_id`.
+pub fn is_dismissed(conn: &Connection, revision_id: &str, fingerprint: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM discrepancy_dismissal WHERE revision_id = ?1 AND fingerprint = ?2",
+            params![revision_id, fingerprint],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}

@@ -202,30 +202,44 @@ pub fn default_file_name(from: &str, to: &str) -> String {
 pub const TIMESHEET_COLUMNS: &[&str] = &[
     "day",
     "timezone",
+    "worklog_state",
     "start",
     "end",
     "status",
     "counted_minutes",
     "unknown_minutes",
+    "non_work_minutes",
     "counting_basis",
+    "duration_basis",
     "unknown_reason",
-    "repository",
-    "worktree",
+    "target",
+    "target_key",
     "attribution_state",
+    "repository",
     "session_id",
     "native_session_id",
     "project_label",
     "cwd",
     "git_branch",
-    "start_boundary",
-    "end_boundary",
-    "reasons",
     "derived_as_of",
 ];
 
-/// Human time of every day with data in `[from, to]`: one row per atom.
-/// Counted and unknown minutes are separate columns and never one total;
-/// blank time (no evidence, locked, asleep) has no row.
+/// The repository of an attribution target key: explicit `repository:<key>`,
+/// or a structural repository key. Categories, "Other…" and worktree paths
+/// are not repositories.
+fn repository_of(key: &str) -> Option<&str> {
+    if let Some(r) = key.strip_prefix("repository:") {
+        return Some(r);
+    }
+    let not_repo =
+        key.starts_with("category:") || key.starts_with("other:") || key.starts_with('/');
+    (!not_repo).then_some(key)
+}
+
+/// Human time of every day with data in `[from, to]`: one row per interval.
+/// A reviewed day exports its latest **reviewed revision** (worklog time),
+/// a draft day its current derivation. Counted, unknown and non-work minutes
+/// are separate columns and never one total; blank time has no row.
 pub fn timesheet_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
     let (days, zone) = days_in(reader, from, to)?;
     let mut out = String::new();
@@ -242,56 +256,68 @@ pub fn timesheet_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
             .derived_as_of
             .map(|t| local_iso(&zone, t))
             .unwrap_or_default();
-        for a in &v.human.atoms {
-            let session = a
+        let (state, intervals) = match &v.review {
+            Some(r) => (
+                format!(
+                    "reviewed r{}{}",
+                    r.rev,
+                    if v.discrepancy.is_some() {
+                        " + discrepancy"
+                    } else {
+                        ""
+                    }
+                ),
+                r.snapshot.intervals.clone(),
+            ),
+            None => ("draft".to_owned(), crate::review::snapshot_of(&v).intervals),
+        };
+        for i in &intervals {
+            let session = i
                 .engaged_session
                 .as_ref()
                 .and_then(|id| v.sessions.iter().find(|s| &s.session_id == id));
-            let mins = minutes(a.end - a.start);
+            let mins = minutes(i.end - i.start);
+            let only = |status: &str| {
+                if i.status == status {
+                    mins.clone()
+                } else {
+                    String::new()
+                }
+            };
+            let counting = match (i.status.as_str(), i.duration_basis.as_str()) {
+                ("work", "inferred_continuity") => "inferred",
+                ("work", _) => "user_asserted",
+                _ => "",
+            };
+            let repository: Vec<&str> = i
+                .target_keys
+                .iter()
+                .filter_map(|k| repository_of(k))
+                .collect();
             row(
                 &mut out,
                 &[
                     v.day.clone(),
                     v.timezone.clone(),
-                    local_iso(&zone, a.start),
-                    local_iso(&zone, a.end),
-                    a.status.clone(),
-                    if a.status == "work" {
-                        mins.clone()
-                    } else {
-                        String::new()
-                    },
-                    if a.status == "unknown" {
-                        mins
-                    } else {
-                        String::new()
-                    },
-                    if a.status == "work" {
-                        if a.duration_basis == "inferred_continuity" {
-                            "inferred"
-                        } else {
-                            "user_asserted"
-                        }
-                        .to_owned()
-                    } else {
-                        String::new()
-                    },
-                    a.unknown_reason.clone().unwrap_or_default(),
-                    a.attribution
-                        .as_ref()
-                        .filter(|at| at.level == "repository")
-                        .map(|at| at.targets.join(";"))
-                        .unwrap_or_default(),
-                    session
-                        .and_then(|s| s.cwd.clone())
-                        .filter(|_| a.attribution.as_ref().is_some_and(|at| at.level != "none"))
-                        .unwrap_or_default(),
-                    match (&a.attribution, a.status.as_str()) {
-                        (Some(at), _) => at.state.clone(),
+                    state.clone(),
+                    local_iso(&zone, i.start),
+                    local_iso(&zone, i.end),
+                    i.status.clone(),
+                    only("work"),
+                    only("unknown"),
+                    only("non_work"),
+                    counting.to_owned(),
+                    i.duration_basis.clone(),
+                    i.unknown_reason.clone().unwrap_or_default(),
+                    i.target_labels.join(";"),
+                    i.target_keys.join(";"),
+                    match (&i.attribution_state, i.status.as_str()) {
+                        (Some(st), "work") => st.clone(),
                         (None, "work") => "unattributed".to_owned(),
                         _ => String::new(),
                     },
-                    a.engaged_session.clone().unwrap_or_default(),
+                    repository.join(";"),
+                    i.engaged_session.clone().unwrap_or_default(),
                     session
                         .map(|s| s.native_session_id.clone())
                         .unwrap_or_default(),
@@ -300,9 +326,6 @@ pub fn timesheet_csv(reader: &Reader, from: &str, to: &str) -> Result<String> {
                     session
                         .and_then(|s| s.git_branch.clone())
                         .unwrap_or_default(),
-                    a.start_boundary.clone().unwrap_or_default(),
-                    a.end_boundary.clone().unwrap_or_default(),
-                    a.reasons.join(";"),
                     as_of.clone(),
                 ],
             );

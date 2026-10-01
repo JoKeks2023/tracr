@@ -162,6 +162,30 @@ export interface LaneInterval {
   reason: string | null;
 }
 
+export interface ReviewedInterval {
+  start: number;
+  end: number;
+  status: "work" | "unknown" | "non_work";
+  duration_basis: string;
+  unknown_reason: string | null;
+  attribution_state: string | null;
+  target_keys: string[];
+  target_labels: string[];
+  engaged_session: string | null;
+}
+
+export interface Snapshot {
+  day: string;
+  timezone: string;
+  intervals: ReviewedInterval[];
+  counted_ms: number;
+  unknown_ms: number;
+  non_work_ms: number;
+  counted_by_target: Record<string, number>;
+  counted_by_basis: Record<string, number>;
+  derived_as_of: number | null;
+}
+
 export interface DayAgents {
   day: string;
   timezone: string;
@@ -174,6 +198,14 @@ export interface DayAgents {
   coverage: Record<string, LaneInterval[]>;
   corrections: CorrectionInfo[];
   manual_entries: ManualEntryInfo[];
+  review: { revision_id: string; rev: number; at: number; reason: string | null; snapshot: Snapshot } | null;
+  discrepancy: {
+    fingerprint: string;
+    counted_delta_ms: number;
+    unknown_delta_ms: number;
+    non_work_delta_ms: number;
+    draft: Snapshot;
+  } | null;
   quality: {
     provisional: boolean;
     provisional_reasons: string[];

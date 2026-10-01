@@ -9,6 +9,8 @@ export const api = {
   refresh: () => invoke<Refreshed>("refresh"),
   correct: (req: CorrectionRequest) => invoke<string>("correct", { req }),
   manual: (req: ManualRequest) => invoke<string>("manual", { req }),
+  review: (day: string, reason?: string) => invoke<string>("review", { day, reason }),
+  dismiss: (day: string, fingerprint: string) => invoke<string>("dismiss", { day, fingerprint }),
   targets: () => invoke<TargetOption[]>("targets"),
   approveRoot: (path: string) => invoke<void>("approve_root", { path }),
   /** Resolves to the written path, or null if the save panel was cancelled. */

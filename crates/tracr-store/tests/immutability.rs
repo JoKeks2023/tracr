@@ -349,32 +349,73 @@ fn duplicate_insert_is_ignored_not_replaced() {
 fn migrations_are_forward_only_with_backup_before_migrating() {
     let f = fixture();
     let mut conn = f.conn;
-    assert_eq!(user_version(&conn).unwrap(), 1);
+    let latest = migrate::LEDGER_MIGRATIONS.last().unwrap().version;
+    assert_eq!(user_version(&conn).unwrap(), latest);
     let dir = f.path.parent().unwrap().join("backups");
     let again = migrate_ledger(&mut conn, &dir, "t2").unwrap();
     assert_eq!(
         (again.from_version, again.to_version, again.backup),
-        (1, 1, None)
+        (latest, latest, None)
     );
 
-    const NEXT: &[Migration] = &[
-        migrate::LEDGER_MIGRATIONS[0],
-        Migration {
-            version: 2,
-            name: "test_additive",
-            sql: "CREATE TABLE test_additive (x INTEGER);",
-        },
-    ];
-    let report = migrate::migrate(&mut conn, NEXT, &dir, "t3").unwrap();
-    assert_eq!((report.from_version, report.to_version), (1, 2));
+    // A synthetic next migration on top of the real ones.
+    let mut next: Vec<Migration> = migrate::LEDGER_MIGRATIONS.to_vec();
+    next.push(Migration {
+        version: latest + 1,
+        name: "test_additive",
+        sql: "CREATE TABLE test_additive (x INTEGER);",
+    });
+    let report = migrate::migrate(&mut conn, &next, &dir, "t3").unwrap();
+    assert_eq!(
+        (report.from_version, report.to_version),
+        (latest, latest + 1)
+    );
     let backup = report
         .backup
         .expect("backup before migrating an existing ledger");
     assert!(backup.exists());
     let old = Connection::open(&backup).unwrap();
-    assert_eq!(user_version(&old).unwrap(), 1);
+    assert_eq!(user_version(&old).unwrap(), latest);
     assert_eq!(count(&old, "observation"), 1);
 
     let err = migrate_ledger(&mut conn, &dir, "t4").expect_err("ledger newer than build");
     assert!(err.to_string().contains("newer"));
+}
+
+#[test]
+fn reviewed_revisions_and_dismissals_are_append_only() {
+    let f = fixture();
+    let c = &f.conn;
+    c.execute(
+        "INSERT INTO user_action (id, kind, actor, at, client) VALUES ('ua-r', 'review', 'user', 1, 't')",
+        [],
+    )
+    .unwrap();
+    let seq: i64 = c
+        .query_row("SELECT seq FROM user_action WHERE id = 'ua-r'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    c.execute(
+        "INSERT INTO worklog_revision (id, day, rev, action_seq, timezone, state, snapshot, fingerprint)
+         VALUES ('w1', '2026-09-28', 1, ?1, 'UTC', 'reviewed', '{}', 'f1')",
+        [seq],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO discrepancy_dismissal (id, day, revision_id, fingerprint, action_seq)
+         VALUES ('d1', '2026-09-28', 'w1', 'f2', ?1)",
+        [seq],
+    )
+    .unwrap();
+    for sql in [
+        "UPDATE worklog_revision SET snapshot = '{\"changed\":1}'",
+        "DELETE FROM worklog_revision",
+        "REPLACE INTO worklog_revision (id, day, rev, action_seq, timezone, state, snapshot, fingerprint)
+         VALUES ('w1', '2026-09-28', 1, 1, 'UTC', 'reviewed', '{}', 'x')",
+        "UPDATE discrepancy_dismissal SET fingerprint = 'x'",
+        "DELETE FROM discrepancy_dismissal",
+    ] {
+        assert_aborts(c, sql);
+    }
 }

@@ -16,4 +16,13 @@ S2.2 manual entries and the timer
 - [x] Edit and delete are revisions; at most one running timer (start stops a running one); a running timer counts up to now (tested)
 - [ ] Manual check in the app (timer in header and menu bar, Add time, edit/delete)
 
-S2.3: open.
+S2.3 review
+
+- [x] Review stores the resolved day by value as a ledger revision (schema v2: `worklog_revision`, `discrepancy_dismissal`, append-only by trigger, incl. `REPLACE`) (tested)
+- [x] Review freezes counting: a later correction leaves r1 unchanged and shows a discrepancy with the exact delta (tested)
+- [x] Dismiss acts on exactly one difference; a different later change shows again (tested)
+- [x] Accept creates r2 and needs a reason (tested)
+- [x] E-2: a full rebuild (renormalization) leaves the reviewed day unchanged, with no false discrepancy (tested)
+- [x] The timesheet exports the reviewed revision (`worklog_state = reviewed rN`) (tested)
+- [ ] Walkthrough H (changed derivation under a prior correction) as a scenario test; walkthrough C after review (needs Codex, S1.6)
+- [ ] Manual check in the app

@@ -5,6 +5,7 @@ import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
 import { TimerControl } from "./TimerControl";
+import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
@@ -75,6 +76,11 @@ function Setup({ status, onApprove, busy }: { status: Status; onApprove: (p: str
   );
 }
 
+function signed(ms: number): string {
+  const m = Math.round(ms / 60_000);
+  return `${m > 0 ? "+" : m < 0 ? "−" : "±"}${duration(Math.abs(ms))}`;
+}
+
 export function App() {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [day, setDay] = useState<string | null>(null);
@@ -89,6 +95,7 @@ export function App() {
   const [reviewing, setReviewing] = useState(false);
   const [targets, setTargets] = useState<TargetOption[]>([]);
   const [entry, setEntry] = useState<ManualEntryInfo | "new" | null>(null);
+  const [reviewDay, setReviewDay] = useState(false);
   const loadTargets = () => void api.targets().then(setTargets).catch(() => setTargets([]));
   const openAtom = (a: HumanAtom) => {
     setAtom(a);
@@ -184,7 +191,11 @@ export function App() {
 
   const totals = useMemo(() => {
     if (!view) return null;
-    const human = view.human;
+    // A reviewed day reports its revision (worklog time), not the draft.
+    const reviewed = view.review?.snapshot;
+    const human = reviewed
+      ? { ...view.human, counted_ms: reviewed.counted_ms, unknown_ms: reviewed.unknown_ms, counted_by_target: reviewed.counted_by_target, unknown_by_reason: {} }
+      : view.human;
     let mainExec = 0;
     let subExec = 0;
     let output = 0;
@@ -212,7 +223,9 @@ export function App() {
           <div className="sub">
             {view ? (
               <span title={view.quality.provisional_reasons.join("\n")}>
-                Provisional ·{" "}
+                {view.review
+                  ? `Reviewed r${view.review.rev} · ${new Date(view.review.at).toLocaleString("en-GB", { timeZone: view.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${view.discrepancy ? " · new evidence differs" : ""} · `
+                  : "Provisional · "}
                 {view.quality.ingestion_complete
                   ? "data complete"
                   : view.quality.ingestion_verified_through
@@ -252,6 +265,11 @@ export function App() {
                 </option>
               ))}
             </select>
+          )}
+          {view && status?.collector === "collecting" && !view.review && (
+            <button className="button ghost" onClick={() => setReviewDay(true)}>
+              Review day
+            </button>
           )}
           {view && view.human.atoms.some((a) => a.status === "unknown") && (
             <button className="button ghost" onClick={() => setReviewing(true)}>
@@ -299,7 +317,9 @@ export function App() {
           <div className="summary">
             <div className="metric">
               <div className="value human-value">{duration(totals.human.counted_ms)}</div>
-              <div className="label">counted human time · inferred, provisional</div>
+              <div className="label">
+                {view.review ? `counted human time · reviewed r${view.review.rev}` : "counted human time · inferred, provisional"}
+              </div>
             </div>
             <div
               className="metric"
@@ -343,6 +363,33 @@ export function App() {
                 ))}
             </div>
           )}
+          {view.discrepancy && view.review && (
+            <div className="banner" role="status">
+              <span>
+                New evidence differs from your review (r{view.review.rev}): counted{" "}
+                <span className="mono">{signed(view.discrepancy.counted_delta_ms)}</span>, unknown{" "}
+                <span className="mono">{signed(view.discrepancy.unknown_delta_ms)}</span>, break{" "}
+                <span className="mono">{signed(view.discrepancy.non_work_delta_ms)}</span>
+              </span>
+              <span className="spacer" />
+              <button className="button secondary small" onClick={() => setReviewDay(true)}>
+                Accept as r{view.review.rev + 1}…
+              </button>
+              <button
+                className="button ghost small"
+                onClick={async () => {
+                  try {
+                    await api.dismiss(view.day, view.discrepancy!.fingerprint);
+                    corrected(`Kept r${view.review!.rev}`);
+                  } catch (e) {
+                    corrected(errorText(e), true);
+                  }
+                }}
+              >
+                Keep r{view.review.rev}
+              </button>
+            </div>
+          )}
           <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
         </>
       )}
@@ -355,6 +402,7 @@ export function App() {
           onDone={(text, error) => setNotice({ text, error })}
         />
       )}
+      {reviewDay && view && <ReviewDaySheet day={view} onClose={() => setReviewDay(false)} onChanged={corrected} />}
       {reviewing && view && (
         <ReviewList
           day={view}

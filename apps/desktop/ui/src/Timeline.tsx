@@ -237,7 +237,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
       </div>
 
       <div className="row">
-        <div className="label secondary">Human time</div>
+        <div className="label secondary">{day.review ? "Human time · now" : "Human time"}</div>
         <div className="track">
           <Grid range={range} marks={marks} />
           {day.human.atoms.map((a, i) => (
@@ -264,6 +264,22 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
           ))}
         </div>
       </div>
+      {day.review && (
+        <div className="row">
+          <div className="label secondary">Reviewed r{day.review.rev}</div>
+          <div className="track">
+            <Grid range={range} marks={marks} />
+            {day.review.snapshot.intervals.map((a, i) => (
+              <div
+                key={i}
+                className={`human reviewed ${a.status}`}
+                style={{ left: pct(range, Math.max(a.start, range.start)), width: width(range, Math.max(a.start, range.start), Math.min(a.end, range.end)) }}
+                title={`${hhmm(a.start, tz)}–${hhmm(a.end, tz)} · ${duration(a.end - a.start)} ${a.status === "work" ? "counted" : a.status === "unknown" ? "unknown" : "break"} (reviewed)${a.target_labels.length ? `\n→ ${a.target_labels.join(", ")}` : ""}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       <div className="row">
         <div className="label secondary">Device</div>
         <div className="track">

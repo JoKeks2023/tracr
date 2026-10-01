@@ -104,6 +104,9 @@ pub enum Job {
     ),
     /// A manual entry or timer operation, then an immediate update.
     Manual(crate::manual::ManualRequest, Sender<Result<String, String>>),
+    /// Review a day (`day`, `reason`), or keep the revision for one difference.
+    Review(String, Option<String>, Sender<Result<String, String>>),
+    Dismiss(String, String, Sender<Result<String, String>>),
     Stop(String),
 }
 
@@ -119,6 +122,8 @@ impl Job {
             Self::Refresh(_) => "refresh",
             Self::Correct(..) => "correct",
             Self::Manual(..) => "manual",
+            Self::Review(..) => "review",
+            Self::Dismiss(..) => "dismiss",
             Self::Stop(_) => "stop",
         }
     }
@@ -531,6 +536,22 @@ impl Collector {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
+            Job::Review(day, reason, reply) => {
+                // Review what is derived now: bring the store up to date first.
+                let result = self
+                    .rebuild()
+                    .and_then(|_| self.app.review_day(&day, reason.as_deref()));
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
+            Job::Dismiss(day, fingerprint, reply) => {
+                let result = self
+                    .app
+                    .dismiss_discrepancy(&day, &fingerprint)
+                    .map(|()| fingerprint);
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
             Job::Stop(_) => Ok(()),
         }
     }
@@ -544,6 +565,26 @@ pub struct RuntimeHandle {
 }
 
 impl RuntimeHandle {
+    fn ask(&self, job: impl FnOnce(Sender<Result<String, String>>) -> Job) -> Result<String> {
+        let (tx, rx) = mpsc::channel();
+        self.jobs
+            .send(job(tx))
+            .map_err(|_| anyhow!("collector stopped"))?;
+        rx.recv()
+            .map_err(|_| anyhow!("collector stopped"))?
+            .map_err(|e| anyhow!(e))
+    }
+
+    /// Reviews a day through the collector (it holds the writer lock).
+    pub fn review(&self, day: String, reason: Option<String>) -> Result<String> {
+        self.ask(|tx| Job::Review(day, reason, tx))
+    }
+
+    /// Keeps the reviewed revision for the difference with this fingerprint.
+    pub fn dismiss(&self, day: String, fingerprint: String) -> Result<String> {
+        self.ask(|tx| Job::Dismiss(day, fingerprint, tx))
+    }
+
     /// Applies a manual-entry or timer operation through the collector.
     pub fn manual(&self, req: crate::manual::ManualRequest) -> Result<String> {
         let (tx, rx) = mpsc::channel();

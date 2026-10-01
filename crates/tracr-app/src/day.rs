@@ -407,6 +407,10 @@ pub struct DayAgents {
     pub quality: DayQuality,
     pub corrections: Vec<CorrectionInfo>,
     pub manual_entries: Vec<ManualEntryInfo>,
+    /// The latest reviewed revision of the day, if reviewed.
+    pub review: Option<crate::review::ReviewState>,
+    /// The current derivation differs from the reviewed revision.
+    pub discrepancy: Option<crate::review::Discrepancy>,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -649,6 +653,8 @@ pub fn day_agents(
         stream_extents,
     };
     Ok(DayAgents {
+        review: None,
+        discrepancy: None,
         corrections: correction_infos(corrections, start, end),
         manual_entries: manual
             .iter()

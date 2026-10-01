@@ -10,6 +10,7 @@ pub mod derive;
 pub mod derive_human;
 pub mod export;
 pub mod manual;
+pub mod review;
 pub mod runtime;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -493,13 +494,15 @@ impl Reader {
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
         let manual = ledger::manual_entries(&self.conn)?;
-        day::day_agents(
+        let mut v = day::day_agents(
             &self.derived()?,
             &self.reporting_zone()?,
             day,
             &corrections,
             &manual,
-        )
+        )?;
+        review::attach(&self.conn, &mut v)?;
+        Ok(v)
     }
 
     /// Targets time can be assigned to (S2): repositories seen in sessions,
