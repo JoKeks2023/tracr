@@ -20,7 +20,7 @@ Only `vscode` threads count prompts as engagement; `cli` and `exec` start `autom
 Because: `vscode` is the only value in the real corpus, and guessing for others would inflate human time.
 
 ## Unpriced is never zero
-kind: constraint | date: 2026-10-24 | status: canon
+kind: constraint | date: 2026-10-24 | status: non-canon, superseded by: Unpriced is never zero, and a model is priced only if the price page lists it
 The pricing catalog has no OpenAI prices, so Codex usage shows "unpriced" and is excluded from cost totals, with the unpriced token share shown in the quality footer.
 Because: a missing price rendered as $0 would make the day's cost look complete when it is not.
 
@@ -53,3 +53,8 @@ Because: Codex now stores finished threads compressed, and byte-offset cursors c
 kind: gotcha | date: 2026-10-24 | status: canon
 `observation_facts` is insert-only per extractor version, but re-reading a line whose key and content hash exist is a duplicate and writes no new facts row. A new extracted field (e.g. Codex `rate_limits`) therefore exists only for lines first ingested after the change; history needs a re-extract path that does not exist yet.
 Because: found while scoping TRACR-14; payloads are never stored, so only the source files can supply old fields.
+
+## Unpriced is never zero, and a model is priced only if the price page lists it
+kind: constraint | date: 2026-10-24 | status: canon
+A usage record whose model has no exact catalog rule is unpriced and excluded from cost totals, with the unpriced token share shown in the quality footer. Codex has rules for the models on the OpenAI price page (standard short context, 2026-10-24.1); `codex-auto-review` is not on it and stays unpriced. Codex estimates are floors because cache writes are only a marker.
+Because: a missing price rendered as $0 would make the day's cost look complete when it is not.
