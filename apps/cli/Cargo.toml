@@ -12,8 +12,8 @@ jiff = "0.2.37"
 ctrlc = "3"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 serde_json = "1.0.151"
-tracr-app = { version = "0.9.0-dev", path = "../../crates/tracr-app" }
-tracr-core = { version = "0.9.0-dev", path = "../../crates/tracr-core" }
+tracr-app = { version = "0.9.0", path = "../../crates/tracr-app" }
+tracr-core = { version = "0.9.0", path = "../../crates/tracr-core" }
 
 [[bin]]
 name = "tracr"

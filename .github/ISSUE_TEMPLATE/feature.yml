@@ -1,0 +1,14 @@
+name: Feature request
+description: Something tracr should be able to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you want to do, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you expect to see?

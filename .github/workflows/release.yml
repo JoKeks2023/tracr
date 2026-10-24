@@ -1,0 +1,148 @@
+name: release
+
+# Tag `vX.Y.Z` to publish a GitHub Release (CLI + macOS app) and refresh the
+# Homebrew formula and cask. "Run workflow" builds the same files without
+# publishing anything. Setup and secrets: docs/release.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS arm64 (build, sign, publish)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Version
+        id: version
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c "import sys,json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name']=='tracr-cli'))")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match the crate version ${VERSION}" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # Signing is optional: without the secrets the app is built unsigned.
+      - name: Signing environment
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "${APPLE_CERTIFICATE}" ] && [ -n "${APPLE_SIGNING_IDENTITY}" ]; then
+            {
+              echo "APPLE_CERTIFICATE=${APPLE_CERTIFICATE}"
+              echo "APPLE_CERTIFICATE_PASSWORD=${APPLE_CERTIFICATE_PASSWORD}"
+              echo "APPLE_SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY}"
+            } >> "$GITHUB_ENV"
+            if [ -n "${APPLE_ID}" ] && [ -n "${APPLE_PASSWORD}" ] && [ -n "${APPLE_TEAM_ID}" ]; then
+              {
+                echo "APPLE_ID=${APPLE_ID}"
+                echo "APPLE_PASSWORD=${APPLE_PASSWORD}"
+                echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}"
+              } >> "$GITHUB_ENV"
+              echo "SIGNED=notarized" >> "$GITHUB_ENV"
+            else
+              echo "SIGNED=signed" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "SIGNED=no" >> "$GITHUB_ENV"
+            echo "::warning::No signing secrets: the app is built unsigned."
+          fi
+
+      - name: Command line tool
+        run: |
+          cargo build --release --locked -p tracr-cli
+          mkdir -p dist
+          NAME="tracr-${{ steps.version.outputs.version }}-aarch64-apple-darwin"
+          mkdir "dist/${NAME}"
+          cp target/release/tracr "dist/${NAME}/tracr"
+          tar -C dist -czf "dist/${NAME}.tar.gz" "${NAME}"
+          rm -r "dist/${NAME}"
+
+      - name: Desktop app
+        working-directory: apps/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm tauri build --bundles app
+
+      - name: Package the app
+        run: |
+          NAME="tracr-${{ steps.version.outputs.version }}-aarch64-apple-darwin"
+          ditto -c -k --keepParent target/release/bundle/macos/tracr.app "dist/${NAME}.zip"
+
+      - name: Check the signature
+        if: env.SIGNED != 'no'
+        run: |
+          codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/tracr.app
+          if [ "${SIGNED}" = "notarized" ]; then
+            xcrun stapler validate target/release/bundle/macos/tracr.app
+            spctl --assess --type execute --verbose target/release/bundle/macos/tracr.app
+          fi
+
+      - name: Smoke test the CLI
+        run: |
+          tar -xzf dist/tracr-*-aarch64-apple-darwin.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/tracr-*-aarch64-apple-darwin/tracr --version
+
+      - name: Checksums
+        working-directory: dist
+        run: shasum -a 256 *.tar.gz *.zip | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracr-${{ steps.version.outputs.version }}-macos-arm64
+          path: dist/*
+
+      - name: GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          FLAGS="--generate-notes"
+          case "${VERSION}" in 0.*|*-*) FLAGS="${FLAGS} --prerelease" ;; esac
+          if [ "${SIGNED}" = "no" ]; then
+            NOTE=$'**This build of the macOS app is not signed.** On first launch macOS asks for confirmation (right-click, Open), or run `xattr -dr com.apple.quarantine /Applications/tracr.app`.'
+          else
+            NOTE="The macOS app is signed with a Developer ID (${SIGNED})."
+          fi
+          gh release create "${GITHUB_REF_NAME}" dist/* ${FLAGS} --title "tracr ${VERSION}" --notes "${NOTE}"
+
+      - name: Homebrew formula and cask
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          CLI_SHA=$(shasum -a 256 dist/tracr-${VERSION}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          APP_SHA=$(shasum -a 256 dist/tracr-${VERSION}-aarch64-apple-darwin.zip | cut -d' ' -f1)
+          scripts/render-brew.sh "${VERSION}" "${CLI_SHA}" "${APP_SHA}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula Casks
+          git commit -m "brew: tracr ${VERSION}"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main

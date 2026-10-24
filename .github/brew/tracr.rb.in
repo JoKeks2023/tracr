@@ -1,0 +1,16 @@
+cask "tracr" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/JoKeks2023/tracr/releases/download/v#{version}/tracr-#{version}-aarch64-apple-darwin.zip"
+  name "tracr"
+  desc "Local development diary and time ledger"
+  homepage "https://github.com/JoKeks2023/tracr"
+
+  depends_on arch: :arm64
+  depends_on :macos
+
+  app "tracr.app"
+
+  zap trash: "~/Library/Application Support/tracr"
+end

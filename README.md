@@ -88,7 +88,7 @@ Quality
 
 ## Status
 
-tracr is **pre-release** (`0.9.0-dev`) and built in the open, in vertical slices.
+tracr is **pre-release** (`0.9.0`, not yet released) and built in the open, in vertical slices.
 
 | Slice | What | State |
 |---|---|---|
