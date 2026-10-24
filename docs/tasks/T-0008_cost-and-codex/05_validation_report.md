@@ -57,3 +57,14 @@ New: `tracr-provider-codex` discovery (2), extraction (5: kind mapping, no conte
 - Deployed. After the forced rebuild, all 20 live Codex sessions have a cwd and 7 a repository (the rest are outside approved roots or not git). The quality footer renders (screenshot `s17.png`); the root banner is gone because the user approved the Codex roots.
 - **Not verified by hand:** the menu-bar rows (tray menu not opened by me).
 - S1 exit check "a second import adds 0 provider-source observations": on a snapshot of the live ledger (534 sources, Claude and Codex), two consecutive `tracr import` runs: 0 inserted, 0 quarantined, 0 key conflicts, 108,986 → 108,986.
+
+## Compressed Codex rollouts (2026-10-24)
+
+`cargo fmt`, workspace clippy `-D warnings`, `cargo test --workspace` pass; new tests listed in the impl report.
+
+**Real data (a copy of the live ledger, which was last written 2026-10-03; `~/.codex` read only):**
+- `ruzstd` decodes all 37 local `.jsonl.zst` files to exactly the byte counts `zstdcat` gives (37 of 37 identical).
+- `tracr import` on the copy: all 37 Codex sources now point at their `.zst` file with cursor at the end of the content; Codex observations 7,660 before and 7,660 after (0 added, 0 lost). A second and a third import: 0 inserted, 0 quarantined, 0 key conflicts.
+- The same import also read three weeks of newer Claude data (18,749 inserted, 487 full re-reads, 51 ended, one `rotated_before_read` gap on a Claude source). That is the Claude path, unchanged by this work, and was not investigated.
+
+**Not verified:** a live session written compressed from the start (no new rollout exists since 2026-09-29), the running desktop app, and a rollout that is still being written when it is read.

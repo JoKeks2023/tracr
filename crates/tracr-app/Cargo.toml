@@ -26,4 +26,5 @@ uuid = { version = "1.26.1", features = ["v7"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+ruzstd = "0.9.1"
 tracr-testkit = { path = "../tracr-testkit" }

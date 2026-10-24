@@ -318,3 +318,76 @@ fn repeated_item_ids_across_threads_are_not_copies() {
         .sum();
     assert_eq!(prompts, 2);
 }
+
+/// Writes `lines` as Codex now stores a thread: zstd-compressed, next to the
+/// plain name with `.zst` appended.
+fn write_zst(path: &Path, lines: &[String]) {
+    let mut text = lines.join("\n");
+    text.push('\n');
+    let packed = ruzstd::encoding::compress_to_vec(
+        text.as_bytes(),
+        ruzstd::encoding::CompressionLevel::Fastest,
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, packed).unwrap();
+}
+
+fn zst_thread() -> (CodexThread, Vec<String>) {
+    let mut t = CodexThread::new(B, Origin::Interactive);
+    let mut lines = vec![t.meta("09:00")];
+    lines.extend(t.human_turn("09:00", "09:02", "turn_1", "resp_1", 100_000, 500));
+    (t, lines)
+}
+
+fn import_only(e: &Env) -> tracr_app::ImportReport {
+    let mut app = App::open_writer(&e.data, Box::new(SystemClock)).unwrap();
+    app.add_root(RootKind::Provider, &e.sessions).unwrap();
+    app.add_root(RootKind::Provider, &e.archived).unwrap();
+    app.import(&mut |_, _| {}).unwrap()
+}
+
+#[test]
+fn a_compressed_rollout_is_a_source() {
+    let e = env();
+    let (t, lines) = zst_thread();
+    write_zst(&live_path(&e, &t).with_extension("jsonl.zst"), &lines);
+    let report = import_only(&e);
+    assert_eq!(report.files_claimed, 1);
+    assert_eq!(report.new_sources, 1);
+    assert_eq!(report.quarantined, 0);
+    assert!(report.inserted > 0);
+    rebuild(&e, &[]);
+    let day = Reader::open(&e.data).unwrap().day_agents(DAY).unwrap();
+    assert_eq!(day.sessions.len(), 1);
+    assert_eq!(input_total(&day), 100_000);
+}
+
+#[test]
+fn compressing_a_thread_that_was_read_plain_adds_nothing_and_no_gap() {
+    let e = env();
+    let (t, lines) = zst_thread();
+    let plain = live_path(&e, &t);
+    write_lines(&plain, &lines);
+    let first = import_only(&e);
+    assert!(first.inserted > 0);
+
+    // Codex later replaces the plain file with its compressed form.
+    std::fs::remove_file(&plain).unwrap();
+    write_zst(&plain.with_extension("jsonl.zst"), &lines);
+    let second = import_only(&e);
+    assert_eq!(second.new_sources, 0, "same thread, same source");
+    assert_eq!(second.inserted, 0);
+    assert_eq!(second.quarantined, 0);
+    assert_eq!(second.key_conflicts, 0);
+    assert!(second.gaps.is_empty(), "history was preserved");
+
+    // Unchanged compressed file: nothing to do.
+    let third = import_only(&e);
+    assert_eq!((third.inserted, third.quarantined), (0, 0));
+    assert!(third.gaps.is_empty());
+
+    rebuild(&e, &[]);
+    let day = Reader::open(&e.data).unwrap().day_agents(DAY).unwrap();
+    assert_eq!(day.sessions.len(), 1);
+    assert_eq!(input_total(&day), 100_000);
+}

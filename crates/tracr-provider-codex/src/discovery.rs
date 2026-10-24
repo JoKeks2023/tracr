@@ -1,6 +1,7 @@
 //! Which files under an approved Codex root are rollout streams (§4.2).
 //!
-//! Claimed: `rollout-<YYYY-MM-DDTHH-MM-SS>-<thread uuid>.jsonl`, either below
+//! Claimed: `rollout-<YYYY-MM-DDTHH-MM-SS>-<thread uuid>.jsonl` (or the same
+//! name with `.zst`, zstd-compressed by Codex), either below
 //! `sessions/YYYY/MM/DD/` or directly in `archived_sessions/`. The thread ID
 //! in the file name is the stream identity (checked against `session_meta.id`
 //! on every local rollout), so archiving a thread keeps its source
@@ -22,7 +23,10 @@ fn is_uuid(s: &str) -> bool {
 
 /// The thread ID of a rollout file name.
 pub fn thread_of_file(name: &str) -> Option<&str> {
-    let stem = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
+    let stem = name
+        .strip_prefix("rollout-")?
+        .strip_suffix(".jsonl.zst")
+        .or_else(|| name.strip_suffix(".jsonl")?.strip_prefix("rollout-"))?;
     // `YYYY-MM-DDTHH-MM-SS-` is 20 bytes, then the 36-byte thread UUID.
     let (stamp, thread) = (stem.get(..20)?, stem.get(20..)?);
     let stamp_ok = stamp.bytes().enumerate().all(|(i, c)| match i {
@@ -64,6 +68,20 @@ mod tests {
     use super::*;
 
     const T: &str = "019f0000-aaaa-7000-8000-00000000000a";
+
+    #[test]
+    fn a_compressed_rollout_is_the_same_stream_as_its_plain_name() {
+        let m = MachineId::new("m");
+        let plain = format!("rollout-2026-08-11T22-18-58-{T}.jsonl");
+        let packed = format!("{plain}.zst");
+        assert_eq!(thread_of_file(&packed), Some(T));
+        assert_eq!(
+            classify(&m, &[&packed]).unwrap().stream_key,
+            classify(&m, &[&plain]).unwrap().stream_key
+        );
+        assert!(thread_of_file(&format!("{plain}.zst.bak")).is_none());
+        assert!(thread_of_file(&format!("rollout-2026-08-11T22-18-58-{T}.zst")).is_none());
+    }
 
     #[test]
     fn claims_rollouts_live_and_archived_as_one_stream() {

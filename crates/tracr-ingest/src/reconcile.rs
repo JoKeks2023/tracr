@@ -33,7 +33,7 @@ use tracr_store::ledger::{self, InsertOutcome, NewObservation, SourceCursor, Sou
 use crate::cursor::{
     Break, Continuity, FileSnapshot, check_continuity, head_fingerprint, snapshot, snapshot_of_open,
 };
-use crate::reader::{Line, LineReader};
+use crate::reader::{Line, LineReader, decompress, is_compressed};
 use crate::source::{RunContext, new_uuid_v7, stream_ref, write_collector_record};
 use crate::{IngestEnv, IngestError, Registry, Result};
 
@@ -167,6 +167,16 @@ pub fn locate(
     Ok(None)
 }
 
+/// The cursor already covers all of this compressed file: same file, same
+/// mtime, and the last read ended exactly at the end of the content.
+fn compressed_unchanged(c: &SourceCursor, snap: &FileSnapshot) -> bool {
+    c.path.as_deref() == Some(&*snap.path.to_string_lossy())
+        && c.file_identity.as_deref() == snap.identity.as_ref().map(|i| i.0.as_str())
+        && c.mtime_at_read.is_some()
+        && c.mtime_at_read == snap.mtime
+        && c.size_at_read == Some(c.byte_offset)
+}
+
 fn empty_cursor(source: &SourceRow, now: UtcMillis) -> SourceCursor {
     SourceCursor {
         source_id: source.id.clone(),
@@ -206,14 +216,33 @@ pub fn reconcile(
         return file_missing(conn, env, run, source, cursor, trigger, opts);
     };
     // Open once; judge identity, size and mtime on this handle (no TOCTOU).
-    let file = match File::open(&located.path) {
+    let raw = match File::open(&located.path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return file_missing(conn, env, run, source, cursor, trigger, opts);
         }
         Err(e) => return Err(e.into()),
     };
-    let snap = snapshot_of_open(&located.path, &file, env.file_identity)?;
+    let raw_snap = snapshot_of_open(&located.path, &raw, env.file_identity)?;
+    // A compressed file is read as its decompressed content: offsets, head
+    // and line fingerprints are those of the content. Identity and mtime stay
+    // the compressed file's, so an unchanged file is not decompressed again.
+    let (file, snap) = if is_compressed(&located.path) {
+        if let Some(c) = &cursor
+            && compressed_unchanged(c, &raw_snap)
+        {
+            let mut report = ReconcileReport::new(source, trigger, ReadMode::Tail, "holds");
+            report.from_offset = c.byte_offset;
+            report.to_offset = c.byte_offset;
+            report.reached_eof = true;
+            return Ok(report);
+        }
+        let plain = decompress(raw)?;
+        let size = plain.metadata()?.len();
+        (plain, FileSnapshot { size, ..raw_snap })
+    } else {
+        (raw, raw_snap)
+    };
     let mut probe = file.try_clone()?;
     let (mode, brk) = match &cursor {
         None => (ReadMode::First, None),

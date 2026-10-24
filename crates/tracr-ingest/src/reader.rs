@@ -49,3 +49,36 @@ impl LineReader {
         self.pos
     }
 }
+
+/// A file read as its decompressed content (`*.jsonl.zst`).
+pub fn is_compressed(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e == "zst")
+}
+
+/// Decompresses a zstd file into an anonymous temporary file, positioned at 0.
+/// A frame cut off by a writer that is still running keeps the bytes decoded
+/// so far (its last line is then a partial line, as with a plain file); a
+/// file that yields nothing before failing is an error.
+pub fn decompress(file: File) -> io::Result<File> {
+    use std::io::{Read, Write};
+    let invalid = |e: ruzstd::decoding::errors::FrameDecoderError| {
+        io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+    };
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(file).map_err(invalid)?;
+    let mut out = tempfile::tempfile()?;
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut written = 0u64;
+    loop {
+        match decoder.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                out.write_all(&buf[..n])?;
+                written += n as u64;
+            }
+            Err(e) if written == 0 => return Err(e),
+            Err(_) => break,
+        }
+    }
+    out.seek(SeekFrom::Start(0))?;
+    Ok(out)
+}

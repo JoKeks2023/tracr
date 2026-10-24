@@ -30,7 +30,7 @@ pub struct DiscoveryReport {
     pub unreadable_dirs: u64,
 }
 
-/// Collects `*.jsonl` files below `dir`. Unreadable directories are skipped
+/// Collects `*.jsonl` and `*.jsonl.zst` files below `dir`. Unreadable directories are skipped
 /// and counted: one unreadable directory never aborts discovery.
 fn walk(
     dir: &Path,
@@ -56,7 +56,7 @@ fn walk(
             rel.push(name);
             walk(&entry.path(), rel, out, unreadable);
             rel.pop();
-        } else if ft.is_file() && name.ends_with(".jsonl") {
+        } else if ft.is_file() && (name.ends_with(".jsonl") || name.ends_with(".jsonl.zst")) {
             let mut r = rel.clone();
             r.push(name);
             out.push((entry.path(), r));

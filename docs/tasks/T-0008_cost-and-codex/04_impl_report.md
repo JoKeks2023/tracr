@@ -63,3 +63,19 @@
 | Desktop quality footer (§13.4); `DayAgents.ledger_counts` | `apps/desktop/ui/src/QualityFooter.tsx`, `crates/tracr-app/src/day.rs` |
 
 **Walkthrough C execution minutes:** 60 · 41 · 40 instead of the walkthrough's illustrative 59 · 38 · 37. A segment opens at its turn's start (the prompt), while the walkthrough starts each run one minute after its prompt. Human results match exactly: 52 counted, 13 unknown, targets 25 / 27, C 0.
+
+## Compressed Codex rollouts (2026-10-24, GitHub #2 / TRACR-13)
+
+Codex now stores rollouts as `rollout-….jsonl.zst`; the plain files are gone locally.
+
+| Part | Where |
+|---|---|
+| Discovery claims `*.jsonl.zst`; the thread ID in the name is the stream, so a compressed thread is the same source as its plain name | `crates/tracr-provider-codex/src/discovery.rs`, `crates/tracr-ingest/src/discovery.rs` |
+| `reconcile` reads a compressed file as its decompressed content (anonymous temp file, `ruzstd`); offsets and fingerprints are those of the content, identity and mtime those of the compressed file | `crates/tracr-ingest/src/reader.rs` (`decompress`), `reconcile.rs` |
+| An unchanged compressed file (same path, identity, mtime, cursor at end) is not decompressed again | `reconcile.rs` (`compressed_unchanged`) |
+| A frame cut off by a running writer keeps the bytes decoded so far (partial last line); a file that yields nothing is an error | `reader.rs` |
+| Live watcher hints include `.zst` | `crates/tracr-app/src/runtime.rs` |
+
+**Decision:** plain → compressed changes the file identity, so continuity breaks (`identity_changed`) and the file is re-read once; the dedup identity keeps that at 0 new observations, and the history check finds the last record, so no gap.
+
+**Tests:** `a_compressed_rollout_is_a_source`, `compressing_a_thread_that_was_read_plain_adds_nothing_and_no_gap` (`crates/tracr-app/tests/codex.rs`), `a_compressed_rollout_is_the_same_stream_as_its_plain_name` (codex discovery).

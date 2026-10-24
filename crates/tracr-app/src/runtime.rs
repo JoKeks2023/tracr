@@ -666,11 +666,9 @@ impl Runtime {
                             overflow.store(true, Ordering::SeqCst);
                         }
                         if let Ok(mut p) = pending.lock() {
-                            p.extend(
-                                ev.paths
-                                    .into_iter()
-                                    .filter(|p| p.extension().is_some_and(|e| e == "jsonl")),
-                            );
+                            p.extend(ev.paths.into_iter().filter(|p| {
+                                p.extension().is_some_and(|e| e == "jsonl" || e == "zst")
+                            }));
                         }
                     }
                     Err(_) => overflow.store(true, Ordering::SeqCst),
