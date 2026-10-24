@@ -79,3 +79,13 @@ Codex now stores rollouts as `rollout-….jsonl.zst`; the plain files are gone l
 **Decision:** plain → compressed changes the file identity, so continuity breaks (`identity_changed`) and the file is re-read once; the dedup identity keeps that at 0 new observations, and the history check finds the last record, so no gap.
 
 **Tests:** `a_compressed_rollout_is_a_source`, `compressing_a_thread_that_was_read_plain_adds_nothing_and_no_gap` (`crates/tracr-app/tests/codex.rs`), `a_compressed_rollout_is_the_same_stream_as_its_plain_name` (codex discovery).
+
+## Codex prices in the catalog (2026-10-24, TRACR-17)
+
+- `pricing/catalog.toml` `2026-10-24.1`: source `openai-pricing` (`https://developers.openai.com/api/docs/pricing`, fetched 2026-10-24 by a fetch agent, not by hand) and four rules, provider `codex`, tier `default`, speed `standard`, geo `global`: `gpt-5.6-luna` 0.20 / 0.02 / 1.20, `gpt-5.6-sol` 4 / 0.40 / 20, `gpt-5.6-terra` 2 / 0.20 / 12, `gpt-6-astra` 10 / 1 / 50 (input / cached input / output, USD per MTok, standard short context).
+- Not modeled and stated in the catalog header: input above 272K tokens (priced higher on the page), Fast/Flex/Batch, cache-write prices. Largest local Codex input per response is 244,947, so no local record is affected.
+- The page notes promotional pricing for `gpt-5.6-sol` through at least 2026-11-21; whether the listed number is the promotional one is not stated in what was read.
+- `codex-auto-review` is not on the page: stays unpriced.
+- The service tier comes from `thread_settings_applied` (value `default`); the testkit emits it when `CodexThread::service_tier` is set.
+- Codex estimates are floors (`category_not_reported:cache_write`): Codex reports cache writes only as a marker.
+- Test `bundled_catalog_is_valid_and_exact` now requires the cache-write tiers only for Claude rules.

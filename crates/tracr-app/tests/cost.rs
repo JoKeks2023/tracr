@@ -93,7 +93,7 @@ fn records_are_estimated_one_by_one_and_unpriced_is_never_zero() {
     assert_eq!(s.cost.unpriced_tokens, 100 + 1410);
     assert_eq!(day.cost.identified.amount_nano, Some(6_980_000));
     assert_eq!(day.cost.spanning_records, 0);
-    assert!(day.cost.pricing.revision.starts_with("2026-10-01.1+"));
+    assert!(day.cost.pricing.revision.starts_with("2026-10-24.1+"));
     assert_eq!(day.cost.pricing.label, "API-equivalent estimate, not spend");
     assert!(day.pending.is_empty(), "the cost lane is derived now");
 
@@ -210,7 +210,7 @@ fn day_report_keeps_money_kinds_apart() {
     let reader = Reader::open(&data).unwrap();
     let day = reader.day_agents(DAY).unwrap();
     let text = tracr_app::report::day_text(&day);
-    assert!(text.contains("API-equivalent estimate, not spend · catalog 2026-10-01.1"));
+    assert!(text.contains("API-equivalent estimate, not spend · catalog 2026-10-24.1"));
     assert!(text.contains(">= 0.01 USD"), "{text}");
     assert!(text.contains("0.95 USD (totalCostUSD"), "{text}");
     assert!(

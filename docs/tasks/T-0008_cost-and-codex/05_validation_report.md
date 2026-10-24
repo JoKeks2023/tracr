@@ -68,3 +68,9 @@ New: `tracr-provider-codex` discovery (2), extraction (5: kind mapping, no conte
 - The same import also read three weeks of newer Claude data (18,749 inserted, 487 full re-reads, 51 ended, one `rotated_before_read` gap on a Claude source). That is the Claude path, unchanged by this work, and was not investigated.
 
 **Not verified:** a live session written compressed from the start (no new rollout exists since 2026-09-29), the running desktop app, and a rollout that is still being written when it is read.
+
+## Codex prices (2026-10-24)
+
+Tests: `codex_usage_is_priced_from_the_catalog_and_unlisted_models_stay_unpriced` (exact nano-units for gpt-5.6-luna; `codex-auto-review` unpriced, not zero).
+**Real data (copy of the ledger, rebuilt):** `tracr day 2026-09-16` now shows Codex `jokeks2023/jorisconrad.com` at `>= 7.64 USD` and the unpriced share of the day at 2% of tokens (was 9%); the remaining unpriced Codex session is the `referenced-chatgpt-conversa…` one, whose model was not looked up. Footer: "catalog 2026-10-24.1 as of 2026-10-01" (the oldest source date, by design).
+**Not verified:** the prices themselves against the live page by me (taken from a fetch agent's table), and whether the listed `gpt-5.6-sol` price is the promotional one.

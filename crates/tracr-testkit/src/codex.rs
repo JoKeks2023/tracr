@@ -27,6 +27,8 @@ pub struct CodexThread {
     pub cwd: String,
     pub cli_version: String,
     pub model: String,
+    /// `service_tier` reported by `thread_settings_applied` (`default` in real rollouts); `None` omits it.
+    pub service_tier: Option<String>,
     pub origin: Origin,
     ordinal: u64,
 }
@@ -38,6 +40,7 @@ impl CodexThread {
             cwd: "/Users/dev/project".into(),
             cli_version: "0.153.4".into(),
             model: "gpt-5.6-luna".into(),
+            service_tier: None,
             origin,
             ordinal: 0,
         }
@@ -118,7 +121,16 @@ impl CodexThread {
             "turn_context",
             json!({"turn_id": turn, "cwd": cwd, "model": model, "effort": "medium", "summary": "auto", "approval_policy": "on-request", "user_instructions": SECRET, "developer_instructions": SECRET}),
         );
-        vec![started, ctx]
+        let mut lines = vec![started, ctx];
+        if let Some(tier) = self.service_tier.clone() {
+            let model = self.model.clone();
+            lines.push(self.line(
+                hhmm,
+                "event_msg",
+                json!({"type": "thread_settings_applied", "thread_settings": {"model": model, "service_tier": tier}}),
+            ));
+        }
+        lines
     }
 
     pub fn user_message(&mut self, hhmm: &str, turn: &str, id: &str) -> String {

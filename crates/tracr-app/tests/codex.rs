@@ -391,3 +391,46 @@ fn compressing_a_thread_that_was_read_plain_adds_nothing_and_no_gap() {
     assert_eq!(day.sessions.len(), 1);
     assert_eq!(input_total(&day), 100_000);
 }
+
+#[test]
+fn codex_usage_is_priced_from_the_catalog_and_unlisted_models_stay_unpriced() {
+    let e = env();
+    let mut t = CodexThread::new(B, Origin::Interactive);
+    t.service_tier = Some("default".into());
+    let mut lines = vec![t.meta("09:00")];
+    // gpt-5.6-luna: $0.20 input, $0.02 cached input, $1.20 output per MTok.
+    // 400,000 input of which 100,000 cached, 10,000 output:
+    // 300,000×200 + 100,000×20 + 10,000×1,200 = 74,000,000 nano.
+    lines.extend(t.human_turn("09:00", "09:02", "turn_1", "resp_1", 400_000, 10_000));
+    write_lines(&live_path(&e, &t), &lines);
+    rebuild(&e, &[]);
+    let day = Reader::open(&e.data).unwrap().day_agents(DAY).unwrap();
+    let s = &day.sessions[0];
+    // Codex reports no cache-write category (only a marker), so the estimate
+    // is a floor and says so, as for Claude without a cache-write tier.
+    assert_eq!(s.cost.status(), Some("partially_priced"), "{:?}", s.cost);
+    assert!(
+        s.cost
+            .reasons
+            .contains(&"category_not_reported:cache_write".to_owned())
+    );
+    let cached = s.usage[0].cache_read.sum;
+    let expected = (400_000 - cached) * 200 + cached * 20 + 10_000 * 1_200;
+    assert_eq!(s.cost.amount_nano, Some(expected));
+
+    let e2 = env();
+    let mut u = CodexThread::new(B, Origin::Interactive);
+    u.service_tier = Some("default".into());
+    u.model = "codex-auto-review".into();
+    let mut lines = vec![u.meta("09:00")];
+    lines.extend(u.human_turn("09:00", "09:02", "turn_1", "resp_1", 400_000, 10_000));
+    write_lines(&live_path(&e2, &u), &lines);
+    rebuild(&e2, &[]);
+    let day = Reader::open(&e2.data).unwrap().day_agents(DAY).unwrap();
+    let s = &day.sessions[0];
+    assert_eq!(
+        s.cost.amount_nano, None,
+        "not on the price page: unpriced, never zero"
+    );
+    assert_eq!(s.cost.status(), Some("unpriced"));
+}

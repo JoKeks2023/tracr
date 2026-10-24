@@ -12,15 +12,27 @@
 # Not modeled (no rule, so such usage is unpriced or stated as an assumption):
 # Batch API, inference_geo "us" (1.1x), partner clouds (Bedrock, Vertex),
 # code execution hours, Managed Agents session runtime.
+# OpenAI (Codex): rules cover the standard short-context price only (input up
+# to 272K tokens). The page prices longer inputs higher (input x2); that is
+# not modeled, so a record above 272K input tokens would be underestimated.
+# No Codex usage above 245K input tokens exists locally. Fast, Flex, Batch and
+# cache-write prices are not modeled either. "default" is the service tier
+# Codex records. Models the page does not list (e.g. codex-auto-review) stay
+# unpriced.
 # Claude Sonnet 5.5 is on the page, but its model ID is not verified here.
 
-catalog_version = "2026-10-01.1"
+catalog_version = "2026-10-24.1"
 currency = "USD"
 
 [[sources]]
 id = "anthropic-pricing"
 url = "https://platform.claude.com/docs/en/about-claude/pricing"
 fetched_at = "2026-10-01"
+
+[[sources]]
+id = "openai-pricing"
+url = "https://developers.openai.com/api/docs/pricing"
+fetched_at = "2026-10-24"
 
 [tier_categories]
 ephemeral_5m_input_tokens = "cache_write_5m"
@@ -245,3 +257,43 @@ inference_geo = "global"
 source = "anthropic-pricing"
 per_mtok = { input = "10", cache_write_5m = "12.50", cache_write_1h = "20", cache_read = "1", output = "50" }
 per_unit = { web_search_requests = "0.01", web_fetch_requests = "0" }
+
+[[rules]]
+id = "gpt-5.6-luna/default"
+provider = "codex"
+model = "gpt-5.6-luna"
+service_tier = "default"
+speed = "standard"
+inference_geo = "global"
+source = "openai-pricing"
+per_mtok = { input = "0.20", cache_read = "0.02", output = "1.20" }
+
+[[rules]]
+id = "gpt-5.6-sol/default"
+provider = "codex"
+model = "gpt-5.6-sol"
+service_tier = "default"
+speed = "standard"
+inference_geo = "global"
+source = "openai-pricing"
+per_mtok = { input = "4", cache_read = "0.40", output = "20" }
+
+[[rules]]
+id = "gpt-5.6-terra/default"
+provider = "codex"
+model = "gpt-5.6-terra"
+service_tier = "default"
+speed = "standard"
+inference_geo = "global"
+source = "openai-pricing"
+per_mtok = { input = "2", cache_read = "0.20", output = "12" }
+
+[[rules]]
+id = "gpt-6-astra/default"
+provider = "codex"
+model = "gpt-6-astra"
+service_tier = "default"
+speed = "standard"
+inference_geo = "global"
+source = "openai-pricing"
+per_mtok = { input = "10", cache_read = "1", output = "50" }

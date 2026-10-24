@@ -91,15 +91,15 @@ mod tests {
         let p = bundled();
         assert!(p.revision.starts_with(&p.catalog.catalog_version));
         assert_eq!(p.catalog.currency, "USD");
-        // Every rule prices all five token categories.
+        // Every rule prices input, cache reads and output. Claude rules also
+        // price both cache-write tiers; Codex records no cache writes as a
+        // category (cache writes are a marker there), so its rules have none.
         for r in &p.catalog.rules {
-            for c in [
-                "input",
-                "cache_write_5m",
-                "cache_write_1h",
-                "cache_read",
-                "output",
-            ] {
+            let mut cats = vec!["input", "cache_read", "output"];
+            if r.provider == "claude_code" {
+                cats.extend(["cache_write_5m", "cache_write_1h"]);
+            }
+            for c in cats {
                 assert!(r.per_mtok.contains_key(c), "{} lacks {c}", r.id);
             }
         }
