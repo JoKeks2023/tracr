@@ -43,3 +43,13 @@ Because: walkthrough C only reconciles (52 counted, 13 unknown) if neither is fo
 kind: constraint | date: 2026-10-24 | status: canon
 Provider history stays on the machine; dogfooding uses real local Claude and Codex history and nothing is uploaded. Provider roots must be approved by the user before they are read.
 Because: transcripts contain private work, and approval is the user's control over what enters the ledger.
+
+## Compressed Codex rollouts are read as their decompressed content
+kind: choice | date: 2026-10-24 | status: canon
+`rollout-*.jsonl.zst` is the same source as the plain name (the thread ID in the file name is the stream). Offsets, head and line fingerprints are those of the decompressed content; identity and mtime are the compressed file's, so an unchanged file is not decoded again. Switching a thread from plain to compressed re-reads it once and adds 0 observations.
+Because: Codex now stores finished threads compressed, and byte-offset cursors cannot tail a compressed file.
+
+## Stored facts are not re-extracted when a record already exists
+kind: gotcha | date: 2026-10-24 | status: canon
+`observation_facts` is insert-only per extractor version, but re-reading a line whose key and content hash exist is a duplicate and writes no new facts row. A new extracted field (e.g. Codex `rate_limits`) therefore exists only for lines first ingested after the change; history needs a re-extract path that does not exist yet.
+Because: found while scoping TRACR-14; payloads are never stored, so only the source files can supply old fields.
