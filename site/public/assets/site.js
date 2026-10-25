@@ -33,3 +33,22 @@ if ('IntersectionObserver' in window && items.length) {
   );
   items.forEach((el) => observer.observe(el));
 }
+
+// Pick the download that fits this Mac when the browser says what it is.
+// Chromium reports the CPU architecture; Safari and Firefox do not, and then
+// the universal file stays the default.
+const main = document.getElementById('dl-main');
+const note = document.getElementById('dl-note');
+if (main && note && navigator.userAgentData?.getHighEntropyValues) {
+  navigator.userAgentData
+    .getHighEntropyValues(['architecture', 'platform'])
+    .then(({ architecture, platform }) => {
+      if (platform !== 'macOS') return;
+      const kind = architecture === 'arm' ? 'arm' : architecture === 'x86' ? 'intel' : null;
+      if (!kind) return;
+      main.href = main.dataset[kind];
+      main.textContent = main.dataset[kind === 'arm' ? 'labelArm' : 'labelIntel'];
+      note.innerHTML = note.dataset[kind];
+    })
+    .catch(() => {});
+}

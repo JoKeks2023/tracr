@@ -106,7 +106,7 @@ Estimated API cost · API-equivalent estimate, not spend · catalog 2026-10-24.1
 
 ## Status
 
-tracr is **pre-release** (`0.9.1` is the current [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1)) and built in the open, in vertical slices.
+tracr is **pre-release** (`0.9.2` is the current [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.2)) and built in the open, in vertical slices.
 
 | Slice | What | State |
 |---|---|---|
@@ -119,11 +119,17 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 
 ## Try it
 
-### Download (macOS, Apple Silicon)
+### Download (macOS)
 
-[**Download tracr for macOS (.dmg)**](https://tracr.jorisconrad.com/download): open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
+[**Download tracr for macOS (.dmg)**](https://tracr.jorisconrad.com/download): one universal file for Apple Silicon and Intel. Open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
 
-### With Homebrew
+| Download | For |
+|---|---|
+| [Universal](https://tracr.jorisconrad.com/download) (17 MB) | any Mac |
+| [Apple Silicon](https://tracr.jorisconrad.com/download/apple-silicon) (8 MB) | M1 and later |
+| [Intel](https://tracr.jorisconrad.com/download/intel) (9 MB) | Macs with an Intel processor |
+
+### With Homebrew (Apple Silicon and Intel)
 
 ```sh
 brew tap JoKeks2023/tracr
