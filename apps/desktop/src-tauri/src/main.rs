@@ -36,6 +36,30 @@ impl Ctx {
             .ok_or_else(|| "no data directory: set TRACR_DATA_DIR".to_owned())
     }
 
+    fn repository_roots(&self) -> Vec<String> {
+        self.data_dir
+            .as_ref()
+            .and_then(|d| Reader::open(d).ok())
+            .and_then(|r| r.repository_roots().ok())
+            .unwrap_or_default()
+    }
+
+    /// Runs `change` with the writer lock while the collector is stopped, then
+    /// restarts the collector so a changed root set is watched (or dropped).
+    fn change_roots(
+        &self,
+        reason: &str,
+        change: impl FnOnce(&mut App) -> anyhow::Result<()>,
+    ) -> Result<(), String> {
+        let dir = self.dir()?;
+        self.stop_runtime(reason);
+        let result = App::open_writer(&dir, Box::new(SystemClock))
+            .map(|app| app.with_client(CLIENT))
+            .and_then(|mut app| change(&mut app));
+        self.start_runtime();
+        result.map_err(err)
+    }
+
     fn approved_roots(&self) -> Vec<String> {
         self.data_dir
             .as_ref()
@@ -70,6 +94,17 @@ impl Ctx {
     }
 }
 
+/// Approved roots are stored resolved (`add_root` canonicalizes), while a
+/// proposal is the plain path, which may be a symlink (dotfile managers do
+/// that to `~/.claude`). Compare both spellings.
+fn is_approved(proposal: &std::path::Path, approved: &[String]) -> bool {
+    let plain = proposal.display().to_string();
+    let resolved = std::fs::canonicalize(proposal)
+        .ok()
+        .map(|p| p.display().to_string());
+    approved.contains(&plain) || resolved.is_some_and(|r| approved.contains(&r))
+}
+
 fn err(e: anyhow::Error) -> String {
     format!("{e:#}")
 }
@@ -86,7 +121,11 @@ struct Status {
     data_dir_from_env: bool,
     ledger_present: bool,
     approved_roots: Vec<String>,
+    approved_repository_roots: Vec<String>,
     proposed_roots: Vec<ProposedRoot>,
+    /// The user's home folder, so the window can show `~/…` instead of a user name.
+    home: Option<String>,
+    app_version: &'static str,
     /// `collecting`, `stalled` (no heartbeat for 3 min), `elsewhere` (another
     /// tracr process holds the lock), `stopped` or `not_configured`.
     collector: &'static str,
@@ -132,15 +171,15 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
             .is_some_and(|d| d.join("ledger.sqlite").exists()),
         proposed_roots: proposed_provider_roots()
             .into_iter()
-            .map(|p| {
-                let path = p.display().to_string();
-                ProposedRoot {
-                    approved: approved.contains(&path),
-                    path,
-                }
+            .map(|p| ProposedRoot {
+                approved: is_approved(&p, &approved),
+                path: p.display().to_string(),
             })
             .collect(),
         approved_roots: approved,
+        approved_repository_roots: ctx.repository_roots(),
+        home: std::env::var("HOME").ok(),
+        app_version: env!("CARGO_PKG_VERSION"),
         collector,
         collector_detail: error,
         runtime,
@@ -152,27 +191,72 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
     })
 }
 
-/// Approves one proposed provider root (PS-02: an explicit user action).
-/// The collector restarts so the new root is watched.
+/// Approves proposed provider roots, several at once (PS-02: an explicit user
+/// action). The collector restarts once so the new roots are watched.
 #[tauri::command]
-async fn approve_root(ctx: tauri::State<'_, Ctx>, path: String) -> Result<(), String> {
-    if !proposed_provider_roots()
+async fn approve_roots(ctx: tauri::State<'_, Ctx>, paths: Vec<String>) -> Result<(), String> {
+    let proposed: Vec<String> = proposed_provider_roots()
         .iter()
-        .any(|p| p.display().to_string() == path)
-    {
-        return Err("only a proposed provider root can be approved here".into());
+        .map(|p| p.display().to_string())
+        .collect();
+    if paths.is_empty() || paths.iter().any(|p| !proposed.contains(p)) {
+        return Err("only proposed provider roots can be approved here".into());
     }
-    let dir = ctx.dir()?;
-    ctx.stop_runtime("root approved; restarting");
-    {
-        let mut app = App::open_writer(&dir, Box::new(SystemClock))
-            .map_err(err)?
-            .with_client(CLIENT);
-        app.add_root(RootKind::Provider, &PathBuf::from(&path))
-            .map_err(err)?;
+    ctx.change_roots("roots approved; restarting", |app| {
+        for p in &paths {
+            app.add_root(RootKind::Provider, &PathBuf::from(p))?;
+        }
+        Ok(())
+    })
+}
+
+fn root_kind(kind: &str) -> Result<RootKind, String> {
+    match kind {
+        "provider" => Ok(RootKind::Provider),
+        "repository" => Ok(RootKind::Repository),
+        other => Err(format!("unknown root kind {other}")),
     }
-    ctx.start_runtime();
-    Ok(())
+}
+
+/// Lets the user pick a folder in the native panel and approves it. The
+/// window itself has no filesystem access (AD-12); the panel and the write
+/// happen here. Resolves to the approved path, or `None` if cancelled.
+#[tauri::command]
+async fn choose_root(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+    kind: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let kind = root_kind(&kind)?;
+    let title = match kind {
+        RootKind::Provider => "Choose a folder with agent history tracr may read",
+        RootKind::Repository => "Choose a folder that contains your git repositories",
+    };
+    let Some(path) = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok())
+    else {
+        return Ok(None);
+    };
+    ctx.change_roots("root approved; restarting", |app| {
+        app.add_root(kind, &path)?;
+        Ok(())
+    })?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Stops reading an approved root. What was imported stays in the ledger.
+#[tauri::command]
+async fn remove_root(ctx: tauri::State<'_, Ctx>, kind: String, path: String) -> Result<(), String> {
+    let kind = root_kind(&kind)?;
+    ctx.change_roots("root removed; restarting", |app| {
+        app.remove_root(kind, &PathBuf::from(&path))?;
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -505,7 +589,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             status,
-            approve_root,
+            approve_roots,
+            choose_root,
+            remove_root,
             days,
             day_agents,
             refresh,
@@ -562,4 +648,30 @@ fn main() {
         RunEvent::Reopen { .. } => show_main(app),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_approved;
+
+    #[test]
+    fn a_symlinked_proposal_counts_as_approved_when_its_target_is() {
+        let base = std::env::temp_dir().join(format!("tracr-approved-{}", std::process::id()));
+        let (real, link) = (base.join("real"), base.join("link"));
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let stored = std::fs::canonicalize(&real).unwrap().display().to_string();
+
+        assert!(is_approved(&link, std::slice::from_ref(&stored)), "symlink");
+        assert!(
+            is_approved(&real, std::slice::from_ref(&stored)),
+            "real path"
+        );
+        assert!(!is_approved(&link, &[]), "nothing approved");
+        assert!(!is_approved(
+            &base.join("other"),
+            std::slice::from_ref(&stored)
+        ));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

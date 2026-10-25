@@ -111,6 +111,9 @@ pub struct App {
 pub enum RootsChange {
     Added(Vec<String>),
     AlreadyApproved(Vec<String>),
+    /// The root is no longer approved. Nothing already imported is deleted.
+    Removed(Vec<String>),
+    NotApproved(Vec<String>),
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -224,6 +227,31 @@ impl App {
         }
         roots.push(text);
         roots.sort();
+        self.write_roots(kind, "add", &roots)?;
+        Ok(RootsChange::Added(roots))
+    }
+
+    /// Stops reading a root (PS-02: approval is the user's and so is its
+    /// withdrawal). The ledger is append-only, so what was imported stays;
+    /// only future discovery changes. The path may be gone from disk.
+    pub fn remove_root(&mut self, kind: RootKind, path: &Path) -> Result<RootsChange> {
+        let mut roots = read_roots(&self.conn, kind)?;
+        let given = path.to_str().map(str::to_owned);
+        let resolved = fs::canonicalize(path)
+            .ok()
+            .and_then(|c| c.to_str().map(str::to_owned));
+        let Some(at) = roots
+            .iter()
+            .position(|r| Some(r) == given.as_ref() || Some(r) == resolved.as_ref())
+        else {
+            return Ok(RootsChange::NotApproved(roots));
+        };
+        roots.remove(at);
+        self.write_roots(kind, "remove", &roots)?;
+        Ok(RootsChange::Removed(roots))
+    }
+
+    fn write_roots(&mut self, kind: RootKind, action: &str, roots: &[String]) -> Result<()> {
         let env = IngestEnv {
             clock: &*self.clock,
             file_identity: &*self.fid,
@@ -233,7 +261,7 @@ impl App {
             &tx,
             &NewUserAction {
                 id: &new_uuid_v7(&env),
-                kind: &format!("setting.{}.add", kind.key()),
+                kind: &format!("setting.{}.{action}", kind.key()),
                 actor: "user",
                 at: self.clock.now(),
                 reason: None,
@@ -242,7 +270,7 @@ impl App {
         )?;
         ledger::append_setting(&tx, kind.key(), &serde_json::json!(roots), seq)?;
         tx.commit()?;
-        Ok(RootsChange::Added(roots))
+        Ok(())
     }
 
     /// Backfill (§4.5): discovery over approved provider roots, then one
@@ -590,6 +618,11 @@ impl Reader {
     /// Approved provider roots (a single settings read; cheap enough to poll).
     pub fn provider_roots(&self) -> Result<Vec<String>> {
         read_roots(&self.conn, RootKind::Provider)
+    }
+
+    /// Approved repository roots, under which git is probed read-only.
+    pub fn repository_roots(&self) -> Result<Vec<String>> {
+        read_roots(&self.conn, RootKind::Repository)
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {

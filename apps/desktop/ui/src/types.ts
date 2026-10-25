@@ -282,7 +282,10 @@ export interface Status {
   data_dir_from_env: boolean;
   ledger_present: boolean;
   approved_roots: string[];
+  approved_repository_roots: string[];
   proposed_roots: { path: string; approved: boolean }[];
+  home: string | null;
+  app_version: string;
   collector: "collecting" | "stalled" | "elsewhere" | "stopped" | "not_configured";
   collector_detail: string | null;
   runtime: RuntimeStatus | null;

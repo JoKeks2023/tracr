@@ -385,3 +385,27 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 .quality-row { display: grid; grid-template-columns: 7rem 1fr; gap: var(--space-3); }
 .quality-row dt { color: var(--text-secondary); }
 .quality-row dd { margin: 0; }
+
+/* ---- Folder checklist and settings ---------------------------------------- */
+
+.checklist, .root-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.checklist label, .root-list li {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-input); font-size: 13px;
+}
+.root-list li { justify-content: space-between; }
+.root-list li.asking { flex-direction: column; align-items: flex-start; gap: var(--space-2); background: color-mix(in srgb, var(--warning-9) 14%, var(--surface-input)); }
+.root-list .ask p { margin: 0 0 var(--space-3); font-size: 13px; color: var(--text-secondary); }
+.checklist label { cursor: pointer; }
+.checklist input { accent-color: var(--accent-9); margin: 0; }
+.roots-picker { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+.roots-picker .checklist { width: 100%; margin-bottom: 0; }
+.settings-sheet { width: min(32rem, 92vw); }
+.settings-sheet h3.sub { margin-top: var(--space-4); }
+.actions.left { justify-content: flex-start; padding-top: var(--space-2); }
+.settings-sheet .confirm { padding: var(--space-4); margin-top: var(--space-6); border-radius: var(--radius-md); background: color-mix(in srgb, var(--warning-9) 14%, var(--surface-raised)); font-size: 13px; }
+.settings-sheet .confirm p { margin: 0 0 var(--space-3); }
+.banner .banner-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+.button.icon { min-width: 0; width: 2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.empty .roots-picker { align-items: center; }
+.header h1 { white-space: nowrap; }

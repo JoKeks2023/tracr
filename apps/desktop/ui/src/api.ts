@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+export type RootKind = "provider" | "repository";
 import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
@@ -12,7 +13,11 @@ export const api = {
   review: (day: string, reason?: string) => invoke<string>("review", { day, reason }),
   dismiss: (day: string, fingerprint: string) => invoke<string>("dismiss", { day, fingerprint }),
   targets: () => invoke<TargetOption[]>("targets"),
-  approveRoot: (path: string) => invoke<void>("approve_root", { path }),
+  approveRoots: (paths: string[]) => invoke<void>("approve_roots", { paths }),
+  /** Opens the native folder panel and approves the pick. Resolves to the path, or null if cancelled. */
+  chooseRoot: (kind: RootKind) => invoke<string | null>("choose_root", { kind }),
+  /** Stops reading a root; what was imported stays in the ledger. */
+  removeRoot: (kind: RootKind, path: string) => invoke<void>("remove_root", { kind, path }),
   /** Resolves to the written path, or null if the save panel was cancelled. */
   exportCsv: (kind: "timesheet" | "agent_sessions", from: string, to: string) =>
     invoke<string | null>("export_csv", { kind, from, to }),
