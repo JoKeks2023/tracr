@@ -13,6 +13,7 @@
 ![rust](https://img.shields.io/badge/rust-1.98-b7410e)
 ![platform](https://img.shields.io/badge/macOS-supported-black)
 ![local-first](https://img.shields.io/badge/local--first-no%20cloud-2ea44f)
+![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 [Product](docs/product.md) · [Architecture](docs/architecture.md) · [MVP](docs/mvp.md) · [Walkthroughs](docs/walkthroughs.md) · [All docs](docs/README.md)
 
@@ -178,4 +179,4 @@ tracr never stores prompt text, assistant messages or tool output. It reads stru
 
 ## License
 
-Not yet licensed: all rights reserved (`UNLICENSED`) until a license is chosen.
+tracr is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`). Anyone may use it, also commercially. If you distribute a modified version, or offer it as a network service, you must publish its source under the same license. See [CONTRIBUTING.md](CONTRIBUTING.md) for contributions.

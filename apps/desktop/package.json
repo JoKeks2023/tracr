@@ -1,6 +1,7 @@
 {
   "name": "tracr-desktop",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "version": "0.9.0",
   "type": "module",
   "scripts": {

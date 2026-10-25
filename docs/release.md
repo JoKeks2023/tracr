@@ -1,6 +1,6 @@
 # Releasing tracr
 
-Releases are built and published by hand, on the developer's Apple Silicon Mac, with one script: `scripts/release.sh`. There is no release CI (the `ci` workflow only checks code).
+Releases are made by hand on the developer's Apple Silicon Mac: build, sign, upload. There is no release CI and no release script; the `ci` workflow only checks code.
 
 ## What a release contains
 
@@ -8,42 +8,87 @@ Releases are built and published by hand, on the developer's Apple Silicon Mac, 
 |---|---|
 | `tracr-<version>-aarch64-apple-darwin.tar.gz` | the `tracr` command line tool |
 | `tracr-<version>-aarch64-apple-darwin.zip` | the desktop app (`tracr.app`) |
-| `SHA256SUMS` | checksums of both |
 
-The GitHub Release gets generated notes (grouped by label, see `.github/release.yml`) and is marked **pre-release** while the major version is 0. The repository is its own Homebrew tap: the script renders `Formula/tracr-cli.rb` and `Casks/tracr.rb` from `.github/brew/` with the new URL and checksums and commits them to `main`.
+## Checklist
 
+Replace `0.9.0` below. Needs at least 8 GB free disk (`df -h /`); a release build adds several GB under `target/release`.
+
+**1. Version and checks**
+- Set the version in the workspace `Cargo.toml`, the crates' path dependencies, `apps/desktop/package.json` and `apps/desktop/src-tauri/tauri.conf.json`.
+- `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm --dir apps/desktop typecheck`
+- Commit and push to `main`.
+
+**2. Build**
+```sh
+cargo build --release --locked -p tracr-cli
+cd apps/desktop && pnpm install --frozen-lockfile && pnpm tauri build --bundles app && cd ../..
+```
+The app is at `target/release/bundle/macos/tracr.app`. To sign, have the Developer ID certificate in the login keychain and export `APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"` before `pnpm tauri build`. For notarization also export `APPLE_ID`, `APPLE_PASSWORD` (app-specific password) and `APPLE_TEAM_ID`.
+
+**3. Package**
+```sh
+mkdir -p dist/tracr-0.9.0-aarch64-apple-darwin
+cp target/release/tracr dist/tracr-0.9.0-aarch64-apple-darwin/
+tar -C dist -czf dist/tracr-0.9.0-aarch64-apple-darwin.tar.gz tracr-0.9.0-aarch64-apple-darwin
+ditto -c -k --keepParent target/release/bundle/macos/tracr.app dist/tracr-0.9.0-aarch64-apple-darwin.zip
+shasum -a 256 dist/*.tar.gz dist/*.zip
+```
+
+**4. Try it**
+- `target/release/tracr --version`, open the app from `dist`.
+- If signed: `codesign --verify --deep --strict target/release/bundle/macos/tracr.app`; if notarized also `xcrun stapler validate …` and `spctl --assess --type execute -v …`.
+
+**5. GitHub Release** (pre-release while the major version is 0; notes are grouped by label, see `.github/release.yml`)
+```sh
+git tag -a v0.9.0 -m "tracr 0.9.0" && git push origin v0.9.0
+gh release create v0.9.0 dist/*.tar.gz dist/*.zip --prerelease --generate-notes --title "tracr 0.9.0"
+```
+If the app is unsigned, say so in the notes: macOS asks for confirmation on first launch (right-click, Open).
+
+**6. Homebrew** (the repository is its own tap). Write `Formula/tracr-cli.rb` and `Casks/tracr.rb` with the new version and the two checksums from step 3, commit, push.
+
+```ruby
+# Formula/tracr-cli.rb
+class TracrCli < Formula
+  desc "Local development diary and time ledger (command line)"
+  homepage "https://github.com/JoKeks2023/tracr"
+  version "0.9.0"
+  url "https://github.com/JoKeks2023/tracr/releases/download/v0.9.0/tracr-0.9.0-aarch64-apple-darwin.tar.gz"
+  sha256 "<sha256 of the tar.gz>"
+  depends_on arch: :arm64
+  depends_on :macos
+  def install
+    bin.install "tracr"
+  end
+  test do
+    assert_match "tracr", shell_output("#{bin}/tracr --version")
+  end
+end
+```
+
+```ruby
+# Casks/tracr.rb
+cask "tracr" do
+  version "0.9.0"
+  sha256 "<sha256 of the zip>"
+  url "https://github.com/JoKeks2023/tracr/releases/download/v#{version}/tracr-#{version}-aarch64-apple-darwin.zip"
+  name "tracr"
+  desc "Local development diary and time ledger"
+  homepage "https://github.com/JoKeks2023/tracr"
+  depends_on arch: :arm64
+  depends_on :macos
+  app "tracr.app"
+  zap trash: "~/Library/Application Support/tracr"
+end
+```
+
+**7. Check on a clean setup**
 ```sh
 brew tap JoKeks2023/tracr https://github.com/JoKeks2023/tracr
-brew install --cask tracr      # desktop app
-brew install tracr-cli         # command line tool
+brew install --cask tracr
+brew install tracr-cli
 ```
-
-## Cutting a release
-
-1. **Set the version** in the workspace `Cargo.toml` and the path dependencies of the crates, `apps/desktop/package.json` and `apps/desktop/src-tauri/tauri.conf.json`. Run the checks (`cargo fmt --check`, clippy, tests, `pnpm typecheck`) and commit and push to `main`.
-2. **Build without publishing:** `scripts/release.sh 0.9.0`. This checks the machine (Apple Silicon, at least 8 GB free, version matches the crates), builds the CLI and the app in release mode (`CARGO_BUILD_JOBS=2` by default, so the machine stays usable), packages both into `dist/`, runs the CLI once, verifies the signature and writes `SHA256SUMS`.
-3. **Try the app** from `dist/`.
-4. **Publish:** `scripts/release.sh 0.9.0 --publish`. It requires a clean `main` equal to `origin/main`, creates and pushes the tag `v0.9.0`, creates the GitHub Release with the files, then updates and pushes the formula and cask. It refuses if the tag already exists.
-5. On a clean machine: `brew tap …` and `brew install --cask tracr`.
-
-A release build adds several GB under `target/release`; clean it afterwards if disk space is tight (`cargo clean --release`).
-
-## Signing and notarization
-
-The script requires a signing identity and refuses an unsigned app unless you pass `--unsigned` (the release notes then say the app is unsigned and how to open it).
-
-```sh
-# Developer ID Application certificate installed in the login keychain
-export APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"
-
-# Notarization (recommended): an app-specific password from appleid.apple.com
-export APPLE_ID="you@example.com"
-export APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-export APPLE_TEAM_ID="TEAMID"
-```
-
-With the identity only, the app is signed; with all four variables it is also notarized, and the script verifies the result with `codesign`, `stapler` and `spctl`. Keep these values out of the repository and out of shell history files.
 
 ## Not covered yet
 
-Windows packaging, Intel Macs, and a dedicated tap repository (the main repository serves as the tap). The license is still undecided (`UNLICENSED`), which should be settled before binaries are widely shared.
+Windows packaging, Intel Macs, and a dedicated tap repository.
