@@ -15,7 +15,7 @@
 ![local-first](https://img.shields.io/badge/local--first-no%20cloud-2ea44f)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
-[Product](docs/product.md) · [Architecture](docs/architecture.md) · [MVP](docs/mvp.md) · [Walkthroughs](docs/walkthroughs.md) · [All docs](docs/README.md)
+[Website](https://jokeks2023.github.io/tracr/) · [Product](docs/product.md) · [Architecture](docs/architecture.md) · [MVP](docs/mvp.md) · [Walkthroughs](docs/walkthroughs.md) · [All docs](docs/README.md)
 
 </div>
 

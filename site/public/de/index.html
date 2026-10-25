@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tracr · Ein lokales Tagebuch für die Arbeit mit Coding-Agenten</title>
+  <meta name="description" content="tracr liest, was Claude Code, Codex und deine Werkzeuge ohnehin auf der Platte hinterlassen, zeigt jede Agent-Sitzung einzeln, zählt deine eigene Zeit nur einmal und tut nie so, als wüsste es mehr. Lokal, für macOS.">
+  <meta name="theme-color" content="#11130f">
+  <link rel="canonical" href="https://jokeks2023.github.io/tracr/de/">
+  <link rel="alternate" hreflang="en" href="https://jokeks2023.github.io/tracr/en/">
+  <link rel="alternate" hreflang="de" href="https://jokeks2023.github.io/tracr/de/">
+  <link rel="alternate" hreflang="x-default" href="https://jokeks2023.github.io/tracr/">
+  <link rel="icon" type="image/png" href="../assets/icon-64.png">
+  <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="tracr">
+  <meta property="og:description" content="Ein lokales Entwicklungstagebuch und Zeitbuch für alle, die mit mehreren Coding-Agenten gleichzeitig arbeiten.">
+  <meta property="og:url" content="https://jokeks2023.github.io/tracr/de/">
+  <meta property="og:image" content="https://jokeks2023.github.io/tracr/assets/icon.png">
+  <link rel="preload" href="../assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Zum Inhalt springen</a>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="../de/" aria-label="tracr, Startseite">
+        <span class="tilde">~/</span><img src="../assets/icon-64.png" alt="" width="22" height="22"><span>tracr</span>
+      </a>
+      <nav class="main" aria-label="Hauptnavigation">
+        <a class="opt" href="#why">Warum</a>
+        <a class="opt" href="#different">Was anders ist</a>
+        <a class="opt" href="#how">So funktioniert es</a>
+        <a href="#install">Installieren</a>
+        <a href="https://github.com/JoKeks2023/tracr" rel="noopener">GitHub ↗</a>
+        <span class="langs" aria-label="Sprache">
+          <a class="lang" href="../en/" hreflang="en" lang="en">en</a><span class="sep">/</span><span aria-current="true">de</span>
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Lokales Entwicklungstagebuch</p>
+        <h1>Wie lange hast du wirklich gearbeitet?</h1>
+        <p class="lead">tracr ist ein Zeitbuch für alle, die mit mehreren Coding-Agenten gleichzeitig arbeiten. Es zeigt, was passiert ist, wie lange du tatsächlich gearbeitet hast, was es gekostet hat und was du davon glauben kannst.</p>
+        <p class="hero-meta">
+          <span>Vorab-Version 0.9.0</span>
+          <span>macOS · Apple Silicon</span>
+          <span>AGPL-3.0-or-later</span>
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="#install">Mit Homebrew installieren</a>
+          <a class="btn" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">0.9.0 herunterladen ↗</a>
+          <a class="btn" href="https://github.com/JoKeks2023/tracr" rel="noopener">Quellcode auf GitHub ↗</a>
+        </div>
+
+        <div class="term" data-reveal>
+          <div class="term-bar"><span>tracr day · erfundenes Beispiel</span></div>
+<pre><span class="c">tracr · 2026-09-16 · Europe/Berlin · provisional (not reviewed)</span>
+
+Human time, inferred (provisional)           <span class="g">252 min</span>
+Unknown, not counted                          <span class="o">41</span>
+Non-work (excluded by you)                    20
+
+Agent activity (not human time)            exec min   span          tokens
+  Claude Code  acme/web                          48   09:02–16:48   126.3 M
+  Codex        acme/api                          22   10:15–17:40    13.4 M
+  Claude Code  side/notes                        43   16:34–17:55    19.6 M
+  113 execution minutes within 230 min of agent wall clock; sessions overlap, never merged
+
+Estimated API cost · API-equivalent estimate, not spend
+  Claude Code  acme/web                      &gt;= 29.37 USD
+  Codex        acme/api                       &gt;= 7.64 USD
+  Claude Code  side/notes                        6.69 USD</pre>
+        </div>
+        <p class="note">Die Projekte sind erfunden, das Layout ist echt. <code>&gt;=</code> bedeutet eine Untergrenze: Ein Teil der Nutzung ließ sich nicht bepreisen, und tracr sagt das, statt es wegzurunden.</p>
+      </div>
+    </section>
+
+    <section class="block" id="why">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">Warum es tracr gibt</p>
+          <h2>Drei Fragen, die überraschend schwer zu beantworten sind</h2>
+          <p>Du nutzt Claude Code in einem Projekt, Codex in einem anderen, und eine dritte Sitzung ist noch von heute Morgen offen.</p>
+        </div>
+        <ol class="rows" data-reveal>
+          <li class="row"><span class="n">01</span><div><h3>Wie lange habe ich heute wirklich an Issue X gearbeitet?</h3><p>Die Laufzeit einer Sitzung überschätzt den Aufwand, und parallele Sitzungen zu addieren zählt doppelt.</p></div></li>
+          <li class="row"><span class="n">02</span><div><h3>Was hat jeder meiner Agenten gemacht?</h3><p>Alle zu einer „aktiven Sitzung“ zusammenzufassen versteckt Arbeit.</p></div></li>
+          <li class="row"><span class="n">03</span><div><h3>Was hat es gekostet?</h3><p>Token-Mengen, Listenpreise, Abos und echte Rechnungen sind verschiedene Größen, und die meisten Werkzeuge zeigen eine Schätzung, die wie ein Ausgabenbetrag aussieht.</p></div></li>
+        </ol>
+        <p class="note" data-reveal>tracr liest die Spuren, die deine Werkzeuge ohnehin auf der Platte hinterlassen, zeigt jede Sitzung einzeln, zählt <em>deine</em> Zeit nur einmal und tut nie so, als wüsste es mehr.</p>
+      </div>
+    </section>
+
+    <section class="block" id="different">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">Was anders ist</p>
+          <h2>Ehrliche Zahlen statt beeindruckender</h2>
+        </div>
+        <ol class="rows" data-reveal>
+          <li class="row"><span class="n">01</span><div><h3>Agentenzeit ist nicht deine Zeit</h3><p>Jede Agent-Sitzung hat ihre eigene Zeitleiste und Nutzung. Menschliche Minuten werden getrennt abgeleitet und höchstens einmal gezählt, auch wenn sich fünf Sitzungen überlappen.</p></div></li>
+          <li class="row"><span class="n">02</span><div><h3>Unbekannt bleibt unbekannt</h3><p>Steht nicht fest, dass du gearbeitet hast, wird die Zeit als <em>unbekannt</em> gezeigt und <strong>nicht gezählt</strong>, bis du entscheidest. Kein stilles Raten, keine erfundene Sicherheitszahl.</p></div></li>
+          <li class="row"><span class="n">03</span><div><h3>Geldarten vermischen sich nie</h3><p>Geschätzte API-Kosten, die Angabe eines Anbieters, Abo-Kosten und echte Ausgaben sind getrennte Arten. Eine Schätzung heißt „API-equivalent estimate, not spend“. Ein fehlender Preis ist <em>unpriced</em>, nie <code>0</code>.</p></div></li>
+          <li class="row"><span class="n">04</span><div><h3>Unveränderliche Belege, neu aufbaubare Ansichten</h3><p>Das Ledger wird nur ergänzt. Alles, was du siehst, ist daraus abgeleitet und lässt sich neu aufbauen. Deine Korrekturen überstehen einen Neuaufbau, und Änderungen erscheinen als Abweichungen, nie als stille Änderung.</p></div></li>
+          <li class="row"><span class="n">05</span><div><h3>Du kannst die Zahlen korrigieren</h3><p>Als Arbeit bestätigen, als Pause markieren, teilen, umhängen, manuelle Einträge anlegen, einen Timer laufen lassen und dann den Tag prüfen. Jede Korrektur wird als Revision geführt und lässt sich zurücknehmen.</p></div></li>
+          <li class="row"><span class="n">06</span><div><h3>Lokal und nur Metadaten</h3><p>Kein Konto, kein Sync, kein Upload. Prompt- und Tool-Texte werden nie gespeichert. tracr liest Nutzung, Zeitpunkte und Struktur.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="block" id="how">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">So funktioniert es</p>
+          <h2>Vom Beleg zum geprüften Arbeitsprotokoll</h2>
+          <p>Quellen sind die Sitzungsdateien von Claude Code und Codex, git, der Leerlauf- und Sperrstatus des Systems und deine eigenen Timer.</p>
+        </div>
+        <ol class="flow" data-reveal aria-label="Ablauf">
+          <li><span class="step key">Beobachtung<small>unveränderliches Ledger</small></span><span class="arrow" aria-hidden="true">→</span></li>
+          <li><span class="step">Normalisierte Ereignisse</span><span class="arrow" aria-hidden="true">→</span></li>
+          <li><span class="step">Aktivität<small>Agent-Zeitleisten + menschliche Zeitleiste</small></span><span class="arrow" aria-hidden="true">→</span></li>
+          <li><span class="step key">Arbeitsstatus<small>gezählt · unbekannt · Pause</small></span><span class="arrow" aria-hidden="true">→</span></li>
+          <li><span class="step">Zuordnung<small>Projekt · Issue</small></span><span class="arrow" aria-hidden="true">→</span></li>
+          <li><span class="step">Geprüftes Protokoll<small>Revisionen</small></span></li>
+        </ol>
+        <p class="note" data-reveal>Lesen bleibt sicher: Transkripte werden nur lesend geöffnet, jede Quelle ist versionsgeprüft und scheitert sichtbar, unbekannte Satztypen kommen in Quarantäne und werden gezählt, und derselbe Verlauf ein zweites Mal importiert fügt nichts hinzu. Anbieter-Ordner liest tracr erst, nachdem du sie freigegeben hast.</p>
+      </div>
+    </section>
+
+    <section class="block" id="status">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">Stand</p>
+          <h2>Vorab-Version, offen entwickelt</h2>
+          <p>tracr wächst in vertikalen Scheiben. Heute läuft die Desktop-App auf macOS. Windows baut in der CI nur die Crates ohne Oberfläche und stellt keinen Gleichstand in Aussicht.</p>
+        </div>
+        <ol class="rows" data-reveal>
+          <li class="row wide"><span class="n">S1</span><div><h3>Belege, Ableitung, Kosten, Codex</h3><p>Import von Claude Code und Codex (auch komprimierte Codex-Rollouts), Tagesansicht, geschätzte Kosten und vom Anbieter gemeldete Werte, <code>tracr day</code>, Zusammenfassung in der Menüleiste.</p></div><span class="tag">Fertig</span></li>
+          <li class="row wide"><span class="n">S2</span><div><h3>Korrekturen, manuelle Zeit, Prüfung</h3><p>Korrekturen, manuelle Einträge und Timer, geprüfte Tagesrevisionen, Abweichungen. Die praktische Prüfung der Desktop-Oberfläche läuft noch.</p></div><span class="tag">Umgesetzt</span></li>
+          <li class="row wide"><span class="n">S3</span><div><h3>Projekte, Zuordnungen, Issue-Vorschläge</h3><p>Dazu GitHub und Huly als Kontext, nur lesend.</p></div><span class="tag">Als Nächstes</span></li>
+          <li class="row wide"><span class="n">S4</span><div><h3>Export, Abschluss, Löschen, Hooks</h3><p>Alles, was einen geprüften Tag in etwas verwandelt, das du weitergeben kannst.</p></div><span class="tag">Geplant</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="block" id="install">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">Installieren</p>
+          <h2>Drei Befehle, dann einen Tag ansehen</h2>
+          <p>macOS auf Apple Silicon. Die App ist mit einer Developer ID signiert und von Apple notarisiert.</p>
+        </div>
+        <div class="term flush" data-reveal>
+          <div class="term-bar"><span>Homebrew</span><button class="copy" type="button" data-copy="brew-cmd" data-done="Kopiert" data-fail="Markieren und kopieren">Kopieren</button></div>
+<pre id="brew-cmd">brew tap JoKeks2023/tracr
+brew trust JoKeks2023/tracr      # Homebrew will einmalig, dass du einem fremden Tap vertraust
+brew install --cask tracr        # die Desktop-App
+brew install tracr-cli           # der Befehl `tracr` für die Kommandozeile</pre>
+        </div>
+        <div class="term" data-reveal>
+          <div class="term-bar"><span>Erste Schritte</span><button class="copy" type="button" data-copy="first-cmd" data-done="Kopiert" data-fail="Markieren und kopieren">Kopieren</button></div>
+<pre id="first-cmd"># tracr liest nichts, bis du einen Ordner freigibst
+tracr roots add --provider ~/.claude/projects
+tracr roots add --provider ~/.codex/sessions
+
+tracr import
+tracr rebuild
+tracr day</pre>
+        </div>
+        <p class="note" data-reveal>Du kannst auch aus dem Quellcode bauen (<code>cargo install --path apps/cli</code>) oder die Dateien (zip und tar.gz) von der <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">Release-Seite</a> laden.</p>
+      </div>
+    </section>
+
+    <section class="block" id="privacy">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="eyebrow">Datenschutz</p>
+          <h2>Was nie gespeichert wurde, kann niemand lesen</h2>
+          <p>tracr speichert nie Prompt-Texte, Antworten des Assistenten oder Tool-Ausgaben. Es liest Struktur, Zeitpunkte, Modellnamen, Token-Mengen und Tool-Namen. Das Desktop-Fenster hat keinen Zugriff auf Dateisystem, Shell oder Netzwerk, und nichts verlässt deinen Rechner. Nachrichteninhalte zu durchsuchen oder erneut zu lesen ist deshalb mit Absicht unmöglich.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <ul>
+        <li><a href="https://github.com/JoKeks2023/tracr" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/JoKeks2023/tracr/releases" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/JoKeks2023/tracr/blob/main/docs/product.md" rel="noopener">Produkt</a></li>
+        <li><a href="https://github.com/JoKeks2023/tracr/blob/main/docs/architecture.md" rel="noopener">Architektur</a></li>
+        <li><a href="https://github.com/JoKeks2023/tracr/blob/main/SECURITY.md" rel="noopener">Sicherheit</a></li>
+        <li><a href="https://jorisconrad.com/de/" rel="noopener">jorisconrad.com ↗</a></li>
+      </ul>
+      <p class="mono">AGPL-3.0-or-later · © Joris Conrad</p>
+    </div>
+  </footer>
+</body>
+</html>

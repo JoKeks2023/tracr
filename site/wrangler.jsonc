@@ -1,0 +1,11 @@
+{
+  "$schema": "https://workers.cloudflare.com/wrangler-config-schema.json",
+  // Static assets only, no worker code. Deploy by hand: `npx wrangler deploy` in this folder.
+  "name": "tracr-site",
+  "compatibility_date": "2026-07-18",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "tracr.jorisconrad.com", "custom_domain": true }]
+}

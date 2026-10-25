@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jokeks2023.github.io/tracr/sitemap.xml

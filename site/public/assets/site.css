@@ -1,0 +1,584 @@
+/* tracr site. Same palette and manner as jorisconrad.com: warm dark workbench,
+   green is the identity, amber is the note. Geist for text, JetBrains Mono for
+   everything that is a name, a number or a command. */
+
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(fonts/geist-latin-ext-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(fonts/geist-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url(fonts/jetbrains-mono-latin-ext-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url(fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --base: #11130f;
+  --surface: #1a1d16;
+  --surface-2: #24281d;
+  --line: #414936;
+  --ink: #f2edda;
+  --ink-muted: #b5b49d;
+  --green: #8fd36a;
+  --lime: #b6d96a;
+  --cyan: #8bb99a;
+  --orange: #e0a15a;
+
+  --sans: 'Geist Variable', 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--base);
+  color: var(--ink);
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px var(--base),
+    0 0 0 4px var(--cyan);
+}
+
+.wrap {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+@media (min-width: 640px) {
+  .wrap {
+    padding: 0 2rem;
+  }
+}
+
+.skip {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  background: var(--surface);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  z-index: 60;
+}
+.skip:focus {
+  top: 0.75rem;
+}
+
+/* header */
+header.site {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--base) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+header.site .wrap {
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+}
+.brand .tilde {
+  color: var(--ink-muted);
+}
+.brand img {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 0.3rem;
+}
+nav.main {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+nav.main a {
+  position: relative;
+  padding-bottom: 2px;
+  transition: color 200ms ease;
+}
+nav.main a:hover {
+  color: var(--ink);
+}
+nav.main a:not(.lang)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1.5px;
+  background: var(--green);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+nav.main a:not(.lang):hover::after {
+  opacity: 1;
+}
+.langs {
+  display: flex;
+  gap: 0.375rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+.langs .sep {
+  color: var(--line);
+}
+.langs [aria-current] {
+  color: var(--green);
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  nav.main .opt {
+    display: none;
+  }
+  nav.main {
+    gap: 1rem;
+  }
+}
+
+/* type */
+.eyebrow {
+  color: var(--lime);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+h1 {
+  font-size: clamp(2.25rem, 1.5rem + 3.2vw, 3.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+h2 {
+  font-size: clamp(1.75rem, 1.5rem + 1vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+h3 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+p {
+  margin: 0;
+}
+.lead {
+  font-size: 1.125rem;
+  color: var(--ink-muted);
+  max-width: 40rem;
+}
+.green {
+  color: var(--green);
+}
+.muted {
+  color: var(--ink-muted);
+}
+code,
+.mono {
+  font-family: var(--mono);
+}
+:not(pre) > code {
+  font-size: 0.875em;
+  background: var(--surface);
+  padding: 0.1em 0.4em;
+  border-radius: 0.25rem;
+}
+
+/* hero */
+.hero {
+  padding: 9rem 0 4rem;
+}
+.hero h1 {
+  max-width: 14ch;
+}
+.hero .lead {
+  margin-top: 1.5rem;
+}
+.hero-meta {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+.actions {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.03),
+    0 16px 40px -28px rgb(0 0 0 / 0.7);
+  cursor: pointer;
+  transition:
+    transform 140ms var(--ease-out),
+    border-color 200ms ease,
+    color 200ms ease;
+}
+.btn:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--base);
+}
+.btn.primary:hover {
+  color: var(--base);
+  background: var(--lime);
+  border-color: var(--lime);
+}
+
+/* terminal blocks */
+.term {
+  margin-top: 2.5rem;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  border-radius: 0.75rem;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.03),
+    0 16px 40px -28px rgb(0 0 0 / 0.7);
+  overflow: hidden;
+}
+.term-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.copy {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--ink-muted);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    transform 140ms var(--ease-out);
+}
+.copy:hover {
+  color: var(--green);
+  border-color: var(--green);
+}
+.copy:active {
+  transform: scale(0.97);
+}
+pre {
+  margin: 0;
+  padding: 1.1rem 1.1rem 1.25rem;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--ink);
+  tab-size: 2;
+}
+pre .c {
+  color: var(--ink-muted);
+}
+pre .g {
+  color: var(--green);
+}
+pre .o {
+  color: var(--orange);
+}
+@media (min-width: 640px) {
+  pre {
+    font-size: 0.875rem;
+  }
+}
+
+/* sections */
+section.block {
+  padding: 4.5rem 0 1rem;
+}
+.sec-head {
+  max-width: 40rem;
+  margin-bottom: 2.25rem;
+}
+.sec-head p {
+  margin-top: 1rem;
+  color: var(--ink-muted);
+}
+
+/* numbered rows, the same pattern as the project list on jorisconrad.com */
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: grid;
+  gap: 0.35rem 2rem;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--line);
+  transition: border-color 200ms ease;
+}
+.row:hover {
+  border-top-color: var(--green);
+}
+.row:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.row .n {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--green);
+}
+.row h3 {
+  font-size: 1.375rem;
+}
+.row p {
+  color: var(--ink-muted);
+  max-width: 44rem;
+  margin-top: 0.5rem;
+}
+.row .tag {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+@media (min-width: 640px) {
+  .row {
+    grid-template-columns: 4rem minmax(0, 1fr);
+    padding: 2rem 0;
+  }
+  .row.wide {
+    grid-template-columns: 4rem minmax(0, 1fr) auto;
+  }
+}
+
+/* pipeline */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.25rem;
+  align-items: stretch;
+}
+.flow li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.flow .step {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.5rem;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+}
+.flow .step small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 0.6875rem;
+  margin-top: 0.1rem;
+}
+.flow .step.key {
+  border-color: var(--green);
+  color: var(--green);
+}
+.flow .arrow {
+  color: var(--line);
+  font-family: var(--mono);
+  padding: 0 0.25rem;
+}
+.note {
+  margin-top: 1.5rem;
+  color: var(--ink-muted);
+  max-width: 44rem;
+}
+
+/* footer */
+footer.site {
+  margin-top: 6rem;
+  border-top: 1px solid var(--line);
+  padding: 2.5rem 0 3rem;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}
+footer.site .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1.25rem 2rem;
+}
+footer.site ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+footer.site a:hover {
+  color: var(--ink);
+}
+footer.site .mono {
+  font-size: 0.75rem;
+}
+
+/* reveal: only hides when the script runs, so nothing is lost without JS */
+.reveal-ready [data-reveal] {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 500ms var(--ease-out),
+    transform 500ms var(--ease-out);
+}
+.reveal-ready [data-reveal].is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal-ready [data-reveal] {
+    transform: none;
+    transition: opacity 300ms ease;
+  }
+  .btn:active,
+  .copy:active {
+    transform: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  header.site {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--base);
+  }
+}
+@media (prefers-contrast: more) {
+  header.site {
+    background: var(--base);
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* small helpers for the plain pages */
+.term.flush {
+  margin-top: 0;
+}
+main.plain {
+  padding-top: 8rem;
+}
+.lead.gap {
+  margin-top: 1rem;
+}
