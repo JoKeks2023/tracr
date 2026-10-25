@@ -601,3 +601,21 @@ main.plain {
   color: var(--ink-muted);
   font-size: 0.875rem;
 }
+
+/* download page */
+.row .hash {
+  margin-top: 0.7rem;
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.row.wide > .btn {
+  align-self: start;
+  justify-self: start;
+}
+@media (min-width: 640px) {
+  .row.wide > .btn {
+    justify-self: end;
+  }
+}

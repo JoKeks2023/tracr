@@ -121,11 +121,11 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 
 ### Download (macOS)
 
-[**Download tracr for macOS (.dmg)**](https://tracr.jorisconrad.com/download): one universal file for Apple Silicon and Intel. Open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
+[**Download tracr for macOS**](https://tracr.jorisconrad.com/download): the [download page](https://tracr.jorisconrad.com/download) lists every file with its checksum. The universal .dmg runs on Apple Silicon and Intel. Open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
 
 | Download | For |
 |---|---|
-| [Universal](https://tracr.jorisconrad.com/download) (17 MB) | any Mac |
+| [Universal .dmg](https://tracr.jorisconrad.com/download/universal) (17 MB) | any Mac |
 | [Apple Silicon](https://tracr.jorisconrad.com/download/apple-silicon) (8 MB) | M1 and later |
 | [Intel](https://tracr.jorisconrad.com/download/intel) (9 MB) | Macs with an Intel processor |
 | [Installer (.pkg)](https://tracr.jorisconrad.com/download/pkg) (17 MB) | any Mac; installs the app and links `tracr` into `/usr/local/bin` |

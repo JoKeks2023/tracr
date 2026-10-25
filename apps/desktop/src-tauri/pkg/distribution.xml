@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>tracr</title>
+    <welcome file="Welcome.html" mime-type="text/html"/>
+    <conclusion file="Conclusion.html" mime-type="text/html"/>
+    <background file="background.png" mime-type="image/png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background-darkAqua.png" mime-type="image/png" alignment="bottomleft" scaling="none"/>
+    <options customize="never" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="app.tracr.desktop.pkg"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="app.tracr.desktop.pkg" visible="false">
+        <pkg-ref id="app.tracr.desktop.pkg"/>
+    </choice>
+    <pkg-ref id="app.tracr.desktop.pkg" version="0.9.2" onConclusion="none">tracr-component.pkg</pkg-ref>
+</installer-gui-script>

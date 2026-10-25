@@ -87,14 +87,13 @@ pkgbuild --analyze --root $W/root $W/comp.plist
 plutil -replace 0.BundleIsRelocatable -bool false $W/comp.plist
 pkgbuild --root $W/root --component-plist $W/comp.plist --scripts apps/desktop/src-tauri/pkg \
   --ownership recommended --identifier app.tracr.desktop.pkg --version 0.9.2 --install-location / $W/tracr-component.pkg
-productbuild --synthesize --package $W/tracr-component.pkg $W/dist.xml     # add <title>tracr</title> after the first line
-productbuild --distribution $W/dist.xml --package-path $W --timestamp \
-  --sign "Developer ID Installer: Name (TEAMID)" dist/tracr-0.9.2-universal.pkg
+productbuild --distribution apps/desktop/src-tauri/pkg/distribution.xml --resources apps/desktop/src-tauri/pkg/resources \
+  --package-path $W --timestamp --sign "Developer ID Installer: Name (TEAMID)" dist/tracr-0.9.2-universal.pkg
 xcrun notarytool submit dist/tracr-0.9.2-universal.pkg --keychain-profile tracr-notary --wait
 xcrun stapler staple dist/tracr-0.9.2-universal.pkg
 spctl --assess --type install -v dist/tracr-0.9.2-universal.pkg            # Notarized Developer ID
 ```
-The postinstall only runs as root during a real install. Test it on a spare machine or a throwaway account; uninstalling is manual (`sudo rm -rf /Applications/tracr.app /usr/local/bin/tracr && sudo pkgutil --forget app.tracr.desktop.pkg`).
+`apps/desktop/src-tauri/pkg/distribution.xml` carries the installer title, the welcome and conclusion pages (`resources/en.lproj`, `de.lproj`) and the background icons; set its `pkg-ref version` to the release version. The postinstall only runs as root during a real install. Test it on a spare machine or a throwaway account; uninstalling is manual (`sudo rm -rf /Applications/tracr.app /usr/local/bin/tracr && sudo pkgutil --forget app.tracr.desktop.pkg`). Opening the .pkg shows the installer pages without installing anything until you click through.
 
 **6. GitHub Release** (pre-release while the major version is 0; notes are grouped by label, see `.github/release.yml`)
 ```sh
@@ -105,7 +104,12 @@ A pre-release is not what `releases/latest` points to, so links use the explicit
 
 **7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza. The formula and the cask both provide `tracr`; Homebrew only warns and overwrites the link when both are installed, so install one of them.
 
-**8. Website.** The download button and the README use the stable link `https://tracr.jorisconrad.com/download`, which `site/public/_redirects` sends to the universal DMG of the current release (`/download/apple-silicon` and `/download/intel` go to the single-architecture ones, `/download/pkg` to the installer). Change the four URLs there, replace the version labels (`0.9.2`) in `site/public/en/index.html`, `de/index.html` and the README, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download`.
+**8. Website.** Three places carry release data:
+- `site/public/_redirects`: the stable links `/download/universal`, `/pkg`, `/apple-silicon`, `/intel`, `/cli` go to the files of the current release. Change the version in the five URLs.
+- `site/public/en/download/index.html` and `de/download/index.html`: version, file names, sizes and SHA-256 per file (take them from `shasum -a 256 dist/*` and `ls -l dist`). `/download` itself is a small page that sends visitors to the English or German page.
+- The version label on the home pages (`en/index.html`, `de/index.html`) and in the README.
+
+Commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download/universal` and the other four links.
 
 **9. Check on a clean setup**
 ```sh
