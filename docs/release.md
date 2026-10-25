@@ -45,50 +45,27 @@ gh release create v0.9.0 dist/*.tar.gz dist/*.zip --prerelease --generate-notes 
 ```
 If the app is unsigned, say so in the notes: macOS asks for confirmation on first launch (right-click, Open).
 
-**6. Homebrew** (the repository is its own tap). Write `Formula/tracr-cli.rb` and `Casks/tracr.rb` with the new version and the two checksums from step 3, commit, push.
-
-```ruby
-# Formula/tracr-cli.rb
-class TracrCli < Formula
-  desc "Local development diary and time ledger (command line)"
-  homepage "https://github.com/JoKeks2023/tracr"
-  version "0.9.0"
-  url "https://github.com/JoKeks2023/tracr/releases/download/v0.9.0/tracr-0.9.0-aarch64-apple-darwin.tar.gz"
-  sha256 "<sha256 of the tar.gz>"
-  depends_on arch: :arm64
-  depends_on :macos
-  def install
-    bin.install "tracr"
-  end
-  test do
-    assert_match "tracr", shell_output("#{bin}/tracr --version")
-  end
-end
-```
-
-```ruby
-# Casks/tracr.rb
-cask "tracr" do
-  version "0.9.0"
-  sha256 "<sha256 of the zip>"
-  url "https://github.com/JoKeks2023/tracr/releases/download/v#{version}/tracr-#{version}-aarch64-apple-darwin.zip"
-  name "tracr"
-  desc "Local development diary and time ledger"
-  homepage "https://github.com/JoKeks2023/tracr"
-  depends_on arch: :arm64
-  depends_on :macos
-  app "tracr.app"
-  zap trash: "~/Library/Application Support/tracr"
-end
-```
+**6. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). Update `version`, `url` and `sha256` in `Formula/tracr-cli.rb` (checksum of the tar.gz) and `Casks/tracr.rb` (checksum of the zip), commit and push there. Compare the checksums with `gh release download` first.
 
 **7. Check on a clean setup**
 ```sh
-brew tap JoKeks2023/tracr https://github.com/JoKeks2023/tracr
-brew install --cask tracr
-brew install tracr-cli
+brew update && brew upgrade tracr-cli && brew upgrade --cask tracr
+tracr --version
+spctl --assess --type execute -v /Applications/tracr.app
+```
+First install: `brew tap JoKeks2023/tracr && brew trust JoKeks2023/tracr`, then `brew install --cask tracr` and `brew install tracr-cli`.
+
+## Notarization
+
+Notarize before packaging (step 3). One-time: an App Store Connect **team** API key (role Developer) stored with `xcrun notarytool store-credentials tracr-notary --key <p8> --key-id <id> --issuer <uuid>`; keep the `.p8` outside the repo, e.g. in `~/.appstoreconnect/private_keys/` (mode 600). Then:
+
+```sh
+ditto -c -k --keepParent target/release/bundle/macos/tracr.app dist/notarize.zip
+xcrun notarytool submit dist/notarize.zip --keychain-profile tracr-notary --wait
+xcrun stapler staple target/release/bundle/macos/tracr.app && rm dist/notarize.zip
+spctl --assess --type execute -v target/release/bundle/macos/tracr.app   # "Notarized Developer ID"
 ```
 
 ## Not covered yet
 
-Windows packaging, Intel Macs, and a dedicated tap repository.
+Windows packaging, Intel Macs, notarizing the command line binary (it is signed ad hoc only).

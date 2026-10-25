@@ -89,7 +89,7 @@ Quality
 
 ## Status
 
-tracr is **pre-release** (`0.9.0`, not yet released) and built in the open, in vertical slices.
+tracr is **pre-release** (`0.9.0` is the first [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0)) and built in the open, in vertical slices.
 
 | Slice | What | State |
 |---|---|---|
@@ -102,17 +102,31 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 
 ## Try it
 
+### With Homebrew (macOS, Apple Silicon)
+
+```sh
+brew tap JoKeks2023/tracr
+brew trust JoKeks2023/tracr      # Homebrew asks you to trust a third-party tap once
+brew install --cask tracr        # the desktop app (signed and notarized)
+brew install tracr-cli           # the `tracr` command line tool
+```
+
+### From source
+
 You need the pinned Rust toolchain (picked up from `rust-toolchain.toml`) and, for the desktop app, Node with `pnpm`.
 
 ```sh
-# 1. Install the command line tool
 cargo install --path apps/cli
+```
 
-# 2. Tell tracr which provider folders it may read (nothing is read until you approve)
+### First steps
+
+```sh
+# Tell tracr which provider folders it may read (nothing is read until you approve)
 tracr roots add --provider ~/.claude/projects
 tracr roots add --provider ~/.codex/sessions
 
-# 3. Import history, derive, and look at a day
+# Import history, derive, and look at a day
 tracr import
 tracr rebuild
 tracr day                      # or: tracr day 2026-09-16
@@ -130,6 +144,8 @@ tracr sessions                 # every agent session of the day, listed individu
 | `sources` · `stats` | Inspect the ledger: cursors, quarantine, gaps, producer versions |
 
 The **desktop app** (Tauri 2, React) shows the Day view with the timeline, agent lanes, cost and a quality footer, and handles corrections, manual entries and review. See [apps/desktop/README.md](apps/desktop/README.md).
+
+To run the desktop app from source:
 
 ```sh
 cd apps/desktop && pnpm install && pnpm tauri dev
