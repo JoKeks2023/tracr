@@ -49,13 +49,13 @@
         <h1>How long did you really work?</h1>
         <p class="lead">tracr is a time ledger for people who work with several coding agents at once. It shows what happened, how long you actually worked, what it cost, and what you can trust.</p>
         <p class="hero-meta">
-          <span>Pre-release 0.9.0</span>
+          <span>Pre-release 0.9.1</span>
           <span>macOS · Apple Silicon</span>
           <span>AGPL-3.0-or-later</span>
         </p>
         <div class="actions">
-          <a class="btn primary" href="#install">Install with Homebrew</a>
-          <a class="btn" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">Download 0.9.0 ↗</a>
+          <a class="btn primary" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Download for macOS (.dmg)</a>
+          <a class="btn" href="#install">Install with Homebrew</a>
           <a class="btn" href="https://github.com/JoKeks2023/tracr" rel="noopener">Source on GitHub ↗</a>
         </div>
 
@@ -154,15 +154,15 @@ Estimated API cost · API-equivalent estimate, not spend
       <div class="wrap">
         <div class="sec-head" data-reveal>
           <p class="eyebrow">Install</p>
-          <h2>Three commands, then look at a day</h2>
-          <p>macOS on Apple Silicon. The app is signed with a Developer ID and notarized by Apple.</p>
+          <h2>Download, or two commands, then look at a day</h2>
+          <p>macOS on Apple Silicon. The app is signed with a Developer ID and notarized by Apple. The <code>tracr</code> command is inside the app; Homebrew puts it on your PATH.</p>
         </div>
         <div class="term flush" data-reveal>
           <div class="term-bar"><span>Homebrew</span><button class="copy" type="button" data-copy="brew-cmd" data-done="Copied" data-fail="Select and copy">Copy</button></div>
 <pre id="brew-cmd">brew tap JoKeks2023/tracr
 brew trust JoKeks2023/tracr      # Homebrew asks you to trust a third-party tap once
-brew install --cask tracr        # the desktop app
-brew install tracr-cli           # the `tracr` command line tool</pre>
+brew install --cask tracr        # the desktop app and the `tracr` command
+# command line only: brew install tracr-cli</pre>
         </div>
         <div class="term" data-reveal>
           <div class="term-bar"><span>First steps</span><button class="copy" type="button" data-copy="first-cmd" data-done="Copied" data-fail="Select and copy">Copy</button></div>
@@ -174,7 +174,7 @@ tracr import
 tracr rebuild
 tracr day</pre>
         </div>
-        <p class="note" data-reveal>You can also build from source (<code>cargo install --path apps/cli</code>) or download the zip and tar.gz from the <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">release page</a>.</p>
+        <p class="note" data-reveal>Prefer a file? <a class="green" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Download the .dmg</a>, open it and drag tracr to Applications. You can also build from source (<code>cargo install --path apps/cli</code>); more files are on the <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1" rel="noopener">release page</a>.</p>
       </div>
     </section>
 

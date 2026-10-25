@@ -89,7 +89,7 @@ Quality
 
 ## Status
 
-tracr is **pre-release** (`0.9.0` is the first [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0)) and built in the open, in vertical slices.
+tracr is **pre-release** (`0.9.1` is the current [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1)) and built in the open, in vertical slices.
 
 | Slice | What | State |
 |---|---|---|
@@ -102,13 +102,17 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 
 ## Try it
 
-### With Homebrew (macOS, Apple Silicon)
+### Download (macOS, Apple Silicon)
+
+[**tracr-0.9.1-aarch64.dmg**](https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg): open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
+
+### With Homebrew
 
 ```sh
 brew tap JoKeks2023/tracr
 brew trust JoKeks2023/tracr      # Homebrew asks you to trust a third-party tap once
-brew install --cask tracr        # the desktop app (signed and notarized)
-brew install tracr-cli           # the `tracr` command line tool
+brew install --cask tracr        # the desktop app and the `tracr` command
+# command line only: brew install tracr-cli
 ```
 
 ### From source

@@ -49,13 +49,13 @@
         <h1>Wie lange hast du wirklich gearbeitet?</h1>
         <p class="lead">tracr ist ein Zeitbuch für alle, die mit mehreren Coding-Agenten gleichzeitig arbeiten. Es zeigt, was passiert ist, wie lange du tatsächlich gearbeitet hast, was es gekostet hat und was du davon glauben kannst.</p>
         <p class="hero-meta">
-          <span>Vorab-Version 0.9.0</span>
+          <span>Vorab-Version 0.9.1</span>
           <span>macOS · Apple Silicon</span>
           <span>AGPL-3.0-or-later</span>
         </p>
         <div class="actions">
-          <a class="btn primary" href="#install">Mit Homebrew installieren</a>
-          <a class="btn" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">0.9.0 herunterladen ↗</a>
+          <a class="btn primary" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Für macOS laden (.dmg)</a>
+          <a class="btn" href="#install">Mit Homebrew installieren</a>
           <a class="btn" href="https://github.com/JoKeks2023/tracr" rel="noopener">Quellcode auf GitHub ↗</a>
         </div>
 
@@ -154,15 +154,15 @@ Estimated API cost · API-equivalent estimate, not spend
       <div class="wrap">
         <div class="sec-head" data-reveal>
           <p class="eyebrow">Installieren</p>
-          <h2>Drei Befehle, dann einen Tag ansehen</h2>
-          <p>macOS auf Apple Silicon. Die App ist mit einer Developer ID signiert und von Apple notarisiert.</p>
+          <h2>Laden, oder zwei Befehle, dann einen Tag ansehen</h2>
+          <p>macOS auf Apple Silicon. Die App ist mit einer Developer ID signiert und von Apple notarisiert. Der Befehl <code>tracr</code> steckt in der App; Homebrew legt ihn in deinen PATH.</p>
         </div>
         <div class="term flush" data-reveal>
           <div class="term-bar"><span>Homebrew</span><button class="copy" type="button" data-copy="brew-cmd" data-done="Kopiert" data-fail="Markieren und kopieren">Kopieren</button></div>
 <pre id="brew-cmd">brew tap JoKeks2023/tracr
 brew trust JoKeks2023/tracr      # Homebrew will einmalig, dass du einem fremden Tap vertraust
-brew install --cask tracr        # die Desktop-App
-brew install tracr-cli           # der Befehl `tracr` für die Kommandozeile</pre>
+brew install --cask tracr        # die Desktop-App und der Befehl `tracr`
+# nur Kommandozeile: brew install tracr-cli</pre>
         </div>
         <div class="term" data-reveal>
           <div class="term-bar"><span>Erste Schritte</span><button class="copy" type="button" data-copy="first-cmd" data-done="Kopiert" data-fail="Markieren und kopieren">Kopieren</button></div>
@@ -174,7 +174,7 @@ tracr import
 tracr rebuild
 tracr day</pre>
         </div>
-        <p class="note" data-reveal>Du kannst auch aus dem Quellcode bauen (<code>cargo install --path apps/cli</code>) oder die Dateien (zip und tar.gz) von der <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.0" rel="noopener">Release-Seite</a> laden.</p>
+        <p class="note" data-reveal>Lieber eine Datei? <a class="green" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Das .dmg laden</a>, öffnen und tracr in „Programme“ ziehen. Du kannst auch aus dem Quellcode bauen (<code>cargo install --path apps/cli</code>); weitere Dateien stehen auf der <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1" rel="noopener">Release-Seite</a>.</p>
       </div>
     </section>
 
