@@ -72,7 +72,7 @@ gh release create v0.9.1 dist/*.dmg dist/*.tar.gz --prerelease --generate-notes 
 ```
 A pre-release is not what `releases/latest` points to, so links use the explicit version.
 
-**7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza; both declare `conflicts_with` each other because both provide `tracr`.
+**7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza. The formula and the cask both provide `tracr`; Homebrew only warns and overwrites the link when both are installed, so install one of them.
 
 **8. Website.** In `site/public/en/index.html`, `de/index.html` and the README replace the version and the DMG link, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/`.
 
