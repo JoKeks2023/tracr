@@ -74,7 +74,7 @@ A pre-release is not what `releases/latest` points to, so links use the explicit
 
 **7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza. The formula and the cask both provide `tracr`; Homebrew only warns and overwrites the link when both are installed, so install one of them.
 
-**8. Website.** In `site/public/en/index.html`, `de/index.html` and the README replace the version and the DMG link, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/`.
+**8. Website.** The download button and the README use the stable link `https://tracr.jorisconrad.com/download`, which `site/public/_redirects` sends to the DMG of the current release. Change the DMG URL there, replace the version labels (`0.9.1`) in `site/public/en/index.html`, `de/index.html` and the README, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download`.
 
 **9. Check on a clean setup**
 ```sh

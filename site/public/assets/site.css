@@ -582,3 +582,22 @@ main.plain {
 .lead.gap {
   margin-top: 1rem;
 }
+
+/* app screenshot */
+.shot {
+  margin: 3rem 0 0;
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--line) 65%, transparent),
+    0 28px 60px -30px rgb(0 0 0 / 0.8);
+}
+.shot figcaption {
+  margin-top: 0.9rem;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}

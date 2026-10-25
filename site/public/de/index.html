@@ -54,31 +54,53 @@
           <span>AGPL-3.0-or-later</span>
         </p>
         <div class="actions">
-          <a class="btn primary" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Für macOS laden (.dmg)</a>
+          <a class="btn primary" href="https://tracr.jorisconrad.com/download" rel="noopener">Für macOS laden (.dmg)</a>
           <a class="btn" href="#install">Mit Homebrew installieren</a>
           <a class="btn" href="https://github.com/JoKeks2023/tracr" rel="noopener">Quellcode auf GitHub ↗</a>
         </div>
 
-        <div class="term" data-reveal>
-          <div class="term-bar"><span>tracr day · erfundenes Beispiel</span></div>
-<pre><span class="c">tracr · 2026-09-16 · Europe/Berlin · provisional (not reviewed)</span>
+        <figure class="shot" data-reveal>
+          <img src="../assets/tracr-day.png" width="2560" height="1640" alt="Tagesansicht von tracr mit erfundenen Demo-Daten: gezählte Menschenzeit, unbekannte Zeit, Agent-Sitzungen für drei Projekte und geschätzte Kosten" fetchpriority="high">
+          <figcaption>Demo-Daten, erfundene Projekte. Die Tagesansicht: gezählte Menschenzeit oben, darunter die Agent-Sitzungen, jede auf ihrer eigenen Zeile.</figcaption>
+        </figure>
 
-Human time, inferred (provisional)           <span class="g">252 min</span>
-Unknown, not counted                          <span class="o">41</span>
-Non-work (excluded by you)                    20
+        <div class="term" data-reveal>
+          <div class="term-bar"><span>tracr day · Demo-Daten</span></div>
+<pre><span class="c">tracr · 2026-09-28 · Europe/Berlin · provisional (not reviewed)</span>
+
+Human time, inferred (provisional)           <span class="g">322 min</span>
+  acme/web                                 204
+  side/notes                                60
+  acme/api                                  58
+  by basis: inferred 322
+Unknown, not counted                         <span class="o">130</span>
+  10:14–10:15    1  unresolved window
+  10:27–10:28    1  unresolved window
+  11:18–12:20   62  conflicting evidence
+  13:20–13:24    4  conflicting evidence
+  14:46–15:05   19  unresolved window
+  15:17–15:20    3  unresolved window
+  15:32–15:50   18  unresolved window
+  16:12–16:34   22  unresolved window
+Non-work (excluded by you)                     0
+Human evidence span 09:02–17:34 = 512 min: an upper bound, not a total
 
 Agent activity (not human time)            exec min   span          tokens
-  Claude Code  acme/web                          48   09:02–16:48   126.3 M
-  Codex        acme/api                          22   10:15–17:40    13.4 M
-  Claude Code  side/notes                        43   16:34–17:55    19.6 M
-  113 execution minutes within 230 min of agent wall clock; sessions overlap, never merged
+  Claude Code  acme/web                       283   09:02–16:22    26.6 M
+  Codex        acme/api                        35   10:15–15:19     2.0 M +?
+  Claude Code  acme/api                        72   11:50–16:20     7.6 M
+  Claude Code  side/notes                      66   16:34–17:45     7.3 M
+  456 execution minutes within 523 min of agent wall clock; sessions overlap, never merged
+  43.5 M tokens across sessions
 
-Estimated API cost · API-equivalent estimate, not spend
-  Claude Code  acme/web                      &gt;= 29.37 USD
-  Codex        acme/api                       &gt;= 7.64 USD
-  Claude Code  side/notes                        6.69 USD</pre>
+Estimated API cost · API-equivalent estimate, not spend · catalog 2026-10-24.1 as of 2026-10-01
+  Claude Code  acme/web                          14.65 USD
+  Codex        acme/api                        &gt;= 2.59 USD
+  Claude Code  acme/api                           4.10 USD
+  Claude Code  side/notes                         2.64 USD
+  identified usage of the day                 &gt;= 23.98 USD</pre>
         </div>
-        <p class="note">Die Projekte sind erfunden, das Layout ist echt. <code>&gt;=</code> bedeutet eine Untergrenze: Ein Teil der Nutzung ließ sich nicht bepreisen, und tracr sagt das, statt es wegzurunden.</p>
+        <p class="note">Die Projekte sind erfunden, die Zahlen kommen von tracr, das darauf läuft. <code>&gt;=</code> bedeutet eine Untergrenze: Ein Teil der Nutzung ließ sich nicht bepreisen, und tracr sagt das, statt es wegzurunden.</p>
       </div>
     </section>
 
@@ -174,7 +196,7 @@ tracr import
 tracr rebuild
 tracr day</pre>
         </div>
-        <p class="note" data-reveal>Lieber eine Datei? <a class="green" href="https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg" rel="noopener">Das .dmg laden</a>, öffnen und tracr in „Programme“ ziehen. Du kannst auch aus dem Quellcode bauen (<code>cargo install --path apps/cli</code>); weitere Dateien stehen auf der <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1" rel="noopener">Release-Seite</a>.</p>
+        <p class="note" data-reveal>Lieber eine Datei? <a class="green" href="https://tracr.jorisconrad.com/download" rel="noopener">Das .dmg laden</a>, öffnen und tracr in „Programme“ ziehen. Du kannst auch aus dem Quellcode bauen (<code>cargo install --path apps/cli</code>); weitere Dateien stehen auf der <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.9.1" rel="noopener">Release-Seite</a>.</p>
       </div>
     </section>
 

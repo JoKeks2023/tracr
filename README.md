@@ -60,32 +60,49 @@ Reading stays safe by design: transcripts are opened read-only, every source is 
 
 ## A day, at a glance
 
-An illustrative `tracr day` (invented projects, real layout):
+![The tracr day view with invented demo data](docs/images/tracr-day.png)
+
+*Demo data: invented projects. The screenshot is reproducible, see [Development](#development).*
+
+The same day as `tracr day` prints it:
 
 ```text
-tracr · 2026-09-16 · Europe/Berlin · provisional (not reviewed)
+tracr · 2026-09-28 · Europe/Berlin · provisional (not reviewed)
 
-Human time, inferred (provisional)           252 min
-Unknown, not counted                          41
-Non-work (excluded by you)                    20
+Human time, inferred (provisional)           322 min
+  acme/web                                 204
+  side/notes                                60
+  acme/api                                  58
+  by basis: inferred 322
+Unknown, not counted                         130
+  10:14–10:15    1  unresolved window
+  10:27–10:28    1  unresolved window
+  11:18–12:20   62  conflicting evidence
+  13:20–13:24    4  conflicting evidence
+  14:46–15:05   19  unresolved window
+  15:17–15:20    3  unresolved window
+  15:32–15:50   18  unresolved window
+  16:12–16:34   22  unresolved window
+Non-work (excluded by you)                     0
+Human evidence span 09:02–17:34 = 512 min: an upper bound, not a total
 
 Agent activity (not human time)            exec min   span          tokens
-  Claude Code  acme/web                          48   09:02–16:48   126.3 M
-  Codex        acme/api                          22   10:15–17:40    13.4 M
-  Claude Code  side/notes                        43   16:34–17:55    19.6 M
-  113 execution minutes within 230 min of agent wall clock; sessions overlap, never merged
+  Claude Code  acme/web                       283   09:02–16:22    26.6 M
+  Codex        acme/api                        35   10:15–15:19     2.0 M +?
+  Claude Code  acme/api                        72   11:50–16:20     7.6 M
+  Claude Code  side/notes                      66   16:34–17:45     7.3 M
+  456 execution minutes within 523 min of agent wall clock; sessions overlap, never merged
+  43.5 M tokens across sessions
 
-Estimated API cost · API-equivalent estimate, not spend · catalog 2026-10-24.1
-  Claude Code  acme/web                      >= 29.37 USD
-  Codex        acme/api                       >= 7.64 USD
-  Claude Code  side/notes                        6.69 USD
-
-Quality
-  ingestion: complete · provisional: not reviewed
-  cost kinds: estimated API cost · unpriced 2% of tokens
+Estimated API cost · API-equivalent estimate, not spend · catalog 2026-10-24.1 as of 2026-10-01
+  Claude Code  acme/web                          14.65 USD
+  Codex        acme/api                        >= 2.59 USD
+  Claude Code  acme/api                           4.10 USD
+  Claude Code  side/notes                         2.64 USD
+  identified usage of the day                 >= 23.98 USD
 ```
 
-`>=` means a floor: part of the usage could not be priced, and tracr says so instead of rounding it away.
+`>=` means a floor: part of the usage could not be priced (here the Codex model's cache writes are only a marker), and tracr says so instead of rounding it away.
 
 ## Status
 
@@ -104,7 +121,7 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 
 ### Download (macOS, Apple Silicon)
 
-[**tracr-0.9.1-aarch64.dmg**](https://github.com/JoKeks2023/tracr/releases/download/v0.9.1/tracr-0.9.1-aarch64.dmg): open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
+[**Download tracr for macOS (.dmg)**](https://tracr.jorisconrad.com/download): open it and drag tracr to Applications. The app is signed and notarized. The `tracr` command line tool is inside it (`/Applications/tracr.app/Contents/MacOS/tracr`); Homebrew puts it on your `PATH` for you.
 
 ### With Homebrew
 
@@ -190,6 +207,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 pnpm --dir apps/desktop typecheck
 ```
+
+The screenshot and the sample output above come from invented data: `cargo run -p tracr-app --example demo_day -- <dir>` writes a fictional working day with three git repos and a derived data directory, and `TRACR_DATA_DIR=<dir>/data` points the CLI or the desktop app at it. It never touches a real ledger.
 
 CI runs formatting, clippy and tests on Linux, builds and tests on macOS, and checks the portable crates on Windows. Work is tracked per task under `docs/tasks/T-xxxx_*` (brief, scope, done-when, implementation and validation reports); engineering decisions that outlive a task live in the repository canon at [`.claude/canon.md`](.claude/canon.md).
 
