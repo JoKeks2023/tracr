@@ -58,3 +58,8 @@ Because: found while scoping TRACR-14; payloads are never stored, so only the so
 kind: constraint | date: 2026-10-24 | status: canon
 A usage record whose model has no exact catalog rule is unpriced and excluded from cost totals, with the unpriced token share shown in the quality footer. Codex has rules for the models on the OpenAI price page (standard short context, 2026-10-24.1); `codex-auto-review` is not on it and stays unpriced. Codex estimates are floors because cache writes are only a marker.
 Because: a missing price rendered as $0 would make the day's cost look complete when it is not.
+
+## tracr is AGPL-3.0-or-later, and contributions may be relicensed by the owner
+kind: choice | date: 2026-10-25 | status: canon
+The repository is licensed `AGPL-3.0-or-later`: free use, also commercial, but modified distributions and network services must publish their source. `CONTRIBUTING.md` has contributors license their work under the AGPL and also grant the owner the right to relicense it, which keeps dual-licensing (a separate commercial license) possible. All dependencies checked on 2026-10-25 are MIT/Apache/BSD/Zlib/Unicode/MPL-2.0, compatible with it.
+Because: the goal is use by anyone, including commercially, without anyone folding tracr into a closed product; GPL was the alternative, AGPL chosen to also close the hosted-service gap. Adding a dependency under a license incompatible with the AGPL needs a decision first.
