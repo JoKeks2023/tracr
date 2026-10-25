@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <url><loc>https://jokeks2023.github.io/tracr/en/</loc><xhtml:link rel="alternate" hreflang="de" href="https://jokeks2023.github.io/tracr/de/"/></url>
-  <url><loc>https://jokeks2023.github.io/tracr/de/</loc><xhtml:link rel="alternate" hreflang="en" href="https://jokeks2023.github.io/tracr/en/"/></url>
+  <url><loc>https://tracr.jorisconrad.com/en/</loc><xhtml:link rel="alternate" hreflang="de" href="https://tracr.jorisconrad.com/de/"/></url>
+  <url><loc>https://tracr.jorisconrad.com/de/</loc><xhtml:link rel="alternate" hreflang="en" href="https://tracr.jorisconrad.com/en/"/></url>
 </urlset>
