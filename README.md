@@ -128,6 +128,7 @@ The platform target is macOS and Windows. Today the desktop app runs on **macOS*
 | [Universal](https://tracr.jorisconrad.com/download) (17 MB) | any Mac |
 | [Apple Silicon](https://tracr.jorisconrad.com/download/apple-silicon) (8 MB) | M1 and later |
 | [Intel](https://tracr.jorisconrad.com/download/intel) (9 MB) | Macs with an Intel processor |
+| [Installer (.pkg)](https://tracr.jorisconrad.com/download/pkg) (17 MB) | any Mac; installs the app and links `tracr` into `/usr/local/bin` |
 
 ### With Homebrew (Apple Silicon and Intel)
 

@@ -8,6 +8,7 @@ Releases are made by hand on the developer's Apple Silicon Mac: build, sign, not
 |---|---|
 | `tracr-<version>-universal.dmg` | the desktop app (`tracr.app`) for Apple Silicon and Intel, with the `tracr` command line tool inside (`Contents/MacOS/tracr`). Signed, notarized, stapled. The main download on the website (`/download`) and what the Homebrew cask installs. |
 | `tracr-<version>-aarch64.dmg`, `tracr-<version>-x64.dmg` | the same app for one architecture (smaller), at `/download/apple-silicon` and `/download/intel` |
+| `tracr-<version>-universal.pkg` | an installer for the universal app (`/Applications/tracr.app`) that also links `/usr/local/bin/tracr` to the command line tool inside (`apps/desktop/src-tauri/pkg/postinstall`). Signed with the Developer ID Installer certificate, notarized, stapled. At `/download/pkg`. |
 | `tracr-<version>-universal-apple-darwin.tar.gz` | the command line tool alone (universal), for `brew install tracr-cli` |
 
 ## One-time setup
@@ -78,16 +79,33 @@ tar -C dist -czf dist/tracr-0.9.2-universal-apple-darwin.tar.gz tracr-0.9.2-univ
 shasum -a 256 dist/*.dmg dist/*.tar.gz
 ```
 
+**5b. Installer package** (needs the *Developer ID Installer* certificate in the login keychain)
+```sh
+W=$(mktemp -d); mkdir -p $W/root/Applications
+ditto target/universal-apple-darwin/release/bundle/macos/tracr.app $W/root/Applications/tracr.app   # the stapled app
+pkgbuild --analyze --root $W/root $W/comp.plist
+plutil -replace 0.BundleIsRelocatable -bool false $W/comp.plist
+pkgbuild --root $W/root --component-plist $W/comp.plist --scripts apps/desktop/src-tauri/pkg \
+  --ownership recommended --identifier app.tracr.desktop.pkg --version 0.9.2 --install-location / $W/tracr-component.pkg
+productbuild --synthesize --package $W/tracr-component.pkg $W/dist.xml     # add <title>tracr</title> after the first line
+productbuild --distribution $W/dist.xml --package-path $W --timestamp \
+  --sign "Developer ID Installer: Name (TEAMID)" dist/tracr-0.9.2-universal.pkg
+xcrun notarytool submit dist/tracr-0.9.2-universal.pkg --keychain-profile tracr-notary --wait
+xcrun stapler staple dist/tracr-0.9.2-universal.pkg
+spctl --assess --type install -v dist/tracr-0.9.2-universal.pkg            # Notarized Developer ID
+```
+The postinstall only runs as root during a real install. Test it on a spare machine or a throwaway account; uninstalling is manual (`sudo rm -rf /Applications/tracr.app /usr/local/bin/tracr && sudo pkgutil --forget app.tracr.desktop.pkg`).
+
 **6. GitHub Release** (pre-release while the major version is 0; notes are grouped by label, see `.github/release.yml`)
 ```sh
 git tag -a v0.9.2 -m "tracr 0.9.2" && git push origin v0.9.2
-gh release create v0.9.2 dist/*.dmg dist/*.tar.gz --prerelease --generate-notes --title "tracr 0.9.2"
+gh release create v0.9.2 dist/*.dmg dist/*.pkg dist/*.tar.gz --prerelease --generate-notes --title "tracr 0.9.2"
 ```
 A pre-release is not what `releases/latest` points to, so links use the explicit version.
 
 **7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza. The formula and the cask both provide `tracr`; Homebrew only warns and overwrites the link when both are installed, so install one of them.
 
-**8. Website.** The download button and the README use the stable link `https://tracr.jorisconrad.com/download`, which `site/public/_redirects` sends to the universal DMG of the current release (`/download/apple-silicon` and `/download/intel` go to the single-architecture ones). Change the three URLs there, replace the version labels (`0.9.2`) in `site/public/en/index.html`, `de/index.html` and the README, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download`.
+**8. Website.** The download button and the README use the stable link `https://tracr.jorisconrad.com/download`, which `site/public/_redirects` sends to the universal DMG of the current release (`/download/apple-silicon` and `/download/intel` go to the single-architecture ones, `/download/pkg` to the installer). Change the four URLs there, replace the version labels (`0.9.2`) in `site/public/en/index.html`, `de/index.html` and the README, commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download`.
 
 **9. Check on a clean setup**
 ```sh

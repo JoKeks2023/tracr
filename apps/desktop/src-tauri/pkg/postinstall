@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs as root after the app is copied to /Applications. Puts the command line
+# tool that ships inside the app on the PATH. An existing file that is not a
+# symlink (for example a hand-built binary) is left alone.
+set -eu
+tool="/Applications/tracr.app/Contents/MacOS/tracr"
+link="/usr/local/bin/tracr"
+[ -x "$tool" ] || exit 0
+mkdir -p /usr/local/bin
+if [ -e "$link" ] && [ ! -L "$link" ]; then
+  echo "tracr: $link exists and is not a symlink, leaving it alone"
+  exit 0
+fi
+ln -sf "$tool" "$link"
+exit 0
