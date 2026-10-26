@@ -68,3 +68,58 @@ fn roots_can_be_approved_and_withdrawn_and_history_stays() {
         RootsChange::Removed(r) if r.is_empty()
     ));
 }
+
+/// AD-14: the reporting zone is a user choice, validated, and fixed once a day
+/// has been reviewed.
+#[test]
+fn the_reporting_zone_can_be_chosen_until_a_day_is_reviewed() {
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let mut a = ClaudeSession::new(A);
+    write_lines(
+        &root.join("-Users-dev-project").join(format!("{A}.jsonl")),
+        &[a.prompt("09:00"), a.assistant("09:01", "msg_1", 100)],
+    );
+    let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    app.import(&mut |_, _| {}).unwrap();
+    app.rebuild().unwrap();
+
+    assert!(
+        app.set_timezone(Some("Mars/Olympus")).is_err(),
+        "unknown zone"
+    );
+    app.set_timezone(Some("Asia/Tokyo")).unwrap();
+    app.rebuild().unwrap();
+    let reader = Reader::open(&data).unwrap();
+    let zone = reader.reporting_zone().unwrap();
+    assert!(zone.from_setting);
+    assert_eq!(zone.name, "Asia/Tokyo");
+    assert_eq!(reader.days().unwrap().timezone, "Asia/Tokyo");
+
+    // Back to the system zone.
+    app.set_timezone(None).unwrap();
+    assert!(
+        !Reader::open(&data)
+            .unwrap()
+            .reporting_zone()
+            .unwrap()
+            .from_setting
+    );
+
+    // One reviewed day fixes the zone.
+    app.rebuild().unwrap();
+    let day = Reader::open(&data).unwrap().days().unwrap().days[0].clone();
+    app.review_day(&day, None).unwrap();
+    assert_eq!(
+        Reader::open(&data).unwrap().reviewed_day_count().unwrap(),
+        1
+    );
+    let refused = app
+        .set_timezone(Some("Asia/Tokyo"))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("1 reviewed day"), "{refused}");
+    // The unchanged zone is not a change.
+    app.set_timezone(None).unwrap();
+}

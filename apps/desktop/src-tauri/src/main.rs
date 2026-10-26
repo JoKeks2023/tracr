@@ -126,6 +126,12 @@ struct Status {
     /// The user's home folder, so the window can show `~/…` instead of a user name.
     home: Option<String>,
     app_version: &'static str,
+    /// The reporting zone in force, whether the user chose it, and the system zone it would fall back to.
+    timezone: Option<String>,
+    timezone_chosen: bool,
+    system_timezone: Option<String>,
+    /// Reviewed days fix the zone (AD-14), so the window shows it as locked.
+    reviewed_days: i64,
     /// `collecting`, `stalled` (no heartbeat for 3 min), `elsewhere` (another
     /// tracr process holds the lock), `stopped` or `not_configured`.
     collector: &'static str,
@@ -162,6 +168,8 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
         _ if approved.is_empty() => "not_configured",
         _ => "stopped",
     };
+    let reader = ctx.data_dir.as_ref().and_then(|d| Reader::open(d).ok());
+    let zone = reader.as_ref().and_then(|r| r.reporting_zone().ok());
     Ok(Status {
         data_dir: ctx.data_dir.as_ref().map(|d| d.display().to_string()),
         data_dir_from_env: ctx.from_env,
@@ -180,6 +188,15 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
         approved_repository_roots: ctx.repository_roots(),
         home: std::env::var("HOME").ok(),
         app_version: env!("CARGO_PKG_VERSION"),
+        timezone: zone.as_ref().map(|z| z.name.clone()),
+        timezone_chosen: zone.as_ref().is_some_and(|z| z.from_setting),
+        system_timezone: tracr_app::day::ReportingZone::resolve(None)
+            .ok()
+            .map(|z| z.name),
+        reviewed_days: reader
+            .as_ref()
+            .and_then(|r| r.reviewed_day_count().ok())
+            .unwrap_or(0),
         collector,
         collector_detail: error,
         runtime,
@@ -216,6 +233,18 @@ fn root_kind(kind: &str) -> Result<RootKind, String> {
         "repository" => Ok(RootKind::Repository),
         other => Err(format!("unknown root kind {other}")),
     }
+}
+
+/// Chooses the reporting time zone (AD-14), or `None` for the system zone, and
+/// rebuilds the derived store because day boundaries move. Refused once a day
+/// has been reviewed.
+#[tauri::command]
+async fn set_timezone(ctx: tauri::State<'_, Ctx>, name: Option<String>) -> Result<(), String> {
+    ctx.change_roots("time zone changed; restarting", |app| {
+        app.set_timezone(name.as_deref())?;
+        app.rebuild()?;
+        Ok(())
+    })
 }
 
 /// Lets the user pick a folder in the native panel and approves it. The
@@ -592,6 +621,7 @@ fn main() {
             approve_roots,
             choose_root,
             remove_root,
+            set_timezone,
             days,
             day_agents,
             refresh,

@@ -286,6 +286,10 @@ export interface Status {
   proposed_roots: { path: string; approved: boolean }[];
   home: string | null;
   app_version: string;
+  timezone: string | null;
+  timezone_chosen: boolean;
+  system_timezone: string | null;
+  reviewed_days: number;
   collector: "collecting" | "stalled" | "elsewhere" | "stopped" | "not_configured";
   collector_detail: string | null;
   runtime: RuntimeStatus | null;

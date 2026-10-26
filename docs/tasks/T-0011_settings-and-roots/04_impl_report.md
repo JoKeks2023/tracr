@@ -20,3 +20,10 @@
 - **⌘, shortcut** was not pressed.
 - **Repository folders** section: only the empty state was seen.
 - The release app was not rebuilt; this is on a branch and not released.
+
+## Addendum: reporting time zone (small items, 2026-10-26)
+- AD-14 says the reporting zone is one fixed home zone chosen at setup. Settings now has a "Time zone" section: a dropdown (System, then every IANA zone the web view knows). `App::set_timezone` validates the name, appends a `setting.timezone.set` user action plus the setting (null = follow the system), and the desktop rebuilds the derived store because day boundaries move.
+- **Locked after the first reviewed day** (default, to be confirmed): a reviewed revision records the zone it was cut in, and re-cutting reviewed days would create spurious "new evidence differs" banners. The dropdown is disabled and says why; `set_timezone` refuses with the number of reviewed days.
+- Tests: `the_reporting_zone_can_be_chosen_until_a_day_is_reviewed` (unknown zone refused, change, back to system, refusal after a review, an unchanged value is not a change).
+- Run in the real desktop binary on the invented demo ledger: chose Asia/Tokyo (timeline restarted at 16:00, notice shown, the demo day now spans two days), then System (one day again, `Europe/Berlin`); ledger shows two `setting.timezone.set` actions.
+- Not verified: the locked state in the window (covered by the test only), and zones other than the two tried.

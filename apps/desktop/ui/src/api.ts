@@ -16,6 +16,8 @@ export const api = {
   approveRoots: (paths: string[]) => invoke<void>("approve_roots", { paths }),
   /** Opens the native folder panel and approves the pick. Resolves to the path, or null if cancelled. */
   chooseRoot: (kind: RootKind) => invoke<string | null>("choose_root", { kind }),
+  /** Chooses the reporting time zone (null: follow the system) and rebuilds. Refused once a day is reviewed. */
+  setTimezone: (name: string | null) => invoke<void>("set_timezone", { name }),
   /** Stops reading a root; what was imported stays in the ledger. */
   removeRoot: (kind: RootKind, path: string) => invoke<void>("remove_root", { kind, path }),
   /** Resolves to the written path, or null if the save panel was cancelled. */
