@@ -256,22 +256,7 @@ export function App() {
     setSelected(null);
     setDay(d);
   };
-  const [showDetails, setShowDetails] = useState(() => {
-    try {
-      return localStorage.getItem("tracr.details") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggleDetails = () =>
-    setShowDetails((v) => {
-      try {
-        localStorage.setItem("tracr.details", v ? "0" : "1");
-      } catch {
-        /* a remembered preference is a convenience only */
-      }
-      return !v;
-    });
+  const [page, setPage] = useState<"day" | "history">("day");
   const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
@@ -363,33 +348,47 @@ export function App() {
         </div>
       )}
 
-      {view && totals && load.state === "ready" && (
+      {view && totals && load.state === "ready" && page === "history" && (
+        <div className="history">
+          <button className="back-link" onClick={() => setPage("day")}>
+            <span aria-hidden>‹</span> {t("back")}
+          </button>
+          <h2 className="history-title">{t("historyTitle", { day: dayLabel(view.day) })}</h2>
+          <dl className="facts">
+            <div>
+              <dd>{totals.sessions}</dd>
+              <dt>{t("factSessions")}</dt>
+            </div>
+            <div>
+              <dd>{duration(totals.mainExec + totals.subExec)}</dd>
+              <dt>{t("factAgentTime")}</dt>
+            </div>
+            <div>
+              <dd>{totals.prompts}</dd>
+              <dt>{t("factPrompts")}</dt>
+            </div>
+            <div>
+              <dd>{compact(totals.output)}</dd>
+              <dt>{t("factTokens")}</dt>
+            </div>
+          </dl>
+          <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
+        </div>
+      )}
+      {view && totals && load.state === "ready" && page === "day" && (
         <>
           <div className="main-card">
-            <BigNumber view={view} human={totals.human} canReview={canReview} onReview={() => setReviewDay(true)} />
+            <BigNumber human={totals.human} canReview={canReview} onReview={() => setReviewDay(true)} />
             <Bars view={view} human={totals.human} />
             <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
             <CostLine cost={view.cost} />
             {rootsOpen && status && (
-              <div className="banner" role="status">
-                <span>
-                  {t("rootsFound")}{" "}
-                  {status.proposed_roots
-                    .filter((r) => !r.approved)
-                    .map((r) => (
-                      <span key={r.path} className="mono">
-                        {tildify(r.path, status.home)}{" "}
-                      </span>
-                    ))}
-                  <span className="muted">{t("rootsMetadataOnly")}</span>
-                </span>
+              <div className="banner" role="status" title={status.proposed_roots.filter((r) => !r.approved).map((r) => tildify(r.path, status.home)).join("\n")}>
+                <span>{t("rootsFound")}</span>
                 <span className="spacer" />
                 <span className="banner-actions">
-                  <button className="button secondary small" style={{ whiteSpace: "nowrap" }} disabled={approving} onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}>
+                  <button className="button secondary small" disabled={approving} onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}>
                     {approving ? <span className="spinner" aria-label="…" /> : t("approveAll", { n: status.proposed_roots.filter((r) => !r.approved).length })}
-                  </button>
-                  <button className="button ghost small" onClick={() => setSettings(true)}>
-                    {t("choose")}
                   </button>
                   <button className="button ghost small" onClick={() => setHideRoots(true)}>
                     {t("notNow")}
@@ -398,15 +397,12 @@ export function App() {
               </div>
             )}
             {view.discrepancy && view.review && (
-              <div className="banner" role="status">
-                <span>
-                  {t("differsFromReview", {
-                    rev: view.review.rev,
-                    counted: signed(view.discrepancy.counted_delta_ms),
-                    unknown: signed(view.discrepancy.unknown_delta_ms),
-                    breakTime: signed(view.discrepancy.non_work_delta_ms),
-                  })}
-                </span>
+              <div
+                className="banner"
+                role="status"
+                title={`${t("legendCounted")}: ${signed(view.discrepancy.counted_delta_ms)} · ${t("legendUnknown")}: ${signed(view.discrepancy.unknown_delta_ms)} · ${t("legendBreak")}: ${signed(view.discrepancy.non_work_delta_ms)}`}
+              >
+                <span>{t("differsFromReview", { counted: signed(view.discrepancy.counted_delta_ms) })}</span>
                 <span className="spacer" />
                 <button className="button secondary small" onClick={() => setReviewDay(true)}>
                   {t("acceptAs", { rev: view.review.rev + 1 })}
@@ -426,37 +422,10 @@ export function App() {
                 </button>
               </div>
             )}
-            <button className="details-toggle" aria-expanded={showDetails} onClick={toggleDetails}>
-              <span className="chev" aria-hidden>
-                ▸
-              </span>
-              {t("details")}
-              <span className="muted"> · {t("detailsHint")}</span>
+            <button className="history-link" onClick={() => setPage("history")}>
+              {t("history")} <span aria-hidden>›</span>
             </button>
           </div>
-          {showDetails && (
-            <div className="details">
-              <dl className="facts">
-                <div>
-                  <dd>{totals.sessions}</dd>
-                  <dt>{t("factSessions")}</dt>
-                </div>
-                <div>
-                  <dd>{duration(totals.mainExec + totals.subExec)}</dd>
-                  <dt>{t("factAgentTime")}</dt>
-                </div>
-                <div>
-                  <dd>{totals.prompts}</dd>
-                  <dt>{t("factPrompts")}</dt>
-                </div>
-                <div>
-                  <dd>{compact(totals.output)}</dd>
-                  <dt>{t("factTokens")}</dt>
-                </div>
-              </dl>
-              <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
-            </div>
-          )}
         </>
       )}
 

@@ -4,14 +4,12 @@ import { t } from "./i18n";
 import type { DayAgents, DayCost, HumanDay, ProjectTotal } from "./types";
 
 /** The one number of the day, with the review action beside it. */
-export function BigNumber({ view, human, canReview, onReview }: { view: DayAgents; human: { counted_ms: number }; canReview: boolean; onReview: () => void }) {
+export function BigNumber({ human, canReview, onReview }: { human: { counted_ms: number }; canReview: boolean; onReview: () => void }) {
   return (
     <section className="big-number">
       <div>
         <div className="big-value">{duration(human.counted_ms)}</div>
-        <div className="big-label">
-          {view.review ? t("countedReviewed", { rev: view.review.rev }) : t("countedProvisional")}
-        </div>
+        <div className="big-label">{t("countedTime")}</div>
       </div>
       {canReview && (
         <button className="button secondary" onClick={onReview}>

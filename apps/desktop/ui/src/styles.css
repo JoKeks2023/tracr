@@ -470,3 +470,9 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 .main-card .banner-actions { flex-wrap: nowrap; }
 .menu-list { background: var(--surface-raised); box-shadow: var(--shadow-xl); border: 1px solid var(--hairline, var(--gray-5)); }
 .banner-actions .button { white-space: nowrap; }
+
+.history-link, .back-link { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--space-1); background: none; border: 0; color: var(--text-secondary); font: 500 13px var(--font-sans); cursor: pointer; padding: var(--space-1) 0; }
+.history-link:hover, .back-link:hover { color: var(--gray-12); }
+.history { padding-bottom: var(--space-8); }
+.history-title { font: 600 19px/1.3 var(--font-sans); margin: var(--space-3) 0 var(--space-5); letter-spacing: -0.01em; }
+.attention-title { font-weight: 500; }

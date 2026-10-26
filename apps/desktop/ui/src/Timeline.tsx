@@ -268,7 +268,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
       </div>
       {day.review && (
         <div className="row">
-          <div className="label secondary">Reviewed r{day.review.rev}</div>
+          <div className="label secondary">{t("reviewedLane", { rev: day.review.rev })}</div>
           <div className="track">
             <Grid range={range} marks={marks} />
             {day.review.snapshot.intervals.map((a, i) => (
