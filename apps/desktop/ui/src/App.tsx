@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
-import { compact, dayLabel, duration, estimate, reasonText } from "./format";
+import { compact, dayLabel, duration, estimate, reasonText, tildify } from "./format";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
+import { RootsPicker } from "./RootsPicker";
+import { SettingsSheet } from "./SettingsSheet";
 import { SessionSheet } from "./SessionSheet";
 import { Timeline } from "./Timeline";
 import type { DayAgents, DayCost, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
@@ -72,8 +74,18 @@ function CollectorStatus({ status }: { status: Status }) {
   );
 }
 
-function Setup({ status, onApprove, busy }: { status: Status; onApprove: (p: string) => void; busy: string | null }) {
-  const proposed = status.proposed_roots;
+function Setup({
+  status,
+  onApprove,
+  onChoose,
+  busy,
+}: {
+  status: Status;
+  onApprove: (paths: string[]) => void;
+  onChoose: () => void;
+  busy: boolean;
+}) {
+  const proposed = status.proposed_roots.filter((r) => !r.approved).map((r) => r.path);
   return (
     <div className="empty">
       <h2>Approve what tracr may read</h2>
@@ -85,21 +97,13 @@ function Setup({ status, onApprove, busy }: { status: Status; onApprove: (p: str
         <p className="muted">No agent history found in the usual places on this Mac.</p>
       ) : (
         <div className="roots">
-          {proposed.map((r) => (
-            <div className="root" key={r.path}>
-              <span className="mono">{r.path}</span>
-              {r.approved ? (
-                <span className="muted">Approved</span>
-              ) : (
-                <button className="button primary" disabled={busy !== null} onClick={() => onApprove(r.path)}>
-                  {busy === r.path ? <span className="spinner" aria-label="Approving" /> : "Approve"}
-                </button>
-              )}
-            </div>
-          ))}
+          <RootsPicker paths={proposed} home={status.home} busy={busy} onApprove={onApprove} label="Approve" />
         </div>
       )}
-      {status.data_dir && <p className="muted">Data directory: {status.data_dir}</p>}
+      <button className="button secondary" disabled={busy} onClick={onChoose}>
+        Choose another folder…
+      </button>
+      {status.data_dir && <p className="muted">Data directory: {tildify(status.data_dir, status.home)}</p>}
     </div>
   );
 }
@@ -118,7 +122,8 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [atom, setAtom] = useState<HumanAtom | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -180,17 +185,40 @@ export function App() {
     return () => window.clearInterval(t);
   }, [loadDays]);
 
-  const approve = async (path: string) => {
-    setApproving(path);
+  const approve = async (paths: string[]) => {
+    setApproving(true);
     try {
-      await api.approveRoot(path);
+      await api.approveRoots(paths);
       await loadDays();
     } catch (e) {
       setNotice({ text: errorText(e), error: true });
     } finally {
-      setApproving(null);
+      setApproving(false);
     }
   };
+
+  const chooseFolder = async () => {
+    setApproving(true);
+    try {
+      if (await api.chooseRoot("provider")) await loadDays();
+    } catch (e) {
+      setNotice({ text: errorText(e), error: true });
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  // ⌘, opens the settings, as in any Mac app.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === ",") {
+        e.preventDefault();
+        setSettings(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (!day) return;
@@ -321,6 +349,14 @@ export function App() {
               Export CSV
             </button>
           )}
+          {status && (
+            <button className="button ghost icon" onClick={() => setSettings(true)} title="Settings (⌘,)" aria-label="Settings">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          )}
           <button
             className="button primary"
             onClick={refresh}
@@ -332,7 +368,7 @@ export function App() {
         </div>
       </div>
 
-      {load.state === "setup" && status && <Setup status={status} onApprove={approve} busy={approving} />}
+      {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
       {load.state === "no-derived" && (
         <div className="empty">
           <h2>Nothing derived yet</h2>
@@ -401,29 +437,28 @@ export function App() {
                   .filter((r) => !r.approved)
                   .map((r) => (
                     <span key={r.path} className="mono">
-                      {r.path}{" "}
+                      {tildify(r.path, status.home)}{" "}
                     </span>
                   ))}
                 <span className="muted">· metadata only, never prompts or output</span>
               </span>
               <span className="spacer" />
-              {status.proposed_roots
-                .filter((r) => !r.approved)
-                .map((r) => (
-                  <button
-                    key={r.path}
-                    className="button secondary small"
-                    style={{ whiteSpace: "nowrap" }}
-                    disabled={approving !== null}
-                    onClick={() => approve(r.path)}
-                    title={r.path}
-                  >
-                    {approving === r.path ? <span className="spinner" aria-label="Approving" /> : `Approve ${r.path.split("/").pop()}`}
-                  </button>
-                ))}
-              <button className="button ghost small" onClick={() => setHideRoots(true)}>
-                Not now
-              </button>
+              <span className="banner-actions">
+                <button
+                  className="button secondary small"
+                  style={{ whiteSpace: "nowrap" }}
+                  disabled={approving}
+                  onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}
+                >
+                  {approving ? <span className="spinner" aria-label="Approving" /> : `Approve all (${status.proposed_roots.filter((r) => !r.approved).length})`}
+                </button>
+                <button className="button ghost small" onClick={() => setSettings(true)}>
+                  Choose…
+                </button>
+                <button className="button ghost small" onClick={() => setHideRoots(true)}>
+                  Not now
+                </button>
+              </span>
             </div>
           )}
           {view.discrepancy && view.review && (
@@ -457,6 +492,19 @@ export function App() {
         </>
       )}
 
+      {settings && status && (
+        <SettingsSheet
+          status={status}
+          onClose={() => setSettings(false)}
+          onChanged={(text, error) => {
+            setNotice({ text, error });
+            if (!error) {
+              void loadDays(day);
+              void api.status().then(setStatus);
+            }
+          }}
+        />
+      )}
       {exporting && load.state === "ready" && (
         <ExportSheet
           days={load.days.days}

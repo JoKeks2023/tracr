@@ -81,3 +81,10 @@ export function reasonText(r: string): string {
   if (kind === "inference_geo_not_recorded") return `inference region not recorded, priced as ${arg}`;
   return r.replaceAll("_", " ");
 }
+
+/** "/Users/ada/.claude/projects" → "~/.claude/projects" (the window never needs a user name). */
+export function tildify(path: string, home: string | null): string {
+  if (!home) return path;
+  const h = home.replace(/\/+$/, "");
+  return path === h ? "~" : path.startsWith(`${h}/`) ? `~${path.slice(h.length)}` : path;
+}

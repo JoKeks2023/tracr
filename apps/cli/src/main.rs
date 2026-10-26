@@ -108,6 +108,10 @@ enum ExportWhat {
 enum RootsCommand {
     /// Approve a provider root or a repository root.
     Add(RootsAdd),
+    /// Stop reading a root. Records already imported stay in the ledger.
+    Remove(RootsAdd),
+    /// Show the approved provider and repository roots.
+    List,
 }
 
 #[derive(Args)]
@@ -340,6 +344,42 @@ fn main() -> Result<()> {
     let dir = data_dir(&cli)?;
     match &cli.command {
         Command::Roots {
+            command: RootsCommand::Remove(remove),
+        } => {
+            let (kind, path) = match (&remove.provider, &remove.repo) {
+                (Some(p), None) => (RootKind::Provider, p),
+                (None, Some(p)) => (RootKind::Repository, p),
+                _ => unreachable!("clap enforces exactly one"),
+            };
+            let mut app = App::open_writer(&dir, Box::new(SystemClock))?;
+            match app.remove_root(kind, path)? {
+                RootsChange::Removed(roots) => {
+                    println!("no longer read; {kind:?} roots now: {roots:?}")
+                }
+                RootsChange::NotApproved(roots) => {
+                    println!("was not approved; {kind:?} roots: {roots:?}")
+                }
+                _ => unreachable!("remove_root only removes"),
+            }
+        }
+        Command::Roots {
+            command: RootsCommand::List,
+        } => {
+            let reader = Reader::open(&dir)?;
+            for (label, roots) in [
+                ("provider", reader.provider_roots()?),
+                ("repository", reader.repository_roots()?),
+            ] {
+                println!("{label} roots");
+                if roots.is_empty() {
+                    println!("  (none)");
+                }
+                for r in roots {
+                    println!("  {r}");
+                }
+            }
+        }
+        Command::Roots {
             command: RootsCommand::Add(add),
         } => {
             let (kind, path) = match (&add.provider, &add.repo) {
@@ -353,6 +393,7 @@ fn main() -> Result<()> {
                 RootsChange::AlreadyApproved(roots) => {
                     println!("already approved; {kind:?} roots: {roots:?}")
                 }
+                _ => unreachable!("add_root only adds"),
             }
         }
         Command::Import => {
