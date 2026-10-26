@@ -14,6 +14,7 @@ import { RootsPicker } from "./RootsPicker";
 import { SessionSheet } from "./SessionSheet";
 import { SettingsSheet } from "./SettingsSheet";
 import { Timeline } from "./Timeline";
+import { Sidebar } from "./Sidebar";
 import { Toast } from "./Toast";
 import { compact } from "./format";
 import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
@@ -23,37 +24,6 @@ type Load =
   | { state: "setup" }
   | { state: "no-derived"; message: string }
   | { state: "ready"; days: DayList };
-
-function collectorLabel(c: Status["collector"]): string {
-  return {
-    collecting: t("collecting"),
-    stalled: t("collectorStalled"),
-    elsewhere: t("collectorElsewhere"),
-    stopped: t("collectorStopped"),
-    not_configured: t("collectorNone"),
-  }[c];
-}
-
-/** A dot with the details in its tooltip; the words appear only when something is wrong. */
-function CollectorStatus({ status }: { status: Status }) {
-  const rt = status.runtime;
-  const sensorOff = rt && rt.keys.os_sensor && rt.keys.os_sensor !== "collecting";
-  const title = [
-    collectorLabel(status.collector),
-    status.collector_detail,
-    rt?.last_error && `Last error: ${rt.last_error}`,
-    rt && `Sensor: ${rt.sensor}${sensorOff ? " (unavailable)" : ""}`,
-    status.data_dir && `Data: ${tildify(status.data_dir, status.home)}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return (
-    <span className="collector" title={title}>
-      <span className={`dot ${status.collector}`} aria-hidden />
-      {status.collector !== "collecting" && collectorLabel(status.collector)}
-    </span>
-  );
-}
 
 function Setup({
   status,
@@ -186,18 +156,6 @@ export function App() {
     }
   };
 
-  // ⌘, opens the settings, as in any Mac app.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === ",") {
-        e.preventDefault();
-        setSettings(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   useEffect(() => {
     if (!day) return;
     let live = true;
@@ -261,23 +219,40 @@ export function App() {
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
 
+  // Mac shortcuts: ⌘, settings, ⌘[ / ⌘] older / newer day, ⌘1 / ⌘2 overview / history.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey) return;
+      if (e.key === ",") setSettings(true);
+      else if (e.key === "[" && olderDay) goTo(olderDay);
+      else if (e.key === "]" && newerDay) goTo(newerDay);
+      else if (e.key === "1") setPage("day");
+      else if (e.key === "2") setPage("history");
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   return (
     <div className="app">
+      <Sidebar days={days} day={day} status={status} onSelect={goTo} onSettings={() => setSettings(true)} />
+      <div className="content">
       <div className="titlebar" data-tauri-drag-region />
       <div className="page">
       <header className="day-header">
-        <div>
+        <div className="day-title">
           <div className="nav">
-            <button className="button ghost icon" aria-label={t("prevDay")} disabled={!olderDay} onClick={() => olderDay && goTo(olderDay)}>
+            <button className="button ghost icon compact-nav" aria-label={t("prevDay")} disabled={!olderDay} onClick={() => olderDay && goTo(olderDay)}>
               ‹
             </button>
             <h1>{day ? dayLabel(day) : "tracr"}</h1>
-            <button className="button ghost icon" aria-label={t("nextDay")} disabled={!newerDay} onClick={() => newerDay && goTo(newerDay)}>
+            <button className="button ghost icon compact-nav" aria-label={t("nextDay")} disabled={!newerDay} onClick={() => newerDay && goTo(newerDay)}>
               ›
             </button>
           </div>
           <div className="status-line">
-            {status && load.state !== "setup" && <CollectorStatus status={status} />}
             {view && (
               <span title={view.quality.provisional_reasons.join("\n")}>
                 {view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}
@@ -306,18 +281,6 @@ export function App() {
             <Menu label={t("more")}>
               {(close) => (
                 <>
-                  {days.length > 1 && (
-                    <label className="menu-field">
-                      {t("chooseDay")}
-                      <select className="select" value={day ?? ""} onChange={(e) => (goTo(e.target.value), close())}>
-                        {days.map((d) => (
-                          <option key={d} value={d}>
-                            {dayLabel(d)} · {d}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
                   {days.length > 0 && (
                     <MenuItem onClick={() => (close(), setExporting(true))}>{t("exportCsv")}</MenuItem>
                   )}
@@ -328,16 +291,19 @@ export function App() {
               )}
             </Menu>
           )}
-          {status && (
-            <button className="button ghost icon" onClick={() => setSettings(true)} title={t("settingsHint")} aria-label={t("settings")}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          )}
         </div>
       </header>
+
+      {view && load.state === "ready" && (
+        <div className="segments" role="tablist">
+          <button role="tab" aria-selected={page === "day"} onClick={() => setPage("day")}>
+            {t("overview")}
+          </button>
+          <button role="tab" aria-selected={page === "history"} onClick={() => setPage("history")}>
+            {t("history")}
+          </button>
+        </div>
+      )}
 
       {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
       {load.state === "no-derived" && (
@@ -350,10 +316,6 @@ export function App() {
 
       {view && totals && load.state === "ready" && page === "history" && (
         <div className="history">
-          <button className="back-link" onClick={() => setPage("day")}>
-            <span aria-hidden>‹</span> {t("back")}
-          </button>
-          <h2 className="history-title">{t("historyTitle", { day: dayLabel(view.day) })}</h2>
           <dl className="facts">
             <div>
               <dd>{totals.sessions}</dd>
@@ -422,13 +384,11 @@ export function App() {
                 </button>
               </div>
             )}
-            <button className="history-link" onClick={() => setPage("history")}>
-              {t("history")} <span aria-hidden>›</span>
-            </button>
           </div>
         </>
       )}
 
+      </div>
       </div>
 
       {settings && status && (

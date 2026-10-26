@@ -3,6 +3,10 @@
 
 const en = {
   // header and navigation
+  daysTitle: "Days",
+  today: "Today",
+  yesterday: "Yesterday",
+  overview: "Overview",
   prevDay: "Previous day",
   nextDay: "Next day",
   addTime: "Add time",
@@ -300,6 +304,10 @@ const en = {
 export type Key = keyof typeof en;
 
 const de: Record<Key, string> = {
+  daysTitle: "Tage",
+  today: "Heute",
+  yesterday: "Gestern",
+  overview: "Übersicht",
   prevDay: "Vorheriger Tag",
   nextDay: "Nächster Tag",
   addTime: "Zeit hinzufügen",
