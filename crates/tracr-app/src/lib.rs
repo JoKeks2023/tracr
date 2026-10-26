@@ -266,8 +266,12 @@ impl App {
         let reviewed = ledger::reviewed_day_count(&self.conn)?;
         if reviewed > 0 {
             bail!(
-                "{reviewed} reviewed day{} keep their time zone; it can only be changed while no day is reviewed",
-                if reviewed == 1 { "" } else { "s" }
+                "{}; it can only be changed while no day is reviewed",
+                if reviewed == 1 {
+                    "1 reviewed day keeps its time zone".to_owned()
+                } else {
+                    format!("{reviewed} reviewed days keep their time zone")
+                }
             );
         }
         let env = IngestEnv {

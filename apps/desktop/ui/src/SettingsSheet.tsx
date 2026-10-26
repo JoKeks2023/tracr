@@ -192,8 +192,8 @@ export function SettingsSheet({
             </label>
             {status.reviewed_days > 0 ? (
               <p className="note">
-                {status.reviewed_days} reviewed day{status.reviewed_days === 1 ? "" : "s"} keep their zone, so it cannot be changed
-                while any day is reviewed.
+                {status.reviewed_days === 1 ? "1 reviewed day keeps its zone" : `${status.reviewed_days} reviewed days keep their zone`}, so
+                it cannot be changed while any day is reviewed.
               </p>
             ) : (
               <p className="note">Changing it moves the day boundaries and rebuilds the days; nothing imported is lost.</p>
