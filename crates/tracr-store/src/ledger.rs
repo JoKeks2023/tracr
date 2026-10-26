@@ -1124,6 +1124,15 @@ pub fn append_worklog_revision(conn: &Connection, r: &WorklogRevision) -> Result
     Ok(())
 }
 
+/// How many distinct days have been reviewed.
+pub fn reviewed_day_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(DISTINCT day) FROM worklog_revision",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
 /// The latest revision of a day, if it was reviewed.
 pub fn latest_worklog_revision(conn: &Connection, day: &str) -> Result<Option<WorklogRevision>> {
     Ok(conn

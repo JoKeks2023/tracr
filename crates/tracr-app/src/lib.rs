@@ -251,6 +251,46 @@ impl App {
         Ok(RootsChange::Removed(roots))
     }
 
+    /// Chooses the reporting time zone (AD-14: one fixed home zone), or `None`
+    /// to follow the system zone. The derived store must be rebuilt afterwards,
+    /// because day boundaries move. Refused once a day has been reviewed: a
+    /// reviewed revision records the zone it was cut in.
+    pub fn set_timezone(&mut self, name: Option<&str>) -> Result<()> {
+        if let Some(n) = name {
+            jiff::tz::TimeZone::get(n).with_context(|| format!("unknown time zone {n:?}"))?;
+        }
+        let current = ledger::current_setting(&self.conn, TIMEZONE_KEY)?;
+        if current.as_ref().and_then(|v| v.as_str()) == name {
+            return Ok(());
+        }
+        let reviewed = ledger::reviewed_day_count(&self.conn)?;
+        if reviewed > 0 {
+            bail!(
+                "{reviewed} reviewed day{} keep their time zone; it can only be changed while no day is reviewed",
+                if reviewed == 1 { "" } else { "s" }
+            );
+        }
+        let env = IngestEnv {
+            clock: &*self.clock,
+            file_identity: &*self.fid,
+        };
+        let tx = self.conn.transaction()?;
+        let seq = ledger::append_user_action(
+            &tx,
+            &NewUserAction {
+                id: &new_uuid_v7(&env),
+                kind: "setting.timezone.set",
+                actor: "user",
+                at: self.clock.now(),
+                reason: None,
+                client: self.client,
+            },
+        )?;
+        ledger::append_setting(&tx, TIMEZONE_KEY, &serde_json::json!(name), seq)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     fn write_roots(&mut self, kind: RootKind, action: &str, roots: &[String]) -> Result<()> {
         let env = IngestEnv {
             clock: &*self.clock,
@@ -618,6 +658,11 @@ impl Reader {
     /// Approved provider roots (a single settings read; cheap enough to poll).
     pub fn provider_roots(&self) -> Result<Vec<String>> {
         read_roots(&self.conn, RootKind::Provider)
+    }
+
+    /// Days that carry a reviewed revision. They fix the reporting zone (AD-14).
+    pub fn reviewed_day_count(&self) -> Result<i64> {
+        Ok(ledger::reviewed_day_count(&self.conn)?)
     }
 
     /// Approved repository roots, under which git is probed read-only.

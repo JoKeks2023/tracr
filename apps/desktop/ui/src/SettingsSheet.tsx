@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api, errorText, type RootKind } from "./api";
 import { tildify } from "./format";
 import { RootsPicker } from "./RootsPicker";
@@ -102,6 +102,18 @@ export function SettingsSheet({
       await api.approveRoots(paths);
       return `Approved ${paths.length} folder${paths.length === 1 ? "" : "s"}`;
     });
+  const zones = useMemo(() => {
+    try {
+      return Intl.supportedValuesOf("timeZone");
+    } catch {
+      return status.timezone ? [status.timezone] : [];
+    }
+  }, [status.timezone]);
+  const chooseZone = (value: string) =>
+    run(async () => {
+      await api.setTimezone(value === "" ? null : value);
+      return value === "" ? `Reporting zone follows the system${status.system_timezone ? ` (${status.system_timezone})` : ""}` : `Reporting zone set to ${value}`;
+    });
   const remove = (kind: RootKind, path: string) =>
     run(async () => {
       await api.removeRoot(kind, path);
@@ -154,6 +166,38 @@ export function SettingsSheet({
                 Add folder…
               </button>
             </div>
+          </section>
+
+          <section>
+            <h3>Time zone</h3>
+            <p className="note">
+              Your days are cut at midnight in this zone. It stays the same wherever you are, so a day always means the same
+              hours.
+            </p>
+            <label className="field">
+              <span>Reporting zone</span>
+              <select
+                className="select"
+                value={status.timezone_chosen ? (status.timezone ?? "") : ""}
+                disabled={busy || status.reviewed_days > 0}
+                onChange={(e) => chooseZone(e.target.value)}
+              >
+                <option value="">System{status.system_timezone ? ` (${status.system_timezone})` : ""}</option>
+                {zones.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {status.reviewed_days > 0 ? (
+              <p className="note">
+                {status.reviewed_days} reviewed day{status.reviewed_days === 1 ? "" : "s"} keep their zone, so it cannot be changed
+                while any day is reviewed.
+              </p>
+            ) : (
+              <p className="note">Changing it moves the day boundaries and rebuilds the days; nothing imported is lost.</p>
+            )}
           </section>
 
           <section>
