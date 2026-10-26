@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { TargetSelect, targetKey } from "./TargetSelect";
@@ -34,6 +35,7 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
   onClose: () => void;
   onChanged: (message: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const [start, setStart] = useState(entry ? toTime(entry.start, tz) : "09:00");
   const [end, setEnd] = useState(entry?.end ? toTime(entry.end, tz) : entry ? "" : "10:00");
   const known = entry?.target && targets.some((t) => t.key === entry.target);
@@ -91,7 +93,7 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label={entry ? t("editEntry") : t("addTime")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet export-sheet" role="dialog" aria-label={entry ? t("editEntry") : t("addTime")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{entry ? (entry.kind === "timer" ? t("editTimer") : t("editEntry")) : t("addTime")}</h2>

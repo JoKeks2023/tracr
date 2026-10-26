@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSheet } from "./useSheet";
 import { api, errorText, type RootKind } from "./api";
 import { tildify } from "./format";
 import { t } from "./i18n";
@@ -81,6 +82,12 @@ export function SettingsSheet({
   onClose: () => void;
   onChanged: (text: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<{ kind: RootKind; path: string } | null>(null);
   const proposed = status.proposed_roots.filter((r) => !r.approved).map((r) => r.path);
@@ -131,7 +138,7 @@ export function SettingsSheet({
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet settings-sheet" role="dialog" aria-label={t("settings")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet settings-sheet" role="dialog" aria-label={t("settings")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{t("settings")}</h2>

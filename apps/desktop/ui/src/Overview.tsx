@@ -4,18 +4,21 @@ import { t } from "./i18n";
 import type { DayAgents, DayCost, HumanDay, ProjectTotal } from "./types";
 
 /** The one number of the day, with the review action beside it. */
-export function BigNumber({ human, canReview, onReview }: { human: { counted_ms: number }; canReview: boolean; onReview: () => void }) {
+export function BigNumber({ human, canReview, onReview, state }: { human: { counted_ms: number }; canReview: boolean; onReview: () => void; state: string }) {
   return (
     <section className="big-number">
       <div>
         <div className="big-value">{duration(human.counted_ms)}</div>
         <div className="big-label">{t("countedTime")}</div>
       </div>
-      {canReview && (
-        <button className="button secondary" onClick={onReview}>
-          {t("reviewDay")}
-        </button>
-      )}
+      <div className="review-state">
+        <span className="muted">{state}</span>
+        {canReview && (
+          <button className="button secondary" onClick={onReview}>
+            {t("reviewDay")}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -68,12 +71,18 @@ export function Attention({ human, windows, onResolve }: { human: { unknown_ms: 
   if (human.unknown_ms <= 0) return null;
   const why = Object.entries(human.unknown_by_reason)
     .map(([r, ms]) => `${reasonText(r)}: ${duration(ms)}`)
-    .join("\n");
+    .join(" · ");
   return (
-    <section className="attention" title={why}>
+    <section className="attention">
       <div>
         <div className="attention-title">{t("unclearTitle", { time: duration(human.unknown_ms) })}</div>
         <div className="muted">{t("unclearHint", { n: windows })}</div>
+        {why && (
+          <details className="why">
+            <summary>{t("why")}</summary>
+            <p>{why}</p>
+          </details>
+        )}
       </div>
       <button className="button secondary" onClick={onResolve}>
         {t("resolve")}

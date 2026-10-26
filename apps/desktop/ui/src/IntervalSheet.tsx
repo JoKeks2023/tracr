@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
@@ -50,6 +51,7 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
   onChanged: (message: string, error?: boolean) => void;
   onEditEntry: (e: ManualEntryInfo) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const tz = day.timezone;
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState("");
@@ -99,7 +101,7 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet interval-sheet" role="dialog" aria-label={t("interval")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet interval-sheet" role="dialog" aria-label={t("interval")}>
         <header>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>

@@ -42,8 +42,8 @@ export function Sidebar({
   const detail = status
     ? [
         status.collector_detail,
-        rt?.last_error && `Last error: ${rt.last_error}`,
-        status.data_dir && `Data: ${tildify(status.data_dir, status.home)}`,
+        rt?.last_error && t("lastError", { text: rt.last_error }),
+        status.data_dir && t("dataDirectory", { path: tildify(status.data_dir, status.home) }),
       ]
         .filter(Boolean)
         .join("\n")

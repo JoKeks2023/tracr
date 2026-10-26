@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useSheet } from "./useSheet";
 import { locale, t } from "./i18n";
 import { duration, estimate, hhmm, money, reasonText, shortId, tokens } from "./format";
 import type { PricingInfo, SessionDay, TokenCount, UsageLine } from "./types";
@@ -29,6 +30,7 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
   pricing: PricingInfo;
   onClose: () => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -41,7 +43,7 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet" role="dialog" aria-label={t("sessionAria", { name: s.label ?? s.native_session_id })}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet" role="dialog" aria-label={t("sessionAria", { name: s.label ?? s.native_session_id })}>
         <header>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>{s.label ?? t("noWorkingDir")}</h2>

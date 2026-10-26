@@ -6,7 +6,6 @@ import { lang, t } from "./i18n";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
-import { Menu, MenuItem } from "./Menu";
 import { Attention, Bars, BigNumber, CostLine } from "./Overview";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
@@ -261,14 +260,6 @@ export function App() {
               ›
             </button>
           </div>
-          <div className="status-line">
-            {view && (
-              <span title={view.quality.provisional_reasons.join("\n")}>
-                {view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}
-                {view.discrepancy && ` · ${t("newEvidenceDiffers")}`}
-              </span>
-            )}
-          </div>
         </div>
         <div className="spacer" />
         <div className="header-actions">
@@ -286,29 +277,15 @@ export function App() {
               {t("addTime")}
             </button>
           )}
-          {load.state === "ready" && (
-            <Menu label={t("more")}>
-              {(close) => (
-                <>
-                  {days.length > 0 && (
-                    <MenuItem onClick={() => (close(), setExporting(true))}>{t("exportCsv")}</MenuItem>
-                  )}
-                  <MenuItem disabled={busy || status?.collector !== "collecting"} onClick={() => (close(), void refresh())}>
-                    {t("refresh")}
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
-          )}
         </div>
       </header>
 
       {view && load.state === "ready" && (
-        <div className="segments" role="tablist">
-          <button role="tab" aria-selected={page === "day"} onClick={() => setPage("day")}>
+        <div className="segments" role="group" aria-label={t("overview") + " / " + t("history")}>
+          <button aria-pressed={page === "day"} onClick={() => setPage("day")}>
             {t("overview")}
           </button>
-          <button role="tab" aria-selected={page === "history"} onClick={() => setPage("history")}>
+          <button aria-pressed={page === "history"} onClick={() => setPage("history")}>
             {t("history")}
           </button>
         </div>
@@ -325,6 +302,7 @@ export function App() {
 
       {view && totals && load.state === "ready" && page === "history" && (
         <div className="history">
+          <CostLine cost={view.cost} />
           <dl className="facts">
             <div>
               <dd>{totals.sessions}</dd>
@@ -349,10 +327,14 @@ export function App() {
       {view && totals && load.state === "ready" && page === "day" && (
         <>
           <div className="main-card">
-            <BigNumber human={totals.human} canReview={canReview} onReview={() => setReviewDay(true)} />
-            <Bars view={view} human={totals.human} />
+            <BigNumber
+              human={totals.human}
+              canReview={canReview}
+              onReview={() => setReviewDay(true)}
+              state={`${view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}${view.discrepancy ? ` · ${t("newEvidenceDiffers")}` : ""}`}
+            />
             <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
-            <CostLine cost={view.cost} />
+            <Bars view={view} human={totals.human} />
             {rootsOpen && status && (
               <div className="banner" role="status" title={status.proposed_roots.filter((r) => !r.approved).map((r) => tildify(r.path, status.home)).join("\n")}>
                 <span>{t("rootsFound")}</span>

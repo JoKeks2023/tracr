@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
@@ -12,6 +13,7 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
   onClose: () => void;
   onChanged: (message: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const tz = day.timezone;
   const [busy, setBusy] = useState<number | null>(null);
   useEffect(() => {
@@ -37,7 +39,7 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet" role="dialog" aria-label={t("reviewTheDay")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet" role="dialog" aria-label={t("reviewTheDay")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{t("reviewTheDay")}</h2>

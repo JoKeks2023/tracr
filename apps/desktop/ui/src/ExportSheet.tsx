@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { dayLabel } from "./format";
@@ -27,6 +28,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
   onClose: () => void;
   onDone: (text: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const ascending = useMemo(() => [...days].reverse(), [days]);
   const month = (current ?? ascending[ascending.length - 1] ?? "").slice(0, 7);
   const inMonth = ascending.filter((d) => d.startsWith(month));
@@ -70,7 +72,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label={t("exportTitle")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet export-sheet" role="dialog" aria-label={t("exportTitle")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{t("exportTitle")}</h2>
