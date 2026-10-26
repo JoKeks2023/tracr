@@ -1,6 +1,6 @@
 # Releasing tracr
 
-Releases are made by hand on the developer's Apple Silicon Mac: build, sign, notarize, upload. There is no release CI and no release script; the `ci` workflow only checks code, and `pages.yml` only publishes the static site.
+Releases are made by hand on the developer's Apple Silicon Mac: build, sign, notarize, upload. There is no release CI and no release script; the `ci` workflow only checks code. The website is deployed by hand to Cloudflare.
 
 ## What a release contains
 
@@ -109,7 +109,7 @@ A pre-release is not what `releases/latest` points to, so links use the explicit
 - `site/public/en/download/index.html` and `de/download/index.html`: version, file names, sizes and SHA-256 per file (take them from `shasum -a 256 dist/*` and `ls -l dist`). `/download` itself is a small page that sends visitors to the English or German page.
 - The version label on the home pages (`en/index.html`, `de/index.html`) and in the README.
 
-Commit, push (this publishes GitHub Pages), then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download/universal` and the other four links.
+Commit and push, then deploy to Cloudflare with `npx wrangler deploy` in `site/` and check `curl -sIL https://tracr.jorisconrad.com/download/universal` and the other four links.
 
 **9. Check on a clean setup**
 ```sh
