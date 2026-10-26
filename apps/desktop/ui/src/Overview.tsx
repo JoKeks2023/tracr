@@ -23,6 +23,13 @@ export function BigNumber({ human, canReview, onReview, state }: { human: { coun
   );
 }
 
+/** The ledger's attribution states, in words. */
+function targetLabel(label: string): string {
+  const known: Record<string, "unattributed" | "conflicting" | "ambiguous"> = { unattributed: "unattributed", conflicting: "conflicting", ambiguous: "ambiguous" };
+  const k = known[label];
+  return k ? t(k === "unattributed" ? "tUnattributed" : k === "conflicting" ? "tConflicting" : "tAmbiguous") : label;
+}
+
 type Row = { key: string; label: string; ms: number; muted: boolean; parts: { label: string; ms: number }[] };
 
 /** Counted time per project when projects exist, else per repository. */
@@ -33,7 +40,7 @@ export function Bars({ view, human }: { view: DayAgents; human: HumanDay | { cou
     ? view.counted_by_project.map((p) => ({ key: p.project_id ?? p.label, label: p.label, ms: p.ms, muted: p.kind === "other", parts: p.parts }))
     : Object.entries(human.counted_by_target)
         .sort((a, b) => b[1] - a[1])
-        .map(([label, ms]) => ({ key: label, label, ms, muted: ["unattributed", "conflicting", "ambiguous"].includes(label), parts: [] }));
+        .map(([label, ms]) => ({ key: label, label: targetLabel(label), ms, muted: ["unattributed", "conflicting", "ambiguous"].includes(label), parts: [] }));
   if (rows.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.ms), 1);
   return (
