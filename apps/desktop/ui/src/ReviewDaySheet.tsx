@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration } from "./format";
 import type { DayAgents } from "./types";
@@ -10,7 +11,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
   onChanged: (message: string, error?: boolean) => void;
 }) {
   const next = (day.review?.rev ?? 0) + 1;
-  const [reason, setReason] = useState(day.discrepancy ? "Accepted new evidence" : "");
+  const [reason, setReason] = useState(day.discrepancy ? t("acceptedNew") : "");
   const [busy, setBusy] = useState(false);
   const draft = day.discrepancy?.draft;
   const counted = draft?.counted_ms ?? day.human.counted_ms;
@@ -28,7 +29,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
     setBusy(true);
     try {
       await api.review(day.day, reason.trim() || undefined);
-      onChanged(`Reviewed · r${next}`);
+      onChanged(t("reviewedToast", { rev: next }));
       onClose();
     } catch (e) {
       onChanged(errorText(e), true);
@@ -40,46 +41,43 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label="Review day">
+      <aside className="sheet export-sheet" role="dialog" aria-label={t("reviewDay")}>
         <header>
           <div style={{ flex: 1 }}>
-            <h2>{next === 1 ? "Review day" : `Accept as revision r${next}`}</h2>
-            <div className="muted">{day.day} · stored as you see it now; new evidence never changes it silently</div>
+            <h2>{next === 1 ? t("reviewDay") : t("acceptRevision", { rev: next })}</h2>
+            <div className="muted">{t("reviewDayNote", { day: day.day })}</div>
           </div>
         </header>
         <div className="body">
           <dl className="kv">
-            <dt>Counted</dt>
+            <dt>{t("countedWord")}</dt>
             <dd className="mono">{duration(counted)}</dd>
             {Object.entries(byTarget)
               .sort((a, b) => b[1] - a[1])
-              .map(([t, ms]) => (
-                <div key={t} style={{ display: "contents" }}>
-                  <dt className="muted">· {t}</dt>
+              .map(([label, ms]) => (
+                <div key={label} style={{ display: "contents" }}>
+                  <dt className="muted">· {label}</dt>
                   <dd className="mono">{duration(ms)}</dd>
                 </div>
               ))}
-            <dt>Unknown</dt>
+            <dt>{t("unknownWord")}</dt>
             <dd className="mono">{duration(unknown)}</dd>
-            <dt>Break</dt>
+            <dt>{t("breakWord")}</dt>
             <dd className="mono">{duration(nonWork)}</dd>
           </dl>
           {unknown > 0 && (
-            <p className="note">
-              Unknown time stays unknown and is not counted in the reviewed day. Count or exclude it first if you know
-              what it was.
-            </p>
+            <p className="note">{t("unknownStays")}</p>
           )}
           <label className="field" style={{ marginTop: "var(--space-4)" }}>
-            <span>{next === 1 ? "Note (optional)" : "Reason (required)"}</span>
+            <span>{next === 1 ? t("noteOptional") : t("reasonRequired")}</span>
             <input className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
           </label>
           <div className="actions">
             <button className="button ghost" onClick={onClose}>
-              Cancel
+              {t("cancel")}
             </button>
             <button className="button primary" disabled={busy || (next > 1 && !reason.trim())} onClick={review}>
-              {busy ? <span className="spinner" /> : next === 1 ? "Review" : `Save r${next}`}
+              {busy ? <span className="spinner" /> : next === 1 ? t("reviewDayShort") : t("saveRev", { rev: next })}
             </button>
           </div>
         </div>

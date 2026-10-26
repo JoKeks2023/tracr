@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { dayLabel } from "./format";
 
 type Kind = "timesheet" | "agent_sessions" | "everything";
 
-const KINDS: Record<Kind, { label: string; note: string }> = {
+const KINDS: Record<Kind, { label: () => string; note: () => string }> = {
   timesheet: {
-    label: "Timesheet (human time)",
-    note: "One row per interval: counted minutes (inferred, provisional) and unknown minutes in separate columns, never one total. Blank time has no row.",
+    label: () => t("exportKindTimesheet"),
+    note: () => t("exportNoteTimesheet"),
   },
   agent_sessions: {
-    label: "Agent sessions",
-    note: "One row per day, session and agent: repository, branch, agent execution, turns, tool calls, human prompts and tokens. Agent time is not human time.",
+    label: () => t("exportKindSessions"),
+    note: () => t("exportNoteSessions"),
   },
   everything: {
-    label: "Everything (folder of CSV files)",
-    note: "All data sets, all columns, all days: sessions, agents, execution, turns, tool calls, token usage, prompts, human time, device and coverage, with a README.",
+    label: () => t("exportKindEverything"),
+    note: () => t("exportNoteEverything"),
   },
 };
 
@@ -44,7 +45,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
     setBusy(true);
     try {
       const path = kind === "everything" ? await api.exportEverything() : await api.exportCsv(kind, from, to);
-      if (path) onDone(`Exported to ${path}`);
+      if (path) onDone(t("exportedTo", { path }));
       onClose();
     } catch (e) {
       onDone(errorText(e), true);
@@ -69,37 +70,37 @@ export function ExportSheet({ days, current, onClose, onDone }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label="Export CSV">
+      <aside className="sheet export-sheet" role="dialog" aria-label={t("exportTitle")}>
         <header>
           <div style={{ flex: 1 }}>
-            <h2>Export CSV</h2>
-            <div className="muted">{KINDS[kind].label}</div>
+            <h2>{t("exportTitle")}</h2>
+            <div className="muted">{KINDS[kind].label()}</div>
           </div>
         </header>
         <div className="body">
           <label className="field">
-            <span>What</span>
+            <span>{t("exportWhat")}</span>
             <select className="select" value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
               {(Object.keys(KINDS) as Kind[]).map((k) => (
                 <option key={k} value={k}>
-                  {KINDS[k].label}
+                  {KINDS[k].label()}
                 </option>
               ))}
             </select>
           </label>
           {kind !== "everything" && (
             <div className="fields">
-              {select(from, setFrom, "From")}
-              {select(to, setTo, "To")}
+              {select(from, setFrom, t("from"))}
+              {select(to, setTo, t("to"))}
             </div>
           )}
-          <p className="note">{KINDS[kind].note}</p>
+          <p className="note">{KINDS[kind].note()}</p>
           <div className="actions">
             <button className="button ghost" onClick={onClose}>
-              Cancel
+              {t("cancel")}
             </button>
             <button className="button primary" onClick={run} disabled={busy || (kind !== "everything" && (!from || !to || to < from))}>
-              {busy ? <span className="spinner" aria-label="Exporting" /> : "Export…"}
+              {busy ? <span className="spinner" aria-label="…" /> : t("exportAction")}
             </button>
           </div>
         </div>

@@ -91,14 +91,14 @@ export function CostLine({ cost }: { cost: DayCost }) {
   const tokens = c.priced_tokens + c.unpriced_tokens;
   const share = tokens > 0 ? c.unpriced_tokens / tokens : 0;
   const lines = [
-    `${p.label}.`,
-    `Prices: catalog ${p.catalog_version} as of ${p.oldest_fetched_at ?? "unknown"} (${p.source_urls.join(", ")}).`,
-    ...c.reasons.map((r) => `Unpriced: ${reasonText(r)}`),
-    ...c.assumptions.map((a) => `Assumed: ${reasonText(a)}`),
+    t("tipLabel"),
+    t("tipPrices", { catalog: p.catalog_version, asOf: p.oldest_fetched_at ?? "?", urls: p.source_urls.join(", ") }),
+    ...c.reasons.map((r) => t("tipUnpriced", { r: reasonText(r) })),
+    ...c.assumptions.map((a) => t("tipAssumed", { r: reasonText(a) })),
     cost.unidentified.priced_records + cost.unidentified.unpriced_records + cost.unidentified.partially_priced_records > 0
-      ? `Unidentified usage, not included: ${estimate(cost.unidentified, p.currency)}`
+      ? t("tipUnidentified", { x: estimate(cost.unidentified, p.currency) })
       : null,
-    cost.spanning_records > 0 ? `Usage spanning the day boundary, not included: ${cost.spanning_records} records, ${estimate(cost.spanning, p.currency)}` : null,
+    cost.spanning_records > 0 ? t("tipSpanning", { n: cost.spanning_records, x: estimate(cost.spanning, p.currency) }) : null,
   ].filter(Boolean);
   return (
     <section className="cost-line" title={lines.join("\n")}>

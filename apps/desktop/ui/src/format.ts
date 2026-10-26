@@ -1,4 +1,4 @@
-import { locale } from "./i18n";
+import { locale, t } from "./i18n";
 import type { CostView, TokenCount } from "./types";
 
 const clock = new Map<string, Intl.DateTimeFormat>();
@@ -57,29 +57,27 @@ export function money(nano: number, currency: string): string {
 /** An estimate as text: unpriced is never shown as zero. */
 export function estimate(c: CostView, currency: string): string {
   if (c.amount_nano === null) {
-    return c.unpriced_records + c.not_estimated_records > 0 ? "unpriced" : "—";
+    return c.unpriced_records + c.not_estimated_records > 0 ? t("unpricedWord") : "—";
   }
   const partial = c.partially_priced_records + c.unpriced_records + c.not_estimated_records > 0;
   return `${partial ? "≥ " : ""}${money(c.amount_nano, currency)}`;
 }
 
-const REASON_TEXT: Record<string, string> = {
-  cache_write_tier_not_reported: "cache writes without a cache duration",
-  service_tier_unknown: "service tier not reported",
-  model_unknown: "model not reported",
-};
-
 /** Why part of an estimate is missing, in words. */
 export function reasonText(r: string): string {
-  if (REASON_TEXT[r]) return REASON_TEXT[r];
+  const fixed: Record<string, string> = {
+    cache_write_tier_not_reported: t("rCacheWriteTier"),
+    service_tier_unknown: t("rServiceTier"),
+    model_unknown: t("rModel"),
+  };
+  if (fixed[r]) return fixed[r];
   const [kind, arg] = r.split(/:(.*)/s);
-  if (kind === "no_price_rule") return `no price for ${arg}`;
-  if (kind === "category_not_reported") return `${arg.replaceAll("_", " ")} not reported`;
-  if (kind === "no_price_for") return `no price for ${arg.replaceAll("_", " ")}`;
-  if (kind === "no_price_for_tool") return `no price for ${arg.replaceAll("_", " ")}`;
-  if (kind === "cache_tier_unknown") return `unknown cache tier ${arg}`;
-  if (kind === "speed_not_recorded") return `speed not recorded, priced as ${arg}`;
-  if (kind === "inference_geo_not_recorded") return `inference region not recorded, priced as ${arg}`;
+  if (kind === "no_price_rule") return t("rNoPriceFor", { x: arg });
+  if (kind === "category_not_reported") return t("rNotReported", { x: arg.replaceAll("_", " ") });
+  if (kind === "no_price_for" || kind === "no_price_for_tool") return t("rNoPriceFor", { x: arg.replaceAll("_", " ") });
+  if (kind === "cache_tier_unknown") return t("rCacheTier", { x: arg });
+  if (kind === "speed_not_recorded") return t("rSpeed", { x: arg });
+  if (kind === "inference_geo_not_recorded") return t("rGeo", { x: arg });
   return r.replaceAll("_", " ");
 }
 

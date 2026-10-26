@@ -1,4 +1,5 @@
 import type { TargetOption } from "./types";
+import { t } from "./i18n";
 
 /** Target dropdown (UI-01): repositories, categories, used before, "Other…". */
 export function TargetSelect({ targets, value, onChange, other, onOther, allowNone }: {
@@ -10,30 +11,30 @@ export function TargetSelect({ targets, value, onChange, other, onOther, allowNo
   allowNone?: boolean;
 }) {
   const groups: [TargetOption["group"], string][] = [
-    ["repository", "Repositories"],
-    ["category", "Categories"],
-    ["other", "Used before"],
+    ["repository", t("targetRepos")],
+    ["category", t("targetCategories")],
+    ["other", t("targetUsed")],
   ];
   return (
     <>
-      <select className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Target">
-        <option value="">{allowNone ? "No target" : "Choose a target…"}</option>
+      <select className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-label={t("target")}>
+        <option value="">{allowNone ? t("noTarget") : t("chooseTarget")}</option>
         {groups.map(([g, label]) => {
-          const items = targets.filter((t) => t.group === g);
+          const items = targets.filter((o) => o.group === g);
           return items.length === 0 ? null : (
             <optgroup key={g} label={label}>
-              {items.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
+              {items.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
                 </option>
               ))}
             </optgroup>
           );
         })}
-        <option value="__other">Other…</option>
+        <option value="__other">{t("otherEllipsis")}</option>
       </select>
       {value === "__other" && (
-        <input className="input" placeholder="Short label" maxLength={80} value={other} onChange={(e) => onOther(e.target.value)} />
+        <input className="input" placeholder={t("shortLabel")} maxLength={80} value={other} onChange={(e) => onOther(e.target.value)} />
       )}
     </>
   );

@@ -347,7 +347,7 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
   flex: 1; display: grid; grid-template-columns: 6.5rem 3.5rem 1fr; gap: var(--space-3); align-items: center;
   background: none; border: none; text-align: left; padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm);
 }
-.review-status { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-status { font-size: 13px; line-height: 1.35; }
 .review-row.unknown .review-status { color: var(--text-secondary); }
 .review-row.work .review-status { color: var(--accent-11); }
 .review-actions { display: flex; gap: var(--space-1); padding-right: var(--space-2); }
