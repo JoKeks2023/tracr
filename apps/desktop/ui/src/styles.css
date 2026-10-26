@@ -500,3 +500,6 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
   .sidebar { display: none; }
   .compact-nav { display: inline-flex; }
 }
+.sidebar { overflow: hidden; }
+.sidebar-days { min-height: 0; overflow-y: auto; }
+.sidebar-foot { flex: none; }
