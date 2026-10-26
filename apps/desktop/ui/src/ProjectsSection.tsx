@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorText } from "./api";
+import { t } from "./i18n";
 import type { ProjectOp, ProjectsView } from "./types";
 
 /**
@@ -41,11 +42,8 @@ export function ProjectsSection({ onChanged }: { onChanged: (text: string, error
 
   return (
     <section>
-      <h3>Projects</h3>
-      <p className="note">
-        A project is a name you choose, for example a client or a product. Map your repositories to it and the day also shows
-        your counted time per project. Nothing is moved: the time stays on its repositories.
-      </p>
+      <h3>{t("projects")}</h3>
+      <p className="note">{t("projectsNote")}</p>
       {view.projects.length > 0 && (
         <ul className="root-list">
           {view.projects.map((p) => (
@@ -63,25 +61,25 @@ export function ProjectsSection({ onChanged }: { onChanged: (text: string, error
                     <button
                       className="button primary small"
                       disabled={busy || renaming.name.trim() === ""}
-                      onClick={() => run({ op: "rename", id: p.id, name: renaming.name }, `Renamed to ${renaming.name.trim()}`)}
+                      onClick={() => run({ op: "rename", id: p.id, name: renaming.name }, `${t("rename")}: ${renaming.name.trim()}`)}
                     >
-                      Save
+                      {t("save")}
                     </button>
                     <button className="button ghost small" disabled={busy} onClick={() => setRenaming(null)}>
-                      Cancel
+                      {t("cancel")}
                     </button>
                   </span>
                 </>
               ) : deleting === p.id ? (
                 <div className="ask">
                   <span>{p.name}</span>
-                  <p>Delete this project? Its repositories become unmapped; your counted time is not touched.</p>
+                  <p>{t("deleteProjectAsk")}</p>
                   <div className="actions left">
-                    <button className="button primary small" disabled={busy} onClick={() => run({ op: "delete", id: p.id }, `Deleted ${p.name}`)}>
-                      Delete project
+                    <button className="button primary small" disabled={busy} onClick={() => run({ op: "delete", id: p.id }, `${t("delete")}: ${p.name}`)}>
+                      {t("deleteProject")}
                     </button>
                     <button className="button ghost small" disabled={busy} onClick={() => setDeleting(null)}>
-                      Cancel
+                      {t("cancel")}
                     </button>
                   </div>
                 </div>
@@ -90,10 +88,10 @@ export function ProjectsSection({ onChanged }: { onChanged: (text: string, error
                   <span>{p.name}</span>
                   <span className="row-actions">
                     <button className="button ghost small" disabled={busy} onClick={() => setRenaming({ id: p.id, name: p.name })}>
-                      Rename
+                      {t("rename")}
                     </button>
                     <button className="button ghost small" disabled={busy} onClick={() => setDeleting(p.id)}>
-                      Delete
+                      {t("delete")}
                     </button>
                   </span>
                 </>
@@ -107,20 +105,20 @@ export function ProjectsSection({ onChanged }: { onChanged: (text: string, error
         onSubmit={(e) => {
           e.preventDefault();
           const n = name.trim();
-          if (n) void run({ op: "create", name: n }, `Created ${n}`).then(() => setName(""));
+          if (n) void run({ op: "create", name: n }, `${t("create")}: ${n}`).then(() => setName(""));
         }}
       >
-        <input className="input" placeholder="New project name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} aria-label="New project name" />
+        <input className="input" placeholder={t("newProjectName")} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} aria-label={t("newProjectName")} />
         <button className="button secondary" type="submit" disabled={busy || name.trim() === ""}>
-          Create
+          {t("create")}
         </button>
       </form>
 
       {view.projects.length > 0 && (
         <>
-          <h3 className="sub">Repositories</h3>
+          <h3 className="sub">{t("repositories")}</h3>
           {view.repositories.length === 0 ? (
-            <p className="muted">No repository seen in your agent sessions yet.</p>
+            <p className="muted">{t("noRepoSeen")}</p>
           ) : (
             <ul className="root-list">
               {view.repositories.map((r) => {
@@ -138,11 +136,11 @@ export function ProjectsSection({ onChanged }: { onChanged: (text: string, error
                       onChange={(e) =>
                         void run(
                           { op: "map", repository: r.key, project: e.target.value === "" ? null : e.target.value },
-                          e.target.value === "" ? `${r.label} is in no project` : `${r.label} is in ${nameOf(e.target.value)}`,
+                          e.target.value === "" ? `${r.label}: ${t("noProject")}` : `${r.label}: ${nameOf(e.target.value)}`,
                         )
                       }
                     >
-                      <option value="">No project</option>
+                      <option value="">{t("noProject")}</option>
                       {view.projects.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}

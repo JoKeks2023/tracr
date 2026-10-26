@@ -1,17 +1,20 @@
 import { useMemo, useState } from "react";
 import { api, errorText, type RootKind } from "./api";
 import { tildify } from "./format";
+import { t } from "./i18n";
 import { ProjectsSection } from "./ProjectsSection";
 import { RootsPicker } from "./RootsPicker";
 import type { Status } from "./types";
 
-const COLLECTOR_TEXT: Record<Status["collector"], string> = {
-  collecting: "Collecting",
-  stalled: "Not responding",
-  elsewhere: "Collecting in another tracr process",
-  stopped: "Not collecting",
-  not_configured: "No approved history yet",
-};
+function collectorText(c: Status["collector"]): string {
+  return {
+    collecting: t("collecting"),
+    stalled: t("collectorStalled"),
+    elsewhere: t("collectorElsewhere"),
+    stopped: t("collectorStopped"),
+    not_configured: t("collectorNone"),
+  }[c];
+}
 
 function RootList({
   kind,
@@ -46,19 +49,19 @@ function RootList({
             </span>
             {asking ? (
               <div className="ask">
-                <p>Stop reading this folder? What was imported stays in your ledger; new sessions are no longer picked up.</p>
+                <p>{t("stopReadingAsk")}</p>
                 <div className="actions left">
                   <button className="button primary small" disabled={busy} onClick={() => onRemove(kind, r)}>
-                    Stop reading
+                    {t("stopReading")}
                   </button>
                   <button className="button ghost small" disabled={busy} onClick={onCancel}>
-                    Cancel
+                    {t("cancel")}
                   </button>
                 </div>
               </div>
             ) : (
-              <button className="button ghost small" disabled={busy} onClick={() => onAsk(kind, r)} aria-label={`Stop reading ${r}`}>
-                Remove
+              <button className="button ghost small" disabled={busy} onClick={() => onAsk(kind, r)} aria-label={`${t("stopReading")}: ${r}`}>
+                {t("remove")}
               </button>
             )}
           </li>
@@ -68,7 +71,7 @@ function RootList({
   );
 }
 
-/** Settings: what tracr may read, where its data lives, and which version this is. */
+/** Settings: what tracr may read, projects, time zone, where its data lives, and which version this is. */
 export function SettingsSheet({
   status,
   onClose,
@@ -96,12 +99,12 @@ export function SettingsSheet({
   const choose = (kind: RootKind) =>
     run(async () => {
       const path = await api.chooseRoot(kind);
-      return path ? `Approved ${tildify(path, status.home)}` : null;
+      return path ? t("approvedFolder", { path: tildify(path, status.home) }) : null;
     });
   const approve = (paths: string[]) =>
     run(async () => {
       await api.approveRoots(paths);
-      return `Approved ${paths.length} folder${paths.length === 1 ? "" : "s"}`;
+      return t("approvedFolders", { n: paths.length });
     });
   const zones = useMemo(() => {
     try {
@@ -113,58 +116,56 @@ export function SettingsSheet({
   const chooseZone = (value: string) =>
     run(async () => {
       await api.setTimezone(value === "" ? null : value);
-      return value === "" ? `Reporting zone follows the system${status.system_timezone ? ` (${status.system_timezone})` : ""}` : `Reporting zone set to ${value}`;
+      return value === "" ? t("zoneSystem", { zone: status.system_timezone ?? "" }) : t("zoneSet", { zone: value });
     });
   const remove = (kind: RootKind, path: string) =>
     run(async () => {
       await api.removeRoot(kind, path);
       setConfirm(null);
-      return `No longer reading ${tildify(path, status.home)}`;
+      return t("noLongerReading", { path: tildify(path, status.home) });
     });
+  const list = (kind: RootKind, roots: string[], empty: string) => (
+    <RootList kind={kind} roots={roots} home={status.home} busy={busy} empty={empty} confirm={confirm} onAsk={(k, p) => setConfirm({ kind: k, path: p })} onCancel={() => setConfirm(null)} onRemove={remove} />
+  );
 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet settings-sheet" role="dialog" aria-label="Settings">
+      <aside className="sheet settings-sheet" role="dialog" aria-label={t("settings")}>
         <header>
           <div style={{ flex: 1 }}>
-            <h2>Settings</h2>
+            <h2>{t("settings")}</h2>
             <div className="muted">tracr {status.app_version}</div>
           </div>
           <button className="button ghost" onClick={onClose}>
-            Done
+            {t("done")}
           </button>
         </header>
         <div className="body">
           <section>
-            <h3>Agent history</h3>
-            <p className="note">
-              tracr reads session files from these folders and keeps usage, timing and structure only, never prompts or tool
-              output. Nothing is read from a folder you have not approved.
-            </p>
-            <RootList kind="provider" roots={status.approved_roots} home={status.home} busy={busy} empty="No folder approved yet." confirm={confirm} onAsk={(k, p) => setConfirm({ kind: k, path: p })} onCancel={() => setConfirm(null)} onRemove={remove} />
+            <h3>{t("agentHistory")}</h3>
+            <p className="note">{t("agentHistoryNote")}</p>
+            {list("provider", status.approved_roots, t("noFolder"))}
             {proposed.length > 0 && (
               <>
-                <h3 className="sub">Found on this Mac</h3>
+                <h3 className="sub">{t("foundOnMac")}</h3>
                 <RootsPicker paths={proposed} home={status.home} busy={busy} onApprove={approve} />
               </>
             )}
             <div className="actions left">
               <button className="button secondary" disabled={busy} onClick={() => choose("provider")}>
-                Add folder…
+                {t("addFolder")}
               </button>
             </div>
           </section>
 
           <section>
-            <h3>Repositories</h3>
-            <p className="note">
-              tracr looks at git (branch and remote, read-only) below these folders to say which project your time belongs to.
-            </p>
-            <RootList kind="repository" roots={status.approved_repository_roots} home={status.home} busy={busy} empty="No repository folder approved yet." confirm={confirm} onAsk={(k, p) => setConfirm({ kind: k, path: p })} onCancel={() => setConfirm(null)} onRemove={remove} />
+            <h3>{t("repositories")}</h3>
+            <p className="note">{t("repositoriesNote")}</p>
+            {list("repository", status.approved_repository_roots, t("noRepoFolder"))}
             <div className="actions left">
               <button className="button secondary" disabled={busy} onClick={() => choose("repository")}>
-                Add folder…
+                {t("addFolder")}
               </button>
             </div>
           </section>
@@ -172,20 +173,20 @@ export function SettingsSheet({
           <ProjectsSection onChanged={onChanged} />
 
           <section>
-            <h3>Time zone</h3>
-            <p className="note">
-              Your days are cut at midnight in this zone. It stays the same wherever you are, so a day always means the same
-              hours.
-            </p>
+            <h3>{t("timeZone")}</h3>
+            <p className="note">{t("timeZoneNote")}</p>
             <label className="field">
-              <span>Reporting zone</span>
+              <span>{t("reportingZone")}</span>
               <select
                 className="select"
                 value={status.timezone_chosen ? (status.timezone ?? "") : ""}
                 disabled={busy || status.reviewed_days > 0}
                 onChange={(e) => chooseZone(e.target.value)}
               >
-                <option value="">System{status.system_timezone ? ` (${status.system_timezone})` : ""}</option>
+                <option value="">
+                  {t("system")}
+                  {status.system_timezone ? ` (${status.system_timezone})` : ""}
+                </option>
                 {zones.map((z) => (
                   <option key={z} value={z}>
                     {z}
@@ -193,30 +194,25 @@ export function SettingsSheet({
                 ))}
               </select>
             </label>
-            {status.reviewed_days > 0 ? (
-              <p className="note">
-                {status.reviewed_days === 1 ? "1 reviewed day keeps its zone" : `${status.reviewed_days} reviewed days keep their zone`}, so
-                it cannot be changed while any day is reviewed.
-              </p>
-            ) : (
-              <p className="note">Changing it moves the day boundaries and rebuilds the days; nothing imported is lost.</p>
-            )}
+            <p className="note">
+              {status.reviewed_days === 1 ? t("timeZoneLockedOne") : status.reviewed_days > 1 ? t("timeZoneLockedMany", { n: status.reviewed_days }) : t("timeZoneChange")}
+            </p>
           </section>
 
           <section>
-            <h3>Collector</h3>
+            <h3>{t("collector")}</h3>
             <dl className="kv">
-              <dt>State</dt>
-              <dd>{COLLECTOR_TEXT[status.collector]}</dd>
+              <dt>{t("state")}</dt>
+              <dd>{collectorText(status.collector)}</dd>
               {status.collector_detail && (
                 <>
-                  <dt>Detail</dt>
+                  <dt>{t("detail")}</dt>
                   <dd>{status.collector_detail}</dd>
                 </>
               )}
               {status.runtime && (
                 <>
-                  <dt>Device sensor</dt>
+                  <dt>{t("deviceSensor")}</dt>
                   <dd>{status.runtime.sensor}</dd>
                 </>
               )}
@@ -224,32 +220,32 @@ export function SettingsSheet({
           </section>
 
           <section>
-            <h3>Data</h3>
+            <h3>{t("data")}</h3>
             <dl className="kv">
-              <dt>Location</dt>
-              <dd className="mono">{status.data_dir ? tildify(status.data_dir, status.home) : "none"}</dd>
-              <dt>Ledger</dt>
-              <dd>{status.ledger_present ? "present, append-only" : "not created yet"}</dd>
+              <dt>{t("location")}</dt>
+              <dd className="mono">{status.data_dir ? tildify(status.data_dir, status.home) : "–"}</dd>
+              <dt>{t("ledger")}</dt>
+              <dd>{status.ledger_present ? t("ledgerPresent") : t("ledgerMissing")}</dd>
               {status.data_dir_from_env && (
                 <>
-                  <dt>Note</dt>
-                  <dd>Set by TRACR_DATA_DIR</dd>
+                  <dt>{t("note")}</dt>
+                  <dd>{t("setByEnv")}</dd>
                 </>
               )}
             </dl>
           </section>
 
           <section>
-            <h3>About</h3>
+            <h3>{t("about")}</h3>
             <dl className="kv">
-              <dt>Version</dt>
+              <dt>{t("version")}</dt>
               <dd>{status.app_version}</dd>
-              <dt>License</dt>
+              <dt>{t("license")}</dt>
               <dd>AGPL-3.0-or-later</dd>
-              <dt>Website</dt>
+              <dt>{t("website")}</dt>
               <dd className="mono">tracr.jorisconrad.com</dd>
-              <dt>Privacy</dt>
-              <dd>Local only. Nothing leaves this Mac.</dd>
+              <dt>{t("privacy")}</dt>
+              <dd>{t("privacyText")}</dd>
             </dl>
           </section>
         </div>

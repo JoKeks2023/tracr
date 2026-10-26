@@ -1,3 +1,4 @@
+import { locale } from "./i18n";
 import type { CostView, TokenCount } from "./types";
 
 const clock = new Map<string, Intl.DateTimeFormat>();
@@ -16,7 +17,7 @@ export function hhmm(ms: number, timeZone: string): string {
 export function dayLabel(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(date);
+  return new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(date);
 }
 
 export function duration(ms: number): string {

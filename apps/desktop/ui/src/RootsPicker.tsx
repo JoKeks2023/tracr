@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { tildify } from "./format";
+import { t } from "./i18n";
 
 /**
  * Proposed provider folders as a checklist, all checked, approved with one
@@ -10,7 +11,7 @@ export function RootsPicker({
   home,
   busy,
   onApprove,
-  label = "Approve selected",
+  label,
 }: {
   paths: string[];
   home: string | null;
@@ -42,7 +43,7 @@ export function RootsPicker({
         ))}
       </ul>
       <button className="button primary" disabled={busy || chosen.length === 0} onClick={() => onApprove(chosen)}>
-        {busy ? <span className="spinner" aria-label="Approving" /> : `${label}${chosen.length > 1 ? ` (${chosen.length})` : ""}`}
+        {busy ? <span className="spinner" aria-label="Approving" /> : `${label ?? t("approveSelected")}${chosen.length > 1 ? ` (${chosen.length})` : ""}`}
       </button>
     </div>
   );

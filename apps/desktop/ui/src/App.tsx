@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
-import { compact, dayLabel, duration, estimate, reasonText, tildify } from "./format";
+import { dayLabel, duration, tildify } from "./format";
+import { t } from "./i18n";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
+import { Menu, MenuItem } from "./Menu";
+import { Attention, Bars, BigNumber, CostLine } from "./Overview";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
 import { RootsPicker } from "./RootsPicker";
-import { SettingsSheet } from "./SettingsSheet";
 import { SessionSheet } from "./SessionSheet";
+import { SettingsSheet } from "./SettingsSheet";
 import { Timeline } from "./Timeline";
-import type { DayAgents, DayCost, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
+import { Toast } from "./Toast";
+import { compact } from "./format";
+import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
@@ -19,57 +24,33 @@ type Load =
   | { state: "no-derived"; message: string }
   | { state: "ready"; days: DayList };
 
-const COLLECTOR_LABEL: Record<Status["collector"], string> = {
-  collecting: "Collecting",
-  stalled: "Collector not responding",
-  elsewhere: "Collecting in another tracr process",
-  stopped: "Not collecting",
-  not_configured: "No approved history",
-};
-
-function CostMetric({ cost }: { cost: DayCost }) {
-  const c = cost.identified;
-  const p = cost.pricing;
-  const tokens = c.priced_tokens + c.unpriced_tokens;
-  const unpricedShare = tokens > 0 ? c.unpriced_tokens / tokens : 0;
-  const lines = [
-    `${p.label}.`,
-    `Prices: catalog ${p.catalog_version} as of ${p.oldest_fetched_at ?? "unknown"} (${p.source_urls.join(", ")}).`,
-    ...c.reasons.map((r) => `Unpriced: ${reasonText(r)}`),
-    ...c.assumptions.map((a) => `Assumed: ${reasonText(a)}`),
-    cost.unidentified.priced_records + cost.unidentified.unpriced_records + cost.unidentified.partially_priced_records > 0
-      ? `Unidentified usage, not included: ${estimate(cost.unidentified, p.currency)}`
-      : null,
-    cost.spanning_records > 0
-      ? `Usage spanning the day boundary, not included: ${cost.spanning_records} records, ${estimate(cost.spanning, p.currency)}`
-      : null,
-  ].filter(Boolean);
-  return (
-    <div className="metric" title={lines.join("\n")}>
-      <div className="value">{estimate(c, p.currency)}</div>
-      <div className="label">
-        est. API cost · not spend
-        {unpricedShare > 0 && ` · ${unpricedShare < 0.01 ? "<1" : Math.round(unpricedShare * 100)}% of tokens unpriced`}
-      </div>
-    </div>
-  );
+function collectorLabel(c: Status["collector"]): string {
+  return {
+    collecting: t("collecting"),
+    stalled: t("collectorStalled"),
+    elsewhere: t("collectorElsewhere"),
+    stopped: t("collectorStopped"),
+    not_configured: t("collectorNone"),
+  }[c];
 }
 
+/** A dot with the details in its tooltip; the words appear only when something is wrong. */
 function CollectorStatus({ status }: { status: Status }) {
   const rt = status.runtime;
   const sensorOff = rt && rt.keys.os_sensor && rt.keys.os_sensor !== "collecting";
   const title = [
+    collectorLabel(status.collector),
     status.collector_detail,
     rt?.last_error && `Last error: ${rt.last_error}`,
     rt && `Sensor: ${rt.sensor}${sensorOff ? " (unavailable)" : ""}`,
-    status.data_dir && `Data: ${status.data_dir}`,
+    status.data_dir && `Data: ${tildify(status.data_dir, status.home)}`,
   ]
     .filter(Boolean)
     .join("\n");
   return (
     <span className="collector" title={title}>
       <span className={`dot ${status.collector}`} aria-hidden />
-      {COLLECTOR_LABEL[status.collector]}
+      {status.collector !== "collecting" && collectorLabel(status.collector)}
     </span>
   );
 }
@@ -88,22 +69,19 @@ function Setup({
   const proposed = status.proposed_roots.filter((r) => !r.approved).map((r) => r.path);
   return (
     <div className="empty">
-      <h2>Approve what tracr may read</h2>
-      <p>
-        tracr reads agent transcripts only from folders you approve, and stores metadata only: never prompts, messages
-        or tool output.
-      </p>
+      <h2>{t("setupTitle")}</h2>
+      <p>{t("setupText")}</p>
       {proposed.length === 0 ? (
-        <p className="muted">No agent history found in the usual places on this Mac.</p>
+        <p className="muted">{t("setupNone")}</p>
       ) : (
         <div className="roots">
-          <RootsPicker paths={proposed} home={status.home} busy={busy} onApprove={onApprove} label="Approve" />
+          <RootsPicker paths={proposed} home={status.home} busy={busy} onApprove={onApprove} label={t("setupApprove")} />
         </div>
       )}
       <button className="button secondary" disabled={busy} onClick={onChoose}>
-        Choose another folder…
+        {t("setupChoose")}
       </button>
-      {status.data_dir && <p className="muted">Data directory: {tildify(status.data_dir, status.home)}</p>}
+      {status.data_dir && <p className="muted">{t("dataDirectory", { path: tildify(status.data_dir, status.home) })}</p>}
     </div>
   );
 }
@@ -237,7 +215,7 @@ export function App() {
     setNotice(null);
     try {
       const r = await api.refresh();
-      setNotice({ text: `Imported ${r.inserted} new records · rebuilt ${r.sessions} sessions in ${r.seconds.toFixed(1)}s` });
+      setNotice({ text: t("refreshed", { inserted: r.inserted, sessions: r.sessions, seconds: r.seconds.toFixed(1) }) });
       await loadDays(day);
     } catch (e) {
       setNotice({ text: errorText(e), error: true });
@@ -269,69 +247,64 @@ export function App() {
   }, [view]);
 
   const session = view?.sessions.find((s) => s.session_id === selected) ?? null;
-  const asOf = load.state === "ready" ? load.days.derived_as_of : null;
+
+  const days = load.state === "ready" ? load.days.days : [];
+  const idx = day ? days.indexOf(day) : -1;
+  const olderDay = idx >= 0 ? days[idx + 1] : undefined;
+  const newerDay = idx > 0 ? days[idx - 1] : undefined;
+  const goTo = (d: string) => {
+    setSelected(null);
+    setDay(d);
+  };
+  const [showDetails, setShowDetails] = useState(() => {
+    try {
+      return localStorage.getItem("tracr.details") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleDetails = () =>
+    setShowDetails((v) => {
+      try {
+        localStorage.setItem("tracr.details", v ? "0" : "1");
+      } catch {
+        /* a remembered preference is a convenience only */
+      }
+      return !v;
+    });
+  const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
+  const canReview = !!view && status?.collector === "collecting" && !view.review;
+  const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
 
   return (
     <div className="app">
       <div className="titlebar" data-tauri-drag-region />
-      <div className="header">
+      <div className="page">
+      <header className="day-header">
         <div>
-          <h1>{day ? dayLabel(day) : "tracr"}</h1>
-          <div className="sub">
-            {view ? (
+          <div className="nav">
+            <button className="button ghost icon" aria-label={t("prevDay")} disabled={!olderDay} onClick={() => olderDay && goTo(olderDay)}>
+              ‹
+            </button>
+            <h1>{day ? dayLabel(day) : "tracr"}</h1>
+            <button className="button ghost icon" aria-label={t("nextDay")} disabled={!newerDay} onClick={() => newerDay && goTo(newerDay)}>
+              ›
+            </button>
+          </div>
+          <div className="status-line">
+            {status && load.state !== "setup" && <CollectorStatus status={status} />}
+            {view && (
               <span title={view.quality.provisional_reasons.join("\n")}>
-                {view.review
-                  ? `Reviewed r${view.review.rev} · ${new Date(view.review.at).toLocaleString("en-GB", { timeZone: view.timezone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${view.discrepancy ? " · new evidence differs" : ""} · `
-                  : "Provisional · "}
-                {view.quality.ingestion_complete
-                  ? "data complete"
-                  : view.quality.ingestion_verified_through
-                    ? `data still arriving (verified through ${new Date(view.quality.ingestion_verified_through).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: view.timezone })})`
-                    : "ingestion not verified"}
-                {view.quality.recovered_records > 0 && ` · ${view.quality.recovered_records} records recovered late`}
-                {view.quality.stream_extents.some((e) => e.state === "gap") && " · ingestion gaps"}
+                {view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}
+                {view.discrepancy && ` · ${t("newEvidenceDiffers")}`}
               </span>
-            ) : asOf ? (
-              `Derived ${new Date(asOf).toLocaleString("en-GB")}`
-            ) : (
-              "Local development diary"
             )}
-            {load.state === "ready" && ` · ${load.days.timezone}`}
           </div>
         </div>
         <div className="spacer" />
         <div className="header-actions">
-          {notice && <span className={`notice${notice.error ? " error" : ""}`}>{notice.text}</span>}
           {status && status.collector === "collecting" && (
             <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
-          )}
-          {status && load.state !== "setup" && <CollectorStatus status={status} />}
-          {load.state === "ready" && load.days.days.length > 0 && (
-            <select
-              className="select"
-              aria-label="Day"
-              value={day ?? ""}
-              onChange={(e) => {
-                setSelected(null);
-                setDay(e.target.value);
-              }}
-            >
-              {load.days.days.map((d) => (
-                <option key={d} value={d}>
-                  {dayLabel(d)} · {d}
-                </option>
-              ))}
-            </select>
-          )}
-          {view && status?.collector === "collecting" && !view.review && (
-            <button className="button ghost" onClick={() => setReviewDay(true)}>
-              Review day
-            </button>
-          )}
-          {view && view.human.atoms.some((a) => a.status === "unknown") && (
-            <button className="button ghost" onClick={() => setReviewing(true)}>
-              {view.human.atoms.filter((a) => a.status === "unknown").length} to review
-            </button>
           )}
           {view && status?.collector === "collecting" && (
             <button
@@ -341,170 +314,153 @@ export function App() {
                 setEntry("new");
               }}
             >
-              Add time
+              {t("addTime")}
             </button>
           )}
-          {load.state === "ready" && load.days.days.length > 0 && (
-            <button className="button ghost" onClick={() => setExporting(true)}>
-              Export CSV
-            </button>
+          {load.state === "ready" && (
+            <Menu label={t("more")}>
+              {(close) => (
+                <>
+                  {days.length > 1 && (
+                    <label className="menu-field">
+                      {t("chooseDay")}
+                      <select className="select" value={day ?? ""} onChange={(e) => (goTo(e.target.value), close())}>
+                        {days.map((d) => (
+                          <option key={d} value={d}>
+                            {dayLabel(d)} · {d}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {days.length > 0 && (
+                    <MenuItem onClick={() => (close(), setExporting(true))}>{t("exportCsv")}</MenuItem>
+                  )}
+                  <MenuItem disabled={busy || status?.collector !== "collecting"} onClick={() => (close(), void refresh())}>
+                    {t("refresh")}
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
           )}
           {status && (
-            <button className="button ghost icon" onClick={() => setSettings(true)} title="Settings (⌘,)" aria-label="Settings">
+            <button className="button ghost icon" onClick={() => setSettings(true)} title={t("settingsHint")} aria-label={t("settings")}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </button>
           )}
-          <button
-            className="button primary"
-            onClick={refresh}
-            disabled={busy || status?.collector !== "collecting"}
-            title={status?.collector === "elsewhere" ? "Another tracr process is collecting; it refreshes on its own." : undefined}
-          >
-            {busy ? <span className="spinner" aria-label="Refreshing" /> : "Refresh"}
-          </button>
         </div>
-      </div>
+      </header>
 
       {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
       {load.state === "no-derived" && (
         <div className="empty">
-          <h2>Nothing derived yet</h2>
-          <p>The collector builds the day views after its first import. Press Refresh if it takes long.</p>
+          <h2>{t("nothingDerived")}</h2>
+          <p>{t("nothingDerivedHint")}</p>
           <p className="muted">{load.message}</p>
         </div>
       )}
 
       {view && totals && load.state === "ready" && (
         <>
-          <div className="summary">
-            <div className="metric">
-              <div className="value human-value">{duration(totals.human.counted_ms)}</div>
-              <div className="label">
-                {view.review ? `counted human time · reviewed r${view.review.rev}` : "counted human time · inferred, provisional"}
-              </div>
-            </div>
-            <div
-              className="metric"
-              title={Object.entries(totals.human.unknown_by_reason)
-                .map(([r, ms]) => `${r.replaceAll("_", " ")}: ${duration(ms)}`)
-                .join("\n")}
-            >
-              <div className="value unknown-value">{duration(totals.human.unknown_ms)}</div>
-              <div className="label">unknown · visible, not counted</div>
-            </div>
-            <div className="metric">
-              <div className="value">{totals.sessions}</div>
-              <div className="label">agent sessions</div>
-            </div>
-            <div className="metric">
-              <div className="value">{duration(totals.mainExec)}</div>
-              <div className="label">main-chain execution · agent time, not human time</div>
-            </div>
-            <div className="metric">
-              <div className="value">{duration(totals.subExec)}</div>
-              <div className="label">subagent execution · parallel, may exceed the day</div>
-            </div>
-            <div className="metric">
-              <div className="value">{totals.prompts}</div>
-              <div className="label">human prompts</div>
-            </div>
-            <div className="metric">
-              <div className="value">{compact(totals.output)}</div>
-              <div className="label">output tokens</div>
-            </div>
-            <CostMetric cost={view.cost} />
-          </div>
-          {view.counted_by_project.some((p) => p.kind === "project") && (
-            <div className="by-target">
-              <span className="muted">Counted by project</span>
-              {view.counted_by_project.map((p) => (
-                <span
-                  key={p.project_id ?? p.label}
-                  className={p.kind === "other" ? "muted" : undefined}
-                  title={p.parts.map((x) => `${x.label} ${duration(x.ms)}`).join("\n") || undefined}
-                >
-                  {p.label} <span className="mono">{duration(p.ms)}</span>
+          <div className="main-card">
+            <BigNumber view={view} human={totals.human} canReview={canReview} onReview={() => setReviewDay(true)} />
+            <Bars view={view} human={totals.human} />
+            <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
+            <CostLine cost={view.cost} />
+            {rootsOpen && status && (
+              <div className="banner" role="status">
+                <span>
+                  {t("rootsFound")}{" "}
+                  {status.proposed_roots
+                    .filter((r) => !r.approved)
+                    .map((r) => (
+                      <span key={r.path} className="mono">
+                        {tildify(r.path, status.home)}{" "}
+                      </span>
+                    ))}
+                  <span className="muted">{t("rootsMetadataOnly")}</span>
                 </span>
-              ))}
-            </div>
-          )}
-          {Object.keys(totals.human.counted_by_target).length > 0 && (
-            <div className={`by-target${view.counted_by_project.some((p) => p.kind === "project") ? " secondary" : ""}`}>
-              <span className="muted">Counted by repository</span>
-              {Object.entries(totals.human.counted_by_target)
-                .sort((a, b) => b[1] - a[1])
-                .map(([target, ms]) => (
-                  <span key={target} className={target === "unattributed" || target === "conflicting" ? "muted" : undefined}>
-                    {target} <span className="mono">{duration(ms)}</span>
-                  </span>
-                ))}
-            </div>
-          )}
-          {status && !hideRoots && status.proposed_roots.some((r) => !r.approved) && (
-            <div className="banner" role="status">
-              <span>
-                Agent history found that tracr does not read yet:{" "}
-                {status.proposed_roots
-                  .filter((r) => !r.approved)
-                  .map((r) => (
-                    <span key={r.path} className="mono">
-                      {tildify(r.path, status.home)}{" "}
-                    </span>
-                  ))}
-                <span className="muted">· metadata only, never prompts or output</span>
-              </span>
-              <span className="spacer" />
-              <span className="banner-actions">
+                <span className="spacer" />
+                <span className="banner-actions">
+                  <button className="button secondary small" style={{ whiteSpace: "nowrap" }} disabled={approving} onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}>
+                    {approving ? <span className="spinner" aria-label="…" /> : t("approveAll", { n: status.proposed_roots.filter((r) => !r.approved).length })}
+                  </button>
+                  <button className="button ghost small" onClick={() => setSettings(true)}>
+                    {t("choose")}
+                  </button>
+                  <button className="button ghost small" onClick={() => setHideRoots(true)}>
+                    {t("notNow")}
+                  </button>
+                </span>
+              </div>
+            )}
+            {view.discrepancy && view.review && (
+              <div className="banner" role="status">
+                <span>
+                  {t("differsFromReview", {
+                    rev: view.review.rev,
+                    counted: signed(view.discrepancy.counted_delta_ms),
+                    unknown: signed(view.discrepancy.unknown_delta_ms),
+                    breakTime: signed(view.discrepancy.non_work_delta_ms),
+                  })}
+                </span>
+                <span className="spacer" />
+                <button className="button secondary small" onClick={() => setReviewDay(true)}>
+                  {t("acceptAs", { rev: view.review.rev + 1 })}
+                </button>
                 <button
-                  className="button secondary small"
-                  style={{ whiteSpace: "nowrap" }}
-                  disabled={approving}
-                  onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}
+                  className="button ghost small"
+                  onClick={async () => {
+                    try {
+                      await api.dismiss(view.day, view.discrepancy!.fingerprint);
+                      corrected(t("keptRev", { rev: view.review!.rev }));
+                    } catch (e) {
+                      corrected(errorText(e), true);
+                    }
+                  }}
                 >
-                  {approving ? <span className="spinner" aria-label="Approving" /> : `Approve all (${status.proposed_roots.filter((r) => !r.approved).length})`}
+                  {t("keepRev", { rev: view.review.rev })}
                 </button>
-                <button className="button ghost small" onClick={() => setSettings(true)}>
-                  Choose…
-                </button>
-                <button className="button ghost small" onClick={() => setHideRoots(true)}>
-                  Not now
-                </button>
+              </div>
+            )}
+            <button className="details-toggle" aria-expanded={showDetails} onClick={toggleDetails}>
+              <span className="chev" aria-hidden>
+                ▸
               </span>
+              {t("details")}
+              <span className="muted"> · {t("detailsHint")}</span>
+            </button>
+          </div>
+          {showDetails && (
+            <div className="details">
+              <dl className="facts">
+                <div>
+                  <dd>{totals.sessions}</dd>
+                  <dt>{t("factSessions")}</dt>
+                </div>
+                <div>
+                  <dd>{duration(totals.mainExec + totals.subExec)}</dd>
+                  <dt>{t("factAgentTime")}</dt>
+                </div>
+                <div>
+                  <dd>{totals.prompts}</dd>
+                  <dt>{t("factPrompts")}</dt>
+                </div>
+                <div>
+                  <dd>{compact(totals.output)}</dd>
+                  <dt>{t("factTokens")}</dt>
+                </div>
+              </dl>
+              <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
             </div>
           )}
-          {view.discrepancy && view.review && (
-            <div className="banner" role="status">
-              <span>
-                New evidence differs from your review (r{view.review.rev}): counted{" "}
-                <span className="mono">{signed(view.discrepancy.counted_delta_ms)}</span>, unknown{" "}
-                <span className="mono">{signed(view.discrepancy.unknown_delta_ms)}</span>, break{" "}
-                <span className="mono">{signed(view.discrepancy.non_work_delta_ms)}</span>
-              </span>
-              <span className="spacer" />
-              <button className="button secondary small" onClick={() => setReviewDay(true)}>
-                Accept as r{view.review.rev + 1}…
-              </button>
-              <button
-                className="button ghost small"
-                onClick={async () => {
-                  try {
-                    await api.dismiss(view.day, view.discrepancy!.fingerprint);
-                    corrected(`Kept r${view.review!.rev}`);
-                  } catch (e) {
-                    corrected(errorText(e), true);
-                  }
-                }}
-              >
-                Keep r{view.review.rev}
-              </button>
-            </div>
-          )}
-          <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
         </>
       )}
+
+      </div>
 
       {settings && status && (
         <SettingsSheet
@@ -563,6 +519,7 @@ export function App() {
         />
       )}
       {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} onClose={() => setSelected(null)} />}
+      {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
   );
 }
