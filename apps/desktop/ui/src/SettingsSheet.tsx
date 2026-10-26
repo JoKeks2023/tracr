@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, errorText, type RootKind } from "./api";
 import { tildify } from "./format";
+import { ProjectsSection } from "./ProjectsSection";
 import { RootsPicker } from "./RootsPicker";
 import type { Status } from "./types";
 
@@ -167,6 +168,8 @@ export function SettingsSheet({
               </button>
             </div>
           </section>
+
+          <ProjectsSection onChanged={onChanged} />
 
           <section>
             <h3>Time zone</h3>

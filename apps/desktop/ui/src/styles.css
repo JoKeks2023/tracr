@@ -409,3 +409,10 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 .button.icon { min-width: 0; width: 2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .empty .roots-picker { align-items: center; }
 .header h1 { white-space: nowrap; }
+
+.root-list li .row-actions { display: inline-flex; gap: var(--space-2); }
+.root-list li .input { flex: 1; min-width: 0; }
+.root-list li .select { width: 12rem; }
+.new-project { display: flex; gap: var(--space-2); margin: var(--space-3) 0; }
+.new-project .input { flex: 1; min-width: 0; }
+.by-target.secondary { opacity: 0.75; font-size: 12px; }

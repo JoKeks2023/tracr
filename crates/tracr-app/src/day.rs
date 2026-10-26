@@ -527,6 +527,8 @@ pub struct DayAgents {
     pub cost: DayCost,
     /// Quarantined and key-conflict records observed within the day (set by the reader).
     pub ledger_counts: crate::report::LedgerCounts,
+    /// The counted minutes grouped by project (set by the reader; empty until a project exists).
+    pub counted_by_project: Vec<crate::projects::ProjectTotal>,
     /// Lanes that exist in the product but are not derived yet. Shown as
     /// such, never as zero or as an empty lane.
     pub pending: Vec<PendingLane>,
@@ -828,6 +830,7 @@ pub fn day_agents(
             }
         },
         ledger_counts: Default::default(),
+        counted_by_project: Vec::new(),
         pending: PENDING_LANES.to_vec(),
     })
 }

@@ -235,6 +235,8 @@ export interface Snapshot {
 }
 
 export interface DayAgents {
+  /** counted minutes grouped by project; empty until a project exists */
+  counted_by_project: ProjectTotal[];
   day: string;
   timezone: string;
   start: number;
@@ -301,3 +303,29 @@ export interface Refreshed {
   sessions: number;
   seconds: number;
 }
+
+export interface Project {
+  id: string;
+  name: string;
+}
+
+export interface ProjectsView {
+  projects: Project[];
+  /** repository key → project id */
+  repository_projects: Record<string, string>;
+  repositories: { key: string; label: string }[];
+}
+
+export interface ProjectTotal {
+  kind: "project" | "other";
+  project_id: string | null;
+  label: string;
+  ms: number;
+  parts: { label: string; ms: number }[];
+}
+
+export type ProjectOp =
+  | { op: "create"; name: string }
+  | { op: "rename"; id: string; name: string }
+  | { op: "delete"; id: string }
+  | { op: "map"; repository: string; project: string | null };

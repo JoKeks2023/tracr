@@ -417,8 +417,22 @@ export function App() {
             </div>
             <CostMetric cost={view.cost} />
           </div>
-          {Object.keys(totals.human.counted_by_target).length > 0 && (
+          {view.counted_by_project.some((p) => p.kind === "project") && (
             <div className="by-target">
+              <span className="muted">Counted by project</span>
+              {view.counted_by_project.map((p) => (
+                <span
+                  key={p.project_id ?? p.label}
+                  className={p.kind === "other" ? "muted" : undefined}
+                  title={p.parts.map((x) => `${x.label} ${duration(x.ms)}`).join("\n") || undefined}
+                >
+                  {p.label} <span className="mono">{duration(p.ms)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {Object.keys(totals.human.counted_by_target).length > 0 && (
+            <div className={`by-target${view.counted_by_project.some((p) => p.kind === "project") ? " secondary" : ""}`}>
               <span className="muted">Counted by repository</span>
               {Object.entries(totals.human.counted_by_target)
                 .sort((a, b) => b[1] - a[1])

@@ -107,6 +107,8 @@ pub enum Job {
     /// Review a day (`day`, `reason`), or keep the revision for one difference.
     Review(String, Option<String>, Sender<Result<String, String>>),
     Dismiss(String, String, Sender<Result<String, String>>),
+    /// Create, rename or delete a project, or map a repository (S3.1): a view, no rebuild.
+    Projects(crate::projects::ProjectOp, Sender<Result<String, String>>),
     Stop(String),
 }
 
@@ -124,6 +126,7 @@ impl Job {
             Self::Manual(..) => "manual",
             Self::Review(..) => "review",
             Self::Dismiss(..) => "dismiss",
+            Self::Projects(..) => "projects",
             Self::Stop(_) => "stop",
         }
     }
@@ -552,6 +555,11 @@ impl Collector {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
+            Job::Projects(op, reply) => {
+                let result = self.app.project_op(&op);
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
             Job::Stop(_) => Ok(()),
         }
     }
@@ -583,6 +591,11 @@ impl RuntimeHandle {
     /// Keeps the reviewed revision for the difference with this fingerprint.
     pub fn dismiss(&self, day: String, fingerprint: String) -> Result<String> {
         self.ask(|tx| Job::Dismiss(day, fingerprint, tx))
+    }
+
+    /// Creates, renames or deletes a project, or maps a repository, through the collector.
+    pub fn project(&self, op: crate::projects::ProjectOp) -> Result<String> {
+        self.ask(|tx| Job::Projects(op, tx))
     }
 
     /// Applies a manual-entry or timer operation through the collector.
