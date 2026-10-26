@@ -19,6 +19,7 @@ export const api = {
   chooseRoot: (kind: RootKind) => invoke<string | null>("choose_root", { kind }),
   /** Chooses the reporting time zone (null: follow the system) and rebuilds. Refused once a day is reviewed. */
   setTimezone: (name: string | null) => invoke<void>("set_timezone", { name }),
+  setMenuLanguage: (german: boolean) => invoke<void>("set_menu_language", { german }),
   projects: () => invoke<ProjectsView>("projects"),
   /** Creates, renames or deletes a project, or maps a repository; resolves to the project id. */
   projectOp: (op: ProjectOp) => invoke<string>("project_op", { op }),

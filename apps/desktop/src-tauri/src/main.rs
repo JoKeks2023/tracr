@@ -12,9 +12,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent, Wry};
 use tracr_app::day::{DayAgents, DayList};
 use tracr_app::runtime::{Refreshed, Runtime, RuntimeStatus};
 use tracr_app::{App, Reader, RootKind, SystemClock, default_data_dir, proposed_provider_roots};
@@ -646,6 +646,172 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// The Mac menu bar: tracr, File, Edit, View, Window, Help. Items carry an
+/// `m:` id; the window does the work (it owns the open day and the sheets),
+/// except Quit, Timer and Open, which need no window state.
+fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
+    let l = |en: &'static str, german: &'static str| if de { german } else { en };
+    let item =
+        |id: &str, text: &str, accel: Option<&str>| MenuItem::with_id(app, id, text, true, accel);
+    let sep = || PredefinedMenuItem::separator(app);
+
+    let tracr = Submenu::with_items(
+        app,
+        "tracr",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some(l("About tracr", "Über tracr")), None)?,
+            &sep()?,
+            &item(
+                "m:settings",
+                l("Settings…", "Einstellungen…"),
+                Some("CmdOrCtrl+,"),
+            )?,
+            &sep()?,
+            &PredefinedMenuItem::hide(app, Some(l("Hide tracr", "tracr ausblenden")))?,
+            &PredefinedMenuItem::hide_others(app, Some(l("Hide Others", "Andere ausblenden")))?,
+            &PredefinedMenuItem::show_all(app, Some(l("Show All", "Alle einblenden")))?,
+            &sep()?,
+            &item(
+                "m:quit",
+                l("Quit tracr", "tracr beenden"),
+                Some("CmdOrCtrl+Q"),
+            )?,
+        ],
+    )?;
+    let file = Submenu::with_items(
+        app,
+        l("File", "Ablage"),
+        true,
+        &[
+            &item(
+                "m:new_entry",
+                l("Add Time…", "Zeit hinzufügen…"),
+                Some("CmdOrCtrl+N"),
+            )?,
+            &item(
+                "m:timer",
+                l("Start or Stop Timer", "Timer starten oder stoppen"),
+                Some("CmdOrCtrl+T"),
+            )?,
+            &sep()?,
+            &item(
+                "m:review_day",
+                l("Review Day…", "Tag prüfen…"),
+                Some("CmdOrCtrl+Shift+R"),
+            )?,
+            &item(
+                "m:resolve",
+                l("Resolve Open Time…", "Offene Zeit klären…"),
+                Some("CmdOrCtrl+K"),
+            )?,
+            &sep()?,
+            &item(
+                "m:export",
+                l("Export CSV…", "CSV exportieren…"),
+                Some("CmdOrCtrl+E"),
+            )?,
+            &item(
+                "m:refresh",
+                l("Refresh", "Aktualisieren"),
+                Some("CmdOrCtrl+R"),
+            )?,
+            &sep()?,
+            &PredefinedMenuItem::close_window(app, Some(l("Close Window", "Fenster schließen")))?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        l("Edit", "Bearbeiten"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &sep()?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view = Submenu::with_items(
+        app,
+        l("View", "Darstellung"),
+        true,
+        &[
+            &item(
+                "m:overview",
+                l("Overview", "Übersicht"),
+                Some("CmdOrCtrl+1"),
+            )?,
+            &item("m:history", l("History", "Verlauf"), Some("CmdOrCtrl+2"))?,
+            &sep()?,
+            &item(
+                "m:prev_day",
+                l("Previous Day", "Vorheriger Tag"),
+                Some("CmdOrCtrl+["),
+            )?,
+            &item(
+                "m:next_day",
+                l("Next Day", "Nächster Tag"),
+                Some("CmdOrCtrl+]"),
+            )?,
+            &item("m:today", l("Today", "Heute"), Some("CmdOrCtrl+0"))?,
+            &sep()?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        l("Window", "Fenster"),
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, Some(l("Zoom", "Zoomen")))?,
+            &sep()?,
+            &item("m:open", l("tracr", "tracr"), None)?,
+        ],
+    )?;
+    let help = Submenu::with_items(
+        app,
+        l("Help", "Hilfe"),
+        true,
+        &[&item(
+            "m:website",
+            l("tracr Website", "tracr Website"),
+            None,
+        )?],
+    )?;
+    Menu::with_items(app, &[&tracr, &file, &edit, &view, &window, &help])
+}
+
+/// The window tells the menu bar its language once it has loaded.
+#[tauri::command]
+fn set_menu_language(app: tauri::AppHandle, german: bool) -> Result<(), String> {
+    let menu = app_menu(&app, german).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map(|_| ()).map_err(|e| e.to_string())
+}
+
+fn on_app_menu(app: &tauri::AppHandle, id: &str) {
+    let Some(action) = id.strip_prefix("m:") else {
+        return; // the tray menu has its own handler
+    };
+    match action {
+        "quit" => app.exit(0),
+        "timer" => toggle_timer(app),
+        "open" => show_main(app),
+        "website" => {
+            let _ = std::process::Command::new("open")
+                .arg("https://tracr.jorisconrad.com")
+                .spawn();
+        }
+        other => {
+            show_main(app);
+            let _ = app.emit("menu", other);
+        }
+    }
+}
+
 fn main() {
     let env_dir = std::env::var_os("TRACR_DATA_DIR").map(PathBuf::from);
     let ctx = Ctx {
@@ -674,10 +840,13 @@ fn main() {
             targets,
             manual,
             review,
-            dismiss
+            dismiss,
+            set_menu_language
         ])
+        .on_menu_event(|app, event| on_app_menu(app, event.id().as_ref()))
         .setup(|app| {
             app.state::<Ctx>().start_runtime();
+            app.set_menu(app_menu(app.handle(), false)?)?;
             let open = MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;

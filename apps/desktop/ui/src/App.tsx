@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { dayLabel, duration, tildify } from "./format";
-import { t } from "./i18n";
+import { listen } from "@tauri-apps/api/event";
+import { lang, t } from "./i18n";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
@@ -219,21 +220,29 @@ export function App() {
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
 
-  // Mac shortcuts: ⌘, settings, ⌘[ / ⌘] older / newer day, ⌘1 / ⌘2 overview / history.
+  // The menu bar (native, see main.rs) drives the window through "menu" events.
+  const act = useRef<(action: string) => void>(() => {});
+  act.current = (action) => {
+    const canEdit = status?.collector === "collecting";
+    switch (action) {
+      case "settings": return setSettings(true);
+      case "overview": return setPage("day");
+      case "history": return setPage("history");
+      case "prev_day": return olderDay ? goTo(olderDay) : undefined;
+      case "next_day": return newerDay ? goTo(newerDay) : undefined;
+      case "today": return days[0] ? goTo(days[0]) : undefined;
+      case "export": return days.length > 0 ? setExporting(true) : undefined;
+      case "refresh": return busy || !canEdit ? undefined : void refresh();
+      case "new_entry": return view && canEdit ? (loadTargets(), setEntry("new")) : undefined;
+      case "review_day": return canReview ? setReviewDay(true) : undefined;
+      case "resolve": return unknownWindows > 0 ? setReviewing(true) : undefined;
+    }
+  };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
-      if (e.key === ",") setSettings(true);
-      else if (e.key === "[" && olderDay) goTo(olderDay);
-      else if (e.key === "]" && newerDay) goTo(newerDay);
-      else if (e.key === "1") setPage("day");
-      else if (e.key === "2") setPage("history");
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+    void api.setMenuLanguage(lang === "de").catch(() => {});
+    const off = listen<string>("menu", (e) => act.current(e.payload));
+    return () => void off.then((f) => f());
+  }, []);
 
   return (
     <div className="app">
