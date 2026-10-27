@@ -5,3 +5,8 @@ Seen in the real window (dark, German, wide): sidebar with three destinations, H
 
 NOT verified: the Sitzungen list and detail, Arbeitszeit after the move, the palette, the new menu shortcuts, the period control, light mode, English, narrow window, Tab order, VoiceOver. Reason: checking them needs clicking in the running app, which is not done.
 Design-review gate (12 questions): not completed; 2-11 need the unverified items above.
+
+## Step 2
+
+Checked: fmt, clippy `-D warnings`, `cargo test -p tracr-app --test sessions --test derive`, `tsc --noEmit`, debug build.
+NOT verified: how Ablauf, Kontext and Werkzeuge look in the real window (no click into the running app), light mode, English, narrow window, keyboard use of the tabs, VoiceOver. The charts are SVG with a text label for assistive tech; their hover details are `<title>` tooltips only.

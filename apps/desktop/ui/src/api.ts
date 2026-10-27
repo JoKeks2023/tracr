@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 export type RootKind = "provider" | "repository";
 import type { ProjectOp, ProjectsView } from "./types";
-import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, Status, TargetOption } from "./types";
+import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
 export const api = {
@@ -10,6 +10,8 @@ export const api = {
   dayAgents: (day: string) => invoke<DayAgents>("day_agents", { day }),
   /** Sessions active between two days (inclusive), newest first. */
   sessions: (from: string, to: string) => invoke<SessionList>("sessions", { from, to }),
+  /** One session in time: actors, prompts, tool calls (names), request sizes. */
+  sessionTrace: (sessionId: string) => invoke<SessionTrace>("session_trace", { sessionId }),
   refresh: () => invoke<Refreshed>("refresh"),
   correct: (req: CorrectionRequest) => invoke<string>("correct", { req }),
   manual: (req: ManualRequest) => invoke<string>("manual", { req }),

@@ -575,3 +575,27 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
   .period { margin-left: 0; flex-wrap: wrap; }
   .day-header { flex-wrap: wrap; }
 }
+
+/* ---- Session views: trace, context, tools (T-0015 step 2) ----------------------- */
+.detail-tabs { margin: var(--space-4) 0 0; }
+.trace, .context-chart { margin: 0; }
+.trace-label { font: 12px var(--font-sans); fill: var(--text-muted); }
+.trace-axis { font: 11px var(--font-sans); fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.trace-rule { stroke: var(--hairline); stroke-width: 1; }
+.trace-break { fill: var(--gray-3); }
+.trace-run { fill: var(--accent-9); opacity: 0.35; }
+.trace-prompt { fill: var(--gray-12); }
+.trace-tool { stroke-width: 1.5; stroke-linecap: round; }
+.cat-read { stroke: var(--gray-9); background: var(--gray-9); }
+.cat-write { stroke: var(--accent-10); background: var(--accent-10); }
+.cat-exec { stroke: var(--warning-11); background: var(--warning-11); }
+.cat-agent { stroke: var(--context-purple-11, #c4b5fd); background: var(--context-purple-11, #c4b5fd); }
+.cat-mcp { stroke: var(--context-blue-11, #93c5fd); background: var(--context-blue-11, #93c5fd); }
+.cat-other { stroke: var(--gray-8); background: var(--gray-8); }
+.legend { display: inline-flex; flex-wrap: wrap; gap: var(--space-3); }
+.swatch { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; }
+.ctx-line { fill: none; stroke: var(--accent-10); stroke-width: 1.5; }
+.ctx-area { fill: var(--accent-9); opacity: 0.12; }
+.ctx-drop { fill: var(--warning-11); }
+.tools-table td:last-child { display: flex; align-items: center; gap: var(--space-3); }
+.bar-track.inline { display: inline-block; width: 8rem; }

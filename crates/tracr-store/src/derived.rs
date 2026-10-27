@@ -1213,3 +1213,73 @@ pub fn recovered_records(conn: &Connection, day: &str) -> Result<i64> {
         .optional()?
         .unwrap_or(0))
 }
+
+#[derive(Debug, Clone)]
+pub struct ToolCallTime {
+    pub actor_id: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_kind: Option<String>,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+}
+
+/// Every tool call of a session (names and times only), in time order.
+pub fn tool_call_times_of(conn: &Connection, session_id: &str) -> Result<Vec<ToolCallTime>> {
+    let mut stmt = conn.prepare(
+        "SELECT actor_id, tool_name, tool_kind, started_at, finished_at FROM tool_call
+         WHERE session_id = ?1 ORDER BY started_at, id",
+    )?;
+    let rows = stmt.query_map([session_id], |r| {
+        Ok(ToolCallTime {
+            actor_id: r.get(0)?,
+            tool_name: r.get(1)?,
+            tool_kind: r.get(2)?,
+            started_at: r.get(3)?,
+            finished_at: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+#[derive(Debug, Clone)]
+pub struct UsagePointRow {
+    pub actor_id: Option<String>,
+    pub model: Option<String>,
+    pub at: i64,
+    pub input_fresh: Option<i64>,
+    pub input_total: Option<i64>,
+    pub cache_read: Option<i64>,
+    pub cache_creation: Option<i64>,
+    pub output: Option<i64>,
+}
+
+/// Canonical, identified usage records of a session in time order (what each request carried).
+pub fn usage_points_of(conn: &Connection, session_id: &str) -> Result<Vec<UsagePointRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT actor_id, model, extent_start, input_fresh, input_total, cache_read, cache_creation, output
+         FROM usage_record
+         WHERE session_id = ?1 AND canonical = 1 AND identified = 1 AND extent_start IS NOT NULL
+         ORDER BY extent_start, id",
+    )?;
+    let rows = stmt.query_map([session_id], |r| {
+        Ok(UsagePointRow {
+            actor_id: r.get(0)?,
+            model: r.get(1)?,
+            at: r.get(2)?,
+            input_fresh: r.get(3)?,
+            input_total: r.get(4)?,
+            cache_read: r.get(5)?,
+            cache_creation: r.get(6)?,
+            output: r.get(7)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Every engagement (human prompt) instant of a session.
+pub fn all_instants_of(conn: &Connection, session_id: &str) -> Result<Vec<i64>> {
+    let mut stmt =
+        conn.prepare("SELECT at FROM engagement_instant WHERE session_id = ?1 ORDER BY at, id")?;
+    let rows = stmt.query_map([session_id], |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

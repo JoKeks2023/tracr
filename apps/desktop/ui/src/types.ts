@@ -338,3 +338,41 @@ export interface SessionList {
   cost: CostView;
   pricing: PricingInfo;
 }
+
+export interface TraceActor {
+  actor_id: string;
+  actor_kind: string;
+  native_agent_id: string | null;
+  segments: [number, number][];
+}
+export interface TraceTool {
+  actor_id: string | null;
+  name: string;
+  kind: string;
+  at: number;
+  finished_at: number | null;
+}
+export interface ToolSummary {
+  name: string;
+  kind: string;
+  calls: number;
+}
+export interface TracePoint {
+  at: number;
+  actor_id: string | null;
+  model: string | null;
+  context: number | null;
+  cache_read: number | null;
+  output: number | null;
+}
+export interface SessionTrace {
+  session_id: string;
+  timezone: string;
+  start: number;
+  end: number;
+  actors: TraceActor[];
+  prompts: number[];
+  tools: TraceTool[];
+  tool_summary: ToolSummary[];
+  points: TracePoint[];
+}

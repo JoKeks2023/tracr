@@ -344,6 +344,16 @@ async fn day_agents(ctx: tauri::State<'_, Ctx>, day: String) -> Result<DayAgents
 }
 
 #[tauri::command]
+async fn session_trace(
+    ctx: tauri::State<'_, Ctx>,
+    session_id: String,
+) -> Result<tracr_app::trace::SessionTrace, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.session_trace(&session_id))
+        .map_err(err)
+}
+
+#[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
     from: String,
@@ -867,6 +877,7 @@ fn main() {
             days,
             day_agents,
             sessions,
+            session_trace,
             refresh,
             export_csv,
             export_everything,

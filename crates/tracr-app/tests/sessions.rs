@@ -74,3 +74,42 @@ fn range_outside_the_data_is_empty_and_a_reversed_range_is_refused() {
     assert!(reader.sessions(DAY, "2026-09-01").is_err());
     assert!(reader.sessions("nope", DAY).is_err());
 }
+
+#[test]
+fn trace_lays_out_prompts_tools_and_request_sizes_without_content() {
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let mut a = ClaudeSession::new(A);
+    write_lines(
+        &transcript(&root, A),
+        &[
+            a.prompt("09:00"),
+            a.assistant("09:01", "msg_1", 100),
+            a.tool_result("09:02", "toolu_msg_1"),
+            a.assistant("09:03", "msg_2", 50),
+        ],
+    );
+    import(&data, &root);
+
+    let reader = Reader::open(&data).unwrap();
+    let id = reader.sessions(DAY, DAY).unwrap().sessions[0]
+        .session_id
+        .clone();
+    let trace = reader.session_trace(&id).unwrap();
+    assert_eq!(trace.prompts.len(), 1);
+    assert_eq!(trace.tools.len(), 2);
+    assert!(trace.tools.iter().all(|t| t.name == "Bash"));
+    assert_eq!(trace.tool_summary[0].calls, 2);
+    assert_eq!(trace.points.len(), 2);
+    // fresh 10 + cache write 100 + cache read 1000, as stated by the record.
+    assert_eq!(trace.points[0].context, Some(1110));
+    assert!(trace.start < trace.end);
+    // The main chain carries no agent id; the window shows every non-subagent actor as the main chain.
+    assert!(
+        trace
+            .actors
+            .iter()
+            .any(|a| a.actor_kind != "known" && !a.segments.is_empty())
+    );
+    assert!(reader.session_trace("nope").is_err());
+}

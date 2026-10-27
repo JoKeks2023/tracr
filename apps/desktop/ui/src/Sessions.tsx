@@ -3,6 +3,7 @@ import { api, errorText } from "./api";
 import { dayLabel, estimate } from "./format";
 import { t } from "./i18n";
 import { SessionDetail } from "./SessionDetail";
+import { ContextView, ToolsView, TraceView, useTrace } from "./SessionInsights";
 import { SessionRow, sessionTitle } from "./SessionRow";
 import type { SessionDay, SessionList } from "./types";
 
@@ -27,6 +28,7 @@ export function Sessions({
   const [list, setList] = useState<SessionList | null>(null);
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("");
+  const [tab, setTab] = useState<"overview" | "trace" | "context" | "tools">("overview");
 
   useEffect(() => {
     let live = true;
@@ -59,6 +61,8 @@ export function Sessions({
   }, [shown, list, from]);
 
   const current = list?.sessions.find((s) => s.session_id === selected) ?? null;
+  const { trace, error: traceError } = useTrace(current?.session_id ?? "", !!current && tab !== "overview");
+  useEffect(() => setTab("overview"), [selected]);
 
   // ↑/↓ move between rows.
   const onKeys = (e: React.KeyboardEvent<HTMLElement>) => {
@@ -119,8 +123,20 @@ export function Sessions({
               <h2>{sessionTitle(current)}</h2>
               <div className="mono muted">{current.native_session_id}</div>
             </header>
+            <div className="segments detail-tabs" role="group" aria-label={t("tabsAria")}>
+              {(["overview", "trace", "context", "tools"] as const).map((k) => (
+                <button key={k} aria-pressed={tab === k} onClick={() => setTab(k)}>
+                  {t(({ overview: "tabOverview", trace: "tabTrace", context: "tabContext", tools: "tabTools" } as const)[k])}
+                </button>
+              ))}
+            </div>
             <div className="detail-body">
-              <SessionDetail s={current} tz={list.timezone} pricing={list.pricing} range />
+              {tab === "overview" && <SessionDetail s={current} tz={list.timezone} pricing={list.pricing} range />}
+              {tab !== "overview" && traceError && <p className="muted">{traceError}</p>}
+              {tab !== "overview" && !traceError && !trace && <p className="muted">…</p>}
+              {tab === "trace" && trace && <TraceView trace={trace} />}
+              {tab === "context" && trace && <ContextView trace={trace} />}
+              {tab === "tools" && trace && <ToolsView trace={trace} />}
             </div>
           </>
         ) : (

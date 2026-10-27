@@ -15,6 +15,7 @@ pub mod projects;
 pub mod report;
 pub mod review;
 pub mod runtime;
+pub mod trace;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, TryLockError};
@@ -629,6 +630,11 @@ impl Reader {
     /// Sessions active between two reporting days (inclusive), newest first.
     pub fn sessions(&self, from: &str, to: &str) -> Result<day::SessionList> {
         day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)
+    }
+
+    /// One session laid out in time: actors, prompts, tool calls, request sizes.
+    pub fn session_trace(&self, session_id: &str) -> Result<trace::SessionTrace> {
+        trace::session_trace(&self.derived()?, &self.reporting_zone()?, session_id)
     }
 
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
