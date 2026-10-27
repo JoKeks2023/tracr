@@ -8,12 +8,13 @@ export interface Prefs {
   paceAware: boolean;
   menuBar: boolean;
   notify: boolean;
+  rings: boolean;
 }
 
-const DEFAULTS: Prefs = { remaining: false, paceAware: true, menuBar: true, notify: true };
+const DEFAULTS: Prefs = { remaining: false, paceAware: true, menuBar: true, notify: true, rings: false };
 
-const fromBackend = (p: QuotaPrefs): Prefs => ({ remaining: p.remaining, paceAware: p.pace_aware, menuBar: p.menu_bar, notify: p.notify });
-const toBackend = (p: Prefs): QuotaPrefs => ({ remaining: p.remaining, pace_aware: p.paceAware, menu_bar: p.menuBar, notify: p.notify });
+const fromBackend = (p: QuotaPrefs): Prefs => ({ remaining: p.remaining, paceAware: p.pace_aware, menuBar: p.menu_bar, notify: p.notify, rings: p.rings });
+const toBackend = (p: Prefs): QuotaPrefs => ({ remaining: p.remaining, pace_aware: p.paceAware, menu_bar: p.menuBar, notify: p.notify, rings: p.rings });
 
 const Ctx = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => void }>({ prefs: DEFAULTS, set: () => {} });
 

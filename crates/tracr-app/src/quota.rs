@@ -27,6 +27,8 @@ pub struct QuotaPrefs {
     pub menu_bar: bool,
     /// Notify when a window gets worse.
     pub notify: bool,
+    /// Show each provider's tightest window as a ring instead of one bar per window.
+    pub rings: bool,
 }
 
 impl Default for QuotaPrefs {
@@ -36,6 +38,7 @@ impl Default for QuotaPrefs {
             pace_aware: true,
             menu_bar: true,
             notify: true,
+            rings: false,
         }
     }
 }

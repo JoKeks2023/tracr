@@ -434,4 +434,5 @@ export interface QuotaPrefs {
   pace_aware: boolean;
   menu_bar: boolean;
   notify: boolean;
+  rings: boolean;
 }

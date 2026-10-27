@@ -3,7 +3,8 @@ import { api, errorText } from "../api";
 import { ago, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import type { DayAgents, Limits, SessionDay } from "../types";
-import { Panel, QuotaBar, Stat, clockLabel, windowName } from "./ui";
+import { useQuotaPrefs } from "./quota";
+import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, Stat, clockLabel, windowName } from "./ui";
 
 const HOUR = 3_600_000;
 const ACTIVE_MS = 15 * 60_000;
@@ -117,6 +118,7 @@ export function Home({
   const [view, setView] = useState<DayAgents | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const { prefs } = useQuotaPrefs();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(id);
@@ -192,17 +194,21 @@ export function Home({
       </div>
 
       <div className="row2">
-        <Panel title={t("quotaTitle")} aside={t("quotaStated")}>
+        <Panel title={t("quotaTitle")} aside={windows.length > 0 ? <QuotaViewSwitch /> : t("quotaStated")}>
           {windows.length === 0 ? (
             <p className="vnote">
               {t("quotaNone")}. {t("quotaNoneHint")}
             </p>
           ) : (
-            <div className="quota">
-              {windows.map((w) => (
-                <QuotaBar key={`${w.provider}-${w.window}`} w={w} />
-              ))}
-            </div>
+            prefs.rings ? (
+              <QuotaRings windows={windows} />
+            ) : (
+              <div className="quota">
+                {windows.map((w) => (
+                  <QuotaBar key={`${w.provider}-${w.window}`} w={w} />
+                ))}
+              </div>
+            )
           )}
         </Panel>
         <Panel title={t("todayNeedsYou")} aside={needs.length > 0 ? String(needs.length) : undefined}>

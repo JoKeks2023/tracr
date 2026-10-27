@@ -3,7 +3,8 @@ import { api, errorText } from "../api";
 import { compact, modelName } from "../format";
 import { t } from "../i18n";
 import type { Limits, SessionList } from "../types";
-import { Panel, QuotaBar } from "./ui";
+import { useQuotaPrefs } from "./quota";
+import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch } from "./ui";
 
 interface ModelRow {
   model: string;
@@ -38,6 +39,7 @@ export function LimitsPage({
 }) {
   const [list, setList] = useState<SessionList | null>(null);
   const [busy, setBusy] = useState(false);
+  const { prefs } = useQuotaPrefs();
   useEffect(() => {
     let live = true;
     api
@@ -84,13 +86,24 @@ export function LimitsPage({
   return (
     <div className="body">
       {windows.length > 0 ? (
-        <div className="qgrid">
-          {windows.map((w) => (
-            <section key={`${w.provider}-${w.window}`} className="qcard">
-              <QuotaBar w={w} big />
-            </section>
-          ))}
-        </div>
+        <>
+          <div>
+            <QuotaViewSwitch />
+          </div>
+          {prefs.rings ? (
+            <Panel title={t("quotaTitle")} aside={t("quotaStated")}>
+              <QuotaRings windows={windows} />
+            </Panel>
+          ) : (
+            <div className="qgrid">
+              {windows.map((w) => (
+                <section key={`${w.provider}-${w.window}`} className="qcard">
+                  <QuotaBar w={w} big />
+                </section>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <Panel title={t("quotaTitle")} aside={t("quotaStated")}>
           <p className="vnote">{t("quotaNone")}. {t("quotaNoneHint")}</p>

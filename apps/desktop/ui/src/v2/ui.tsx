@@ -89,3 +89,53 @@ export function QuotaBar({ w, big }: { w: LimitWindow; big?: boolean }) {
     </div>
   );
 }
+
+/** One ring: the share used, coloured by level; the tightest window of a provider. */
+function Ring({ w, others }: { w: LimitWindow; others: LimitWindow[] }) {
+  const { prefs } = useQuotaPrefs();
+  const used = Math.max(0, Math.min(100, w.used_percent));
+  const shown = prefs.remaining ? 100 - used : used;
+  const level = levelOf(w, prefs.paceAware);
+  const color = level === "ok" ? "var(--acc)" : level === "warn" ? "var(--warn)" : "var(--bad)";
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="ringcard">
+      <svg viewBox="0 0 80 80" width="88" height="88" role="img" aria-label={`${windowName(w)}: ${Math.round(used)} % ${t("quotaUsed")}`}>
+        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--track)" strokeWidth="7" />
+        <circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" strokeDasharray={`${(used / 100) * c} ${c}`} transform="rotate(-90 40 40)" opacity={w.expired ? 0.4 : 1} />
+        <text x="40" y="45" textAnchor="middle" className="ringtext">{Math.round(shown)}%</text>
+      </svg>
+      <div className="ringname">{windowName(w)}</div>
+      {w.resets_at && !w.expired && <div className="vnote">{t("resetsAt", { time: clockLabel(w.resets_at) })}</div>}
+      {others.map((o) => (
+        <div key={o.window} className="vnote">{windowName(o)}: {Math.round(prefs.remaining ? 100 - o.used_percent : o.used_percent)} %</div>
+      ))}
+    </div>
+  );
+}
+
+/** Every provider as a ring on its tightest window, the other windows named under it. */
+export function QuotaRings({ windows }: { windows: LimitWindow[] }) {
+  const byProvider = new Map<string, LimitWindow[]>();
+  for (const w of windows) byProvider.set(w.provider, [...(byProvider.get(w.provider) ?? []), w]);
+  return (
+    <div className="rings">
+      {[...byProvider.values()].map((ws) => {
+        const sorted = [...ws].sort((a, b) => Number(a.expired) - Number(b.expired) || b.used_percent - a.used_percent);
+        return <Ring key={ws[0].provider} w={sorted[0]} others={sorted.slice(1)} />;
+      })}
+    </div>
+  );
+}
+
+/** The view switch for quota: one bar per window, or one ring per provider. */
+export function QuotaViewSwitch() {
+  const { prefs, set } = useQuotaPrefs();
+  return (
+    <div className="seg" role="group" aria-label={t("quotaView")}>
+      <button aria-pressed={!prefs.rings} onClick={() => set({ rings: false })}>{t("viewBars")}</button>
+      <button aria-pressed={prefs.rings} onClick={() => set({ rings: true })}>{t("viewRings")}</button>
+    </div>
+  );
+}

@@ -207,3 +207,9 @@
 .v2 .pace.room { background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); }
 .v2 .qwhat { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 6px; letter-spacing: 0; }
 .v2 .q .vnote { margin-top: 2px; }
+
+/* rings */
+.v2 .rings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px; }
+.v2 .ringcard { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.v2 .ringtext { font: 600 17px -apple-system, system-ui, sans-serif; fill: var(--tx-hi); font-variant-numeric: tabular-nums; }
+.v2 .ringname { color: var(--tx-2); margin-top: 4px; }
