@@ -407,7 +407,7 @@ export interface RepoPart {
 }
 export interface ProjectEntry {
   key: string;
-  kind: "project" | "repository" | "none";
+  kind: "project" | "repository" | "folder" | "none";
   project_id: string | null;
   label: string;
   repositories: RepoPart[];

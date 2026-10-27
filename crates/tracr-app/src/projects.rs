@@ -464,9 +464,9 @@ pub struct RepoPart {
 /// or the sessions that ran outside any repository.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectEntry {
-    /// Stable per entry: `project:<id>`, `repo:<key>` or `none`.
+    /// Stable per entry: `project:<id>`, `repo:<key>`, `dir:<cwd>` or `none`.
     pub key: String,
-    /// `project`, `repository` or `none`.
+    /// `project`, `repository`, `folder` (a working folder outside any repository) or `none`.
     pub kind: &'static str,
     pub project_id: Option<String>,
     pub label: String,
@@ -531,7 +531,18 @@ pub fn overview(list: &crate::day::SessionList, config: &ProjectConfig) -> Proje
                     s.repository_label.clone().unwrap_or_else(|| repo.clone()),
                 ),
             },
-            None => ("none".to_owned(), "none", None, String::new()),
+            // No repository (none approved, or not a git folder): the working folder stands in.
+            None => match &s.cwd {
+                Some(cwd) => (
+                    format!("dir:{cwd}"),
+                    "folder",
+                    None,
+                    s.label
+                        .clone()
+                        .unwrap_or_else(|| cwd.rsplit('/').next().unwrap_or(cwd).to_owned()),
+                ),
+                None => ("none".to_owned(), "none", None, String::new()),
+            },
         };
         let e = by
             .entry(key.clone())

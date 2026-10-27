@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
-import { ago, compact, duration, estimate, modelName, providerName, sessionTokens, spanLabel } from "../format";
+import { ago, branchesN, sessionsN, compact, duration, estimate, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import { periodLabel, type Scope } from "../nav";
 import { SessionDetail } from "../SessionDetail";
@@ -146,7 +146,7 @@ export function Projects({
               </span>
               <span className="m">
                 <span className="mono">{duration(e.agent_ms)}</span>
-                <span>{t("sessionCount", { n: e.sessions })}</span>
+                <span>{sessionsN(e.sessions)}</span>
                 <span>{e.last_at ? ago(e.last_at, now) : ""}</span>
               </span>
               <span className="meter" aria-hidden><i style={{ width: `${Math.max(2, (e.agent_ms / maxAgent) * 100)}%` }} /></span>
@@ -173,7 +173,7 @@ export function Projects({
                 {current.repositories.map((r) => (
                   <span key={r.key} className="chip mono">{r.key}</span>
                 ))}
-                {current.branches.length > 0 && <span className="chip">{t("branchesN", { n: current.branches.length })}</span>}
+                {current.branches.length > 0 && <span className="chip">{branchesN(current.branches.length)}</span>}
                 {current.providers.map((p) => (
                   <span key={p} className="chip">{providerName(p)}</span>
                 ))}
@@ -184,7 +184,7 @@ export function Projects({
                 <Stat label={t("statAgents")} value={duration(current.agent_ms)} />
                 <Stat label={t("statSessions")} value={String(current.sessions)} />
                 <Stat label={t("statCost")} value={current.cost.amount_nano === null ? "—" : estimate(current.cost, overview.pricing.currency)} tone={current.cost.amount_nano === null ? "muted" : undefined} note={current.cost.amount_nano === null ? t("unpricedWord") : undefined} />
-                <Stat label={t("todayStrip")} value={current.last_at ? ago(current.last_at, now) : "—"} />
+                <Stat label={t("lastActive")} value={current.last_at ? ago(current.last_at, now) : "—"} />
               </div>
               <section className="panel" aria-label={t("tabSessions")}>
                 <div className="ph"><h2>{t("tabSessions")}</h2></div>
@@ -204,7 +204,7 @@ export function Projects({
                       const first = run.length ? Math.min(...run.map((g) => g.start)) : s.first_evidence_at;
                       const last = run.length ? Math.max(...run.map((g) => g.end)) : s.last_evidence_at;
                       return (
-                        <tr key={s.session_id} className="row" tabIndex={0} onClick={() => setSession(s.session_id)} onKeyDown={(e) => e.key === "Enter" && setSession(s.session_id)}>
+                        <tr key={s.session_id} className="trow" tabIndex={0} onClick={() => setSession(s.session_id)} onKeyDown={(e) => e.key === "Enter" && setSession(s.session_id)}>
                           <td>
                             {s.label ?? t("noWorkingDir")} <span className="vnote mono">{s.git_branch ?? ""}</span>{" "}
                             <span className="vnote mono">{first && last ? spanLabel(first, last, list.timezone) : ""}</span>

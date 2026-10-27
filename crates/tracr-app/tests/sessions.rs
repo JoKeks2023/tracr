@@ -113,3 +113,23 @@ fn trace_lays_out_prompts_tools_and_request_sizes_without_content() {
     );
     assert!(reader.session_trace("nope").is_err());
 }
+
+#[test]
+fn sessions_outside_a_repository_group_by_working_folder() {
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let mut a = ClaudeSession::new(A);
+    write_lines(
+        &transcript(&root, A),
+        &[a.prompt("09:00"), a.assistant("09:01", "msg_1", 100)],
+    );
+    import(&data, &root);
+    let o = Reader::open(&data)
+        .unwrap()
+        .project_overview(DAY, DAY)
+        .unwrap();
+    assert_eq!(o.entries.len(), 1);
+    assert_eq!(o.entries[0].kind, "folder");
+    assert_eq!(o.entries[0].sessions, 1);
+    assert!(o.entries[0].key.starts_with("dir:"));
+}

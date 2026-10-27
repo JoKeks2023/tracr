@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
-import { ago, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
+import { ago, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import type { DayAgents, Limits, SessionDay } from "../types";
 import { Panel, QuotaBar, Stat, clockLabel, windowName } from "./ui";
@@ -81,7 +81,7 @@ function SessionCard({ s, view, now, onOpen }: { s: SessionDay; view: DayAgents;
         {models.slice(0, 2).map((m) => (
           <span key={m} className="chip">{m}</span>
         ))}
-        {subs > 0 && <span className="chip">{t("subagentCount", { n: subs })}</span>}
+        {subs > 0 && <span className="chip">{subagentsN(subs)}</span>}
       </div>
       <div className="meters">
         <span>{first && last ? spanLabel(first, last, view.timezone) : ""}</span>
@@ -186,7 +186,7 @@ export function Home({
       <div className="stats">
         <Stat label={t("todayCounted")} value={duration(sum.counted)} note={view.review ? t("reviewed") : t("provisional")} />
         <Stat label={t("todayUnclear")} value={duration(sum.unknown)} tone={sum.unknown > 0 ? "warn" : "muted"} note={sum.windows > 0 ? intervals(sum.windows) : undefined} />
-        <Stat label={t("todayAgents")} value={duration(sum.agentMs)} note={t("sessionsToday", { n: view.sessions.length })} />
+        <Stat label={t("todayAgents")} value={duration(sum.agentMs)} note={sessionsN(view.sessions.length)} />
         <Stat label={t("statCost")} value={cost.amount_nano === null ? "—" : estimate(cost, view.cost.pricing.currency)} note={cost.amount_nano === null ? t("unpricedWord") : t("todayCostNote")} tone={cost.amount_nano === null ? "muted" : undefined} />
       </div>
 

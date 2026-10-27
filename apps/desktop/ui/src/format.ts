@@ -128,3 +128,7 @@ export function ago(ms: number, now: number): string {
   const h = Math.floor(m / 60);
   return h < 24 ? t("agoHour", { n: h }) : t("agoDay", { n: Math.floor(h / 24) });
 }
+
+export const sessionsN = (n: number): string => (n === 1 ? t("sessionOne") : t("sessionCount", { n }));
+export const branchesN = (n: number): string => (n === 1 ? t("branchOne") : t("branchesN", { n }));
+export const subagentsN = (n: number): string => (n === 1 ? t("subagentOne") : t("subagentCount", { n }));

@@ -15,3 +15,8 @@ NOT verified: how Ablauf, Kontext and Werkzeuge look in the real window (no clic
 
 Checked: clippy `-D warnings`, `cargo test` of tracr-app/core, the tap end to end with the real debug binary against a temp settings file (install, chained command output, spool line holds only the numbers, uninstall restores the file), `tracr limits show` against the demo ledger (Codex 5 h and weekly figures read from the real rollouts), prices visible in `tracr day` after the rebuild.
 NOT done: installing the tap into the real `~/.claude/settings.json` (it is an opt-in action for the user, not run in this session); no UI for limits or the projects page yet; the tap has not been seen with a live Claude Code session, so it is not verified that the fields arrive on this account (T-0010 caveat stands).
+
+## design/v2
+
+Checked: fmt, clippy `-D warnings`, `cargo test --workspace --exclude tracr-desktop`, `tsc --noEmit`, debug build; the window (dark, German, wide) for Heute, Projekte, Limits and Zeit against the demo ledger (screenshots of the tracr window only).
+NOT verified: light appearance, English, narrow window, keyboard use and focus order, VoiceOver, the menu shortcuts (⌘1 to ⌘4, ⌘K), session page tabs and the Claude tap switch in the real window (no clicking in the running app), the tap with a live Claude Code session. The design-review gate (12 questions) is not completed.

@@ -126,10 +126,10 @@
 .v2 table.t th { text-align: left; font-weight: 500; font-size: 12px; color: var(--dim); padding: 0 8px 6px 0; }
 .v2 table.t td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); white-space: nowrap; }
 .v2 table.t th.r, .v2 table.t td.r { text-align: right; padding-right: 0; }
-.v2 table.t tr.row { cursor: pointer; }
-.v2 table.t tr.row:hover td { background: var(--hover); }
-.v2 table.t tr.sel td { background: var(--sel); }
-.v2 table.t tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--acc); padding-left: 8px; }
+.v2 table.t tr.trow { cursor: pointer; }
+.v2 table.t tr.trow:hover td { background: var(--hover); }
+.v2 table.t tr.tsel td { background: var(--sel); }
+.v2 table.t tr.tsel td:first-child { box-shadow: inset 2px 0 0 var(--acc); padding-left: 8px; }
 .v2 .sw { width: 9px; height: 9px; border-radius: 3px; display: inline-block; margin-right: 6px; }
 
 /* empty / loading */
