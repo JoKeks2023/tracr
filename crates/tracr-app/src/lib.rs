@@ -13,6 +13,7 @@ pub mod limits;
 pub mod manual;
 pub mod pricing;
 pub mod projects;
+pub mod quota;
 pub mod report;
 pub mod review;
 pub mod runtime;

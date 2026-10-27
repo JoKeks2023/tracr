@@ -344,6 +344,20 @@ export function Settings({
                 </div>
               </Row>
             </Panel>
+            <Panel title={t("quotaAlerts")}>
+              <Row label={t("quotaMenuBar")} note={t("quotaMenuBarNote")}>
+                <div className="seg" role="group" aria-label={t("quotaMenuBar")}>
+                  <button aria-pressed={prefs.menuBar} onClick={() => setPrefs({ menuBar: true })}>{t("on")}</button>
+                  <button aria-pressed={!prefs.menuBar} onClick={() => setPrefs({ menuBar: false })}>{t("off")}</button>
+                </div>
+              </Row>
+              <Row label={t("quotaNotify")} note={t("quotaNotifyNote")}>
+                <div className="seg" role="group" aria-label={t("quotaNotify")}>
+                  <button aria-pressed={prefs.notify} onClick={() => setPrefs({ notify: true })}>{t("on")}</button>
+                  <button aria-pressed={!prefs.notify} onClick={() => setPrefs({ notify: false })}>{t("off")}</button>
+                </div>
+              </Row>
+            </Panel>
             <Panel title="Codex">
               <p className="vnote">{t("codexQuotaNote")}</p>
             </Panel>

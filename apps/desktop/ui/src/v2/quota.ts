@@ -1,43 +1,35 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { LimitWindow } from "../types";
+import { api } from "../api";
+import type { LimitWindow, QuotaPrefs } from "../types";
 
-/** Display preferences for quota windows: per viewer, kept in the browser storage of the window. */
-export interface QuotaPrefs {
-  /** Show what is left instead of what is used. */
+/** Display preferences for quota windows: kept beside the data, so the menu bar reads the same ones. */
+export interface Prefs {
   remaining: boolean;
-  /** Judge a window by its pace (will it last until it resets?) rather than by the level alone. */
   paceAware: boolean;
+  menuBar: boolean;
+  notify: boolean;
 }
 
-const KEY = "tracr.quota.prefs";
-const DEFAULTS: QuotaPrefs = { remaining: false, paceAware: true };
+const DEFAULTS: Prefs = { remaining: false, paceAware: true, menuBar: true, notify: true };
 
-function load(): QuotaPrefs {
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<QuotaPrefs>) } : DEFAULTS;
-  } catch {
-    return DEFAULTS;
-  }
-}
+const fromBackend = (p: QuotaPrefs): Prefs => ({ remaining: p.remaining, paceAware: p.pace_aware, menuBar: p.menu_bar, notify: p.notify });
+const toBackend = (p: Prefs): QuotaPrefs => ({ remaining: p.remaining, pace_aware: p.paceAware, menu_bar: p.menuBar, notify: p.notify });
 
-const Ctx = createContext<{ prefs: QuotaPrefs; set: (p: Partial<QuotaPrefs>) => void }>({ prefs: DEFAULTS, set: () => {} });
+const Ctx = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => void }>({ prefs: DEFAULTS, set: () => {} });
 
 export function QuotaPrefsProvider({ children }: { children: ReactNode }) {
-  const [prefs, setPrefs] = useState<QuotaPrefs>(load);
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULTS);
+  useEffect(() => {
+    void api.getQuotaPrefs().then((p) => setPrefs(fromBackend(p))).catch(() => {});
+  }, []);
   const value = useMemo(
     () => ({
       prefs,
-      set: (p: Partial<QuotaPrefs>) =>
-        setPrefs((cur) => {
-          const next = { ...cur, ...p };
-          try {
-            window.localStorage.setItem(KEY, JSON.stringify(next));
-          } catch {
-            /* the preference just does not persist */
-          }
-          return next;
-        }),
+      set: (p: Partial<Prefs>) => {
+        const next = { ...prefs, ...p };
+        setPrefs(next);
+        void api.setQuotaPrefs(toBackend(next)).catch(() => {});
+      },
     }),
     [prefs],
   );

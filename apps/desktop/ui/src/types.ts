@@ -427,3 +427,11 @@ export interface ProjectOverview {
   entries: ProjectEntry[];
   pricing: PricingInfo;
 }
+
+/** Stored beside the data: read by the window and by the menu bar alike. */
+export interface QuotaPrefs {
+  remaining: boolean;
+  pace_aware: boolean;
+  menu_bar: boolean;
+  notify: boolean;
+}

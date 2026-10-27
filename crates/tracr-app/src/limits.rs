@@ -149,6 +149,36 @@ fn codex_line_windows(line: &str, now: i64) -> Option<Vec<LimitWindow>> {
     (!out.is_empty()).then_some(out)
 }
 
+/// The last answer per rollout file, keyed by path and modification time: the menu bar asks often, a rollout rarely changes.
+type CodexCache = std::collections::HashMap<PathBuf, (SystemTime, Option<Vec<LimitWindow>>)>;
+
+fn cache() -> &'static std::sync::Mutex<CodexCache> {
+    static C: std::sync::OnceLock<std::sync::Mutex<CodexCache>> = std::sync::OnceLock::new();
+    C.get_or_init(Default::default)
+}
+
+fn cached_rollout_windows(path: &Path, modified: SystemTime) -> Option<Vec<LimitWindow>> {
+    let mut c = cache().lock().ok()?;
+    if let Some((m, w)) = c.get(path)
+        && *m == modified
+    {
+        return w.clone().map(|mut w| {
+            // `expired` depends on the clock, not on the file.
+            let now = now_ms();
+            for x in &mut w {
+                x.expired = x.resets_at.is_some_and(|r| r < now);
+            }
+            w
+        });
+    }
+    let w = rollout_windows(path);
+    if c.len() > 64 {
+        c.clear();
+    }
+    c.insert(path.to_path_buf(), (modified, w.clone()));
+    w
+}
+
 /// The newest Codex figures under the approved provider roots.
 pub fn codex_windows(roots: &[PathBuf]) -> Vec<LimitWindow> {
     let mut files = Vec::new();
@@ -156,20 +186,13 @@ pub fn codex_windows(roots: &[PathBuf]) -> Vec<LimitWindow> {
         collect_rollouts(r, 0, &mut files);
     }
     files.sort_by_key(|f| std::cmp::Reverse(f.0));
-    let mut best: Vec<LimitWindow> = Vec::new();
     // The newest file that carries limits wins; look at a few in case the newest has none yet.
-    for (_, p) in files.iter().take(6) {
-        if let Some(w) = rollout_windows(p) {
-            if best
-                .first()
-                .is_none_or(|b| w[0].observed_at > b.observed_at)
-            {
-                best = w;
-            }
-            break;
+    for (modified, p) in files.iter().take(6) {
+        if let Some(w) = cached_rollout_windows(p, *modified) {
+            return w;
         }
     }
-    best
+    Vec::new()
 }
 
 // ---- Claude Code: statusLine tap -------------------------------------------------

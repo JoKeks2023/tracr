@@ -15,11 +15,24 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent, Wry};
+use tauri_plugin_notification::NotificationExt;
 use tracr_app::day::{DayAgents, DayList, SessionList};
+use tracr_app::quota::{self, Level, QuotaPrefs};
 use tracr_app::runtime::{Refreshed, Runtime, RuntimeStatus};
 use tracr_app::{App, Reader, RootKind, SystemClock, default_data_dir, proposed_provider_roots};
 
 const CLIENT: &str = "tracr-desktop";
+
+/// The window tells the native side its language (menu, menu bar, notifications).
+static GERMAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the menu bar shows for the quota right now, written by the quota watcher.
+static QUOTA_TITLE: Mutex<Option<String>> = Mutex::new(None);
+static QUOTA_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn german() -> bool {
+    GERMAN.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 struct Ctx {
     data_dir: Option<PathBuf>,
@@ -398,6 +411,22 @@ async fn project_overview(
 }
 
 #[tauri::command]
+async fn get_quota_prefs(ctx: tauri::State<'_, Ctx>) -> Result<QuotaPrefs, String> {
+    Ok(quota::load_prefs(&ctx.dir()?))
+}
+
+#[tauri::command]
+async fn set_quota_prefs(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+    prefs: QuotaPrefs,
+) -> Result<(), String> {
+    quota::save_prefs(&ctx.dir()?, &prefs).map_err(err)?;
+    quota_tick(&app, None); // show the change at once
+    Ok(())
+}
+
+#[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
     from: String,
@@ -644,6 +673,96 @@ fn collector_line(app: &tauri::AppHandle) -> &'static str {
 
 /// The menu-bar item shows the running timer's elapsed time; its menu shows
 /// today's minutes and the collector state, and offers start or stop.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn window_name(w: &tracr_app::limits::LimitWindow) -> String {
+    let de = german();
+    let provider = match w.provider.as_str() {
+        "claude_code" => "Claude",
+        "codex" => "Codex",
+        other => other,
+    };
+    let span = match (w.window.as_str(), de) {
+        ("five_hour", true) => "5 Stunden".to_owned(),
+        ("five_hour", false) => "5 hours".to_owned(),
+        ("weekly", true) => "Woche".to_owned(),
+        ("weekly", false) => "Week".to_owned(),
+        (other, _) => other.replace("minutes:", "") + " min",
+    };
+    format!("{provider} · {span}")
+}
+
+/// Reads the provider-reported quota, updates the menu bar and (when a window got worse) notifies.
+fn quota_tick(app: &tauri::AppHandle, watcher: Option<&mut quota::Watcher>) {
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = quota::load_prefs(&dir);
+    let Some(settings) = tracr_app::limits::default_claude_settings() else {
+        return;
+    };
+    let limits = Reader::open(&dir).and_then(|r| r.limits(&settings));
+    let (title, lines) = match &limits {
+        Ok(l) if prefs.menu_bar => {
+            let now = now_ms();
+            let lines = l
+                .windows
+                .iter()
+                .filter(|w| !w.expired)
+                .map(|w| {
+                    let shown = if prefs.remaining {
+                        100.0 - w.used_percent
+                    } else {
+                        w.used_percent
+                    };
+                    format!("{}: {:.0} %", window_name(w), shown.clamp(0.0, 100.0))
+                })
+                .collect();
+            (quota::menu_bar_text(&l.windows, &prefs, now), lines)
+        }
+        _ => (None, Vec::new()),
+    };
+    if let Ok(mut t) = QUOTA_TITLE.lock() {
+        *t = title;
+    }
+    if let Ok(mut l) = QUOTA_LINES.lock() {
+        *l = lines;
+    }
+    if let (Some(watcher), Ok(l)) = (watcher, &limits) {
+        for a in watcher.changes(&l.windows, prefs.pace_aware) {
+            if !prefs.notify {
+                continue;
+            }
+            let de = german();
+            let name = l
+                .windows
+                .iter()
+                .find(|w| w.provider == a.provider && w.window == a.window)
+                .map(window_name)
+                .unwrap_or_default();
+            let (title, tail) = match (a.level, de) {
+                (Level::Warn, true) => ("Kontingent wird knapp", "verbraucht"),
+                (Level::Warn, false) => ("Quota is running low", "used"),
+                (Level::Crit, true) => ("Kontingent ist kritisch", "verbraucht"),
+                (Level::Crit, false) => ("Quota is critically low", "used"),
+                (_, true) => ("Kontingent ist aufgebraucht", "verbraucht"),
+                (_, false) => ("Quota is used up", "used"),
+            };
+            let _ = app
+                .notification()
+                .builder()
+                .title(title)
+                .body(format!("{name}: {:.0} % {tail}", a.used_percent))
+                .show();
+        }
+    }
+    refresh_tray(app);
+}
+
 fn refresh_tray(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("tracr") else {
         return;
@@ -657,6 +776,11 @@ fn refresh_tray(app: &tauri::AppHandle) {
         let mins = (now - t.start).max(0) / 60_000;
         format!("{}:{:02}", mins / 60, mins % 60)
     });
+    let quota_title = QUOTA_TITLE.lock().ok().and_then(|t| t.clone());
+    let title = match (title, quota_title) {
+        (Some(t), Some(q)) => Some(format!("{t}  {q}")),
+        (t, q) => t.or(q),
+    };
     let _ = tray.set_title(title.as_deref());
     let label = if running.is_some() {
         "Stop timer"
@@ -671,6 +795,13 @@ fn refresh_tray(app: &tauri::AppHandle) {
         MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>),
     ) && let Ok(menu) = Menu::with_items(app, &[&today, &state, &open, &timer, &quit])
     {
+        let lines = QUOTA_LINES.lock().map(|l| l.clone()).unwrap_or_default();
+        for (i, line) in lines.iter().enumerate() {
+            if let Ok(item) = MenuItem::with_id(app, format!("quota{i}"), line, false, None::<&str>)
+            {
+                let _ = menu.insert(&item, 2 + i);
+            }
+        }
         let _ = tray.set_menu(Some(menu));
     }
 }
@@ -876,6 +1007,7 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
 /// The window tells the menu bar its language once it has loaded.
 #[tauri::command]
 fn set_menu_language(app: tauri::AppHandle, german: bool) -> Result<(), String> {
+    GERMAN.store(german, std::sync::atomic::Ordering::Relaxed);
     let menu = app_menu(&app, german).map_err(|e| e.to_string())?;
     app.set_menu(menu).map(|_| ()).map_err(|e| e.to_string())
 }
@@ -911,6 +1043,7 @@ fn main() {
     let app = tauri::Builder::default()
         .manage(ctx)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             status,
             approve_roots,
@@ -922,6 +1055,8 @@ fn main() {
             days,
             day_agents,
             sessions,
+            get_quota_prefs,
+            set_quota_prefs,
             project_overview,
             limits,
             limits_tap,
@@ -958,6 +1093,23 @@ fn main() {
             }
             tray.build(app)?;
             refresh_tray(app.handle());
+            // macOS asks once whether tracr may notify (only when alerts are on).
+            if app
+                .state::<Ctx>()
+                .dir()
+                .is_ok_and(|d| quota::load_prefs(&d).notify)
+            {
+                let _ = app.notification().request_permission();
+            }
+            // Quota in the menu bar and alerts when a window gets worse: every 30 s.
+            let quota_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut watcher = quota::Watcher::default();
+                loop {
+                    quota_tick(&quota_handle, Some(&mut watcher));
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                }
+            });
             // Keep the elapsed time in the menu bar current.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
