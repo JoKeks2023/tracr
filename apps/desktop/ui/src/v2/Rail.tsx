@@ -22,7 +22,7 @@ export function Rail({ area, alert, onArea, onSettings }: { area: Area; alert: A
         </button>
       ))}
       <div className="grow" />
-      <button className="nav" onClick={onSettings} title={t("settingsHint")}>
+      <button className="nav" aria-current={area === "settings" ? "page" : undefined} onClick={onSettings} title={t("settingsHint")}>
         {icons.settings}
         {t("railSettings")}
       </button>

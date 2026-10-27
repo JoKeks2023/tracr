@@ -20,7 +20,7 @@ import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
 import { RootsPicker } from "./RootsPicker";
 import { SessionSheet } from "./SessionSheet";
-import { SettingsSheet } from "./SettingsSheet";
+import { Settings } from "./v2/Settings";
 import { Timeline } from "./Timeline";
 import { Toast } from "./Toast";
 import { compact } from "./format";
@@ -85,7 +85,6 @@ export function App() {
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [approving, setApproving] = useState(false);
-  const [settings, setSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [atom, setAtom] = useState<HumanAtom | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -283,7 +282,7 @@ export function App() {
   act.current = (action) => {
     const canEdit = status?.collector === "collecting";
     switch (action) {
-      case "settings": return setSettings(true);
+      case "settings": return setArea("settings");
       case "area_today": return setArea("today");
       case "area_projects": return setArea("projects");
       case "area_limits": return setArea("limits");
@@ -314,7 +313,7 @@ export function App() {
     { id: "projects", label: t("cmdGoProjects"), hint: "⌘2", run: () => setArea("projects") },
     { id: "worktime", label: t("cmdGoWorktime"), hint: "⌘3", run: () => setArea("worktime") },
     { id: "limits", label: t("cmdGoLimits"), hint: "⌘4", run: () => setArea("limits") },
-    { id: "settings", label: t("settings"), hint: "⌘,", run: () => setSettings(true) },
+    { id: "settings", label: t("settings"), hint: "⌘,", run: () => setArea("settings") },
     ...(days.length > 0 ? [{ id: "export", label: t("exportCsv"), hint: "⌘E", run: () => setExporting(true) }] : []),
     ...(canEditNow ? [{ id: "refresh", label: t("refresh"), hint: "⌘R", run: () => void refresh() }] : []),
     ...(canEditNow && view ? [{ id: "add", label: t("addTime"), hint: "⌘N", run: () => (setArea("worktime"), loadTargets(), setEntry("new")) }] : []),
@@ -343,7 +342,7 @@ export function App() {
 
   return (
     <div className="v2">
-      <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setSettings(true)} />
+      <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setArea("settings")} />
       <div className="main">
         {area === "today" && (
           <Bar title={t("today")} sub={dayLabel(today)}>
@@ -384,12 +383,26 @@ export function App() {
           />
         )}
 
-        {load.state === "setup" && status && (
+        {area === "settings" && status && (
+          <Settings
+            status={status}
+            limits={limits}
+            onTap={tapNow}
+            onChanged={(text, error) => {
+              setNotice({ text, error });
+              if (!error) {
+                void loadDays(day);
+                void api.status().then(setStatus);
+              }
+            }}
+          />
+        )}
+        {area !== "settings" && load.state === "setup" && status && (
           <div className="body">
             <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />
           </div>
         )}
-        {load.state === "no-derived" && (
+        {area !== "settings" && load.state === "no-derived" && (
           <div className="body">
             <div className="empty">
               <h2>{t("nothingDerived")}</h2>
@@ -513,19 +526,6 @@ export function App() {
 
       </div>
 
-      {settings && status && (
-        <SettingsSheet
-          status={status}
-          onClose={() => setSettings(false)}
-          onChanged={(text, error) => {
-            setNotice({ text, error });
-            if (!error) {
-              void loadDays(day);
-              void api.status().then(setStatus);
-            }
-          }}
-        />
-      )}
       {exporting && load.state === "ready" && (
         <ExportSheet
           days={load.days.days}

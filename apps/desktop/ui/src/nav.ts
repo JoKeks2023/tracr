@@ -1,7 +1,7 @@
 import { locale } from "./i18n";
 
 /** The places in the sidebar. Order is the sidebar's order. */
-export type Area = "today" | "projects" | "worktime" | "limits";
+export type Area = "today" | "projects" | "worktime" | "limits" | "settings";
 export const AREAS: Area[] = ["today", "projects", "worktime", "limits"];
 
 /** How wide a period the toolbar shows. Work time is always one day. */

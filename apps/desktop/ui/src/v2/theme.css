@@ -168,3 +168,32 @@
 .v2 .row2 { align-items: start; }
 .v2 .timer { display: inline-flex; align-items: center; gap: 8px; position: relative; }
 .v2 .timer .popover { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.4); min-width: 16rem; }
+
+/* settings */
+.v2 .st { display: grid; grid-template-columns: 240px minmax(0, 1fr); flex: 1; min-height: 0; }
+.v2 .st-nav { background: var(--rail); border-right: 1px solid var(--line); padding: 38px 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.v2 .st-nav h1 { margin: 0 8px 10px; font-size: 15px; font-weight: 600; color: var(--tx-hi); }
+.v2 .st-nav button { text-align: left; border: 0; background: none; color: var(--tx-2); padding: 7px 10px; border-radius: 7px; font: 13px -apple-system, system-ui, sans-serif; cursor: pointer; }
+.v2 .st-nav button:hover { background: var(--hover); }
+.v2 .st-nav button[aria-current="page"] { background: var(--sel); color: var(--tx-hi); }
+.v2 .st-pane { overflow-y: auto; padding: 38px 32px 32px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.v2 .st-pane > * { flex: none; max-width: 46rem; width: 100%; }
+.v2 .st-title { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: var(--tx-hi); letter-spacing: -0.01em; }
+.v2 .srow { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 10px 0; border-top: 1px solid var(--line); }
+.v2 .srow:first-of-type { border-top: 0; }
+.v2 .srow .lbl { min-width: 0; }
+.v2 .srow .ctl { flex: none; max-width: 60%; text-align: right; overflow-wrap: anywhere; }
+.v2 .rlist { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.v2 .rlist li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 8px; background: var(--panel-2); min-width: 0; }
+.v2 .rlist li.asking { flex-direction: column; align-items: flex-start; background: color-mix(in srgb, var(--warn) 14%, var(--panel-2)); }
+.v2 .rlist .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.v2 .rlist .ask p { margin: 4px 0 8px; color: var(--tx-2); }
+.v2 .acts { display: inline-flex; gap: 8px; }
+.v2 .acts.left { margin-top: 8px; }
+.v2 .found { margin: 10px 0; padding: 10px; border-radius: 8px; border: 1px dashed var(--line-2); }
+.v2 .sform { display: flex; gap: 8px; margin-top: 10px; }
+.v2 .sinput, .v2 .ssel { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 7px; color: var(--tx); padding: 5px 10px; font: 13px -apple-system, system-ui, sans-serif; min-width: 0; }
+.v2 .sform .sinput { flex: 1; }
+.v2 .ssel { max-width: 16rem; }
+.v2 .st-pane p.vnote { margin: 0 0 6px; }
+@media (max-width: 900px) { .v2 .st { grid-template-columns: 180px minmax(0, 1fr); } }

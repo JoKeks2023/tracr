@@ -4,6 +4,12 @@
 const en = {
   // header and navigation
   daysTitle: "Days",
+  stSources: "Sources",
+  stRecording: "Recording and data",
+  tapStatusOn: "Claude Code's status line goes through tracr",
+  tapStatusOff: "Claude quota is off",
+  tapFile: "Settings file",
+  codexQuotaNote: "Codex needs nothing: tracr reads its limit figures from the rollouts you already approved.",
   agoNow: "just now",
   agoMin: "{n}m ago",
   agoHour: "{n}h ago",
@@ -447,6 +453,12 @@ export type Key = keyof typeof en;
 
 const de: Record<Key, string> = {
   daysTitle: "Tage",
+  stSources: "Quellen",
+  stRecording: "Aufzeichnung und Daten",
+  tapStatusOn: "Die Statuszeile von Claude Code läuft über tracr",
+  tapStatusOff: "Claude-Kontingent ist aus",
+  tapFile: "Einstellungsdatei",
+  codexQuotaNote: "Codex braucht nichts: tracr liest die Kontingent-Werte aus den Rollouts, die du schon freigegeben hast.",
   agoNow: "gerade eben",
   agoMin: "vor {n} Min.",
   agoHour: "vor {n} Std.",
