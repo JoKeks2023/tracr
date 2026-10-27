@@ -106,3 +106,25 @@ export function spanLabel(first: number, last: number, tz: string): string {
   const short = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: tz }).format(first);
   return `${short} ${range}`;
 }
+
+/** "claude-opus-5-5" → "Opus 5.5"; other ids as they are. */
+export function modelName(id: string | null): string {
+  if (!id) return "?";
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/.exec(id);
+  if (!m) return id;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+}
+
+/** All four token categories of a session, summed (unknown is not counted as zero, see the marks elsewhere). */
+export function sessionTokens(usage: { input_fresh: { sum: number }; cache_creation: { sum: number }; cache_read: { sum: number }; output: { sum: number } }[]): number {
+  return usage.reduce((n, u) => n + u.input_fresh.sum + u.cache_creation.sum + u.cache_read.sum + u.output.sum, 0);
+}
+
+/** "5m ago" style, coarse. */
+export function ago(ms: number, now: number): string {
+  const m = Math.max(0, Math.round((now - ms) / 60_000));
+  if (m < 1) return t("agoNow");
+  if (m < 60) return t("agoMin", { n: m });
+  const h = Math.floor(m / 60);
+  return h < 24 ? t("agoHour", { n: h }) : t("agoDay", { n: Math.floor(h / 24) });
+}

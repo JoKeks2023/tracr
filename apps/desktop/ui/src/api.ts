@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 export type RootKind = "provider" | "repository";
 import type { ProjectOp, ProjectsView } from "./types";
-import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Status, TargetOption } from "./types";
+import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
 export const api = {
@@ -12,6 +12,12 @@ export const api = {
   sessions: (from: string, to: string) => invoke<SessionList>("sessions", { from, to }),
   /** One session in time: actors, prompts, tool calls (names), request sizes. */
   sessionTrace: (sessionId: string) => invoke<SessionTrace>("session_trace", { sessionId }),
+  /** Percent of each limit window as the providers report it. */
+  limits: () => invoke<Limits>("limits"),
+  /** Opt in (true) or out (false) of routing Claude Code's statusLine through tracr. */
+  limitsTap: (install: boolean) => invoke<void>("limits_tap", { install }),
+  /** Sessions of a range grouped by project, repository or none. */
+  projectOverview: (from: string, to: string) => invoke<ProjectOverview>("project_overview", { from, to }),
   refresh: () => invoke<Refreshed>("refresh"),
   correct: (req: CorrectionRequest) => invoke<string>("correct", { req }),
   manual: (req: ManualRequest) => invoke<string>("manual", { req }),

@@ -376,3 +376,54 @@ export interface SessionTrace {
   tool_summary: ToolSummary[];
   points: TracePoint[];
 }
+
+export interface LimitWindow {
+  provider: "codex" | "claude_code" | string;
+  /** `five_hour`, `weekly` or `minutes:<n>`. */
+  window: string;
+  window_minutes: number | null;
+  used_percent: number;
+  resets_at: number | null;
+  observed_at: number;
+  plan: string | null;
+  /** The reset time has passed since the figure was stated. */
+  expired: boolean;
+}
+export interface TapState {
+  installed: boolean;
+  chained: boolean;
+  settings_path: string;
+}
+export interface Limits {
+  windows: LimitWindow[];
+  claude_tap: TapState;
+}
+
+export interface RepoPart {
+  key: string;
+  label: string;
+  sessions: number;
+  agent_ms: number;
+}
+export interface ProjectEntry {
+  key: string;
+  kind: "project" | "repository" | "none";
+  project_id: string | null;
+  label: string;
+  repositories: RepoPart[];
+  session_ids: string[];
+  sessions: number;
+  agent_ms: number;
+  cost: CostView;
+  first_at: number | null;
+  last_at: number | null;
+  branches: string[];
+  providers: string[];
+}
+export interface ProjectOverview {
+  from: string;
+  to: string;
+  timezone: string;
+  entries: ProjectEntry[];
+  pricing: PricingInfo;
+}

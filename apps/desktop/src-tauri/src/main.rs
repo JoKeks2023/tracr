@@ -806,8 +806,8 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
         &[
             &item("m:area_today", l("Today", "Heute"), Some("CmdOrCtrl+1"))?,
             &item(
-                "m:area_sessions",
-                l("Sessions", "Sitzungen"),
+                "m:area_projects",
+                l("Projects", "Projekte"),
                 Some("CmdOrCtrl+2"),
             )?,
             &item(
@@ -815,6 +815,7 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
                 l("Work Time", "Arbeitszeit"),
                 Some("CmdOrCtrl+3"),
             )?,
+            &item("m:area_limits", l("Limits", "Limits"), Some("CmdOrCtrl+4"))?,
             &sep()?,
             &item(
                 "m:overview",

@@ -8,9 +8,12 @@ import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
 import { Attention, Bars, BigNumber, CostLine } from "./Overview";
 import { Palette, type Command } from "./Palette";
-import { Sessions } from "./Sessions";
-import { Today } from "./Today";
-import { Toolbar } from "./Toolbar";
+import { Bar } from "./v2/Bar";
+import { Home } from "./v2/Home";
+import { LimitsPage } from "./v2/LimitsPage";
+import { Projects } from "./v2/Projects";
+import { Rail } from "./v2/Rail";
+import "./v2/theme.css";
 import { isoToday, periodLabel, rangeOf, shiftAnchor, type Area, type Scope } from "./nav";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
@@ -19,10 +22,9 @@ import { RootsPicker } from "./RootsPicker";
 import { SessionSheet } from "./SessionSheet";
 import { SettingsSheet } from "./SettingsSheet";
 import { Timeline } from "./Timeline";
-import { Sidebar } from "./Sidebar";
 import { Toast } from "./Toast";
 import { compact } from "./format";
-import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
+import type { DayAgents, DayList, HumanAtom, Limits, ManualEntryInfo, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
@@ -75,7 +77,9 @@ export function App() {
   const [area, setArea] = useState<Area>("today");
   const [scope, setScope] = useState<Scope>("week");
   const [anchor, setAnchor] = useState<string>(isoToday());
-  const [sessionSel, setSessionSel] = useState<string | null>(null);
+  const [focusSession, setFocusSession] = useState<string | null>(null);
+  const [limits, setLimits] = useState<Limits | null>(null);
+  const [pendingEntry, setPendingEntry] = useState(false);
   const [palette, setPalette] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
@@ -142,6 +146,15 @@ export function App() {
     }, 5_000);
     return () => window.clearInterval(t);
   }, [loadDays]);
+
+  // Provider-reported limit figures: on every rebuild and once a minute (they change on their own).
+  useEffect(() => {
+    if (load.state !== "ready") return;
+    const read = () => void api.limits().then(setLimits).catch(() => setLimits(null));
+    read();
+    const id = window.setInterval(read, 60_000);
+    return () => window.clearInterval(id);
+  }, [load]);
 
   const approve = async (paths: string[]) => {
     setApproving(true);
@@ -228,26 +241,39 @@ export function App() {
   const today = isoToday();
   const oldest = days[days.length - 1];
   const [from, to] = rangeOf(scope, anchor);
-  const showSessions = (id: string | null, d = today, sc: Scope = "day") => {
-    setScope(sc);
-    setAnchor(d);
-    setSessionSel(id);
-    setArea("sessions");
+  const showProject = (id: string | null) => {
+    setScope("week");
+    setAnchor(today);
+    setFocusSession(id);
+    setArea("projects");
   };
   const shiftPeriod = (dir: -1 | 1) => {
     if (area === "worktime") {
       const target = dir < 0 ? olderDay : newerDay;
       if (target) goTo(target);
-    } else if (area === "sessions") {
+    } else if (area === "projects" || area === "limits") {
       setAnchor(shiftAnchor(scope, anchor, dir));
-      setSessionSel(null);
+      setFocusSession(null);
     }
   };
   const goToday = () => {
     if (area === "worktime") return days[0] ? goTo(days[0]) : undefined;
     setAnchor(today);
-    setSessionSel(null);
+    setFocusSession(null);
   };
+  // "Add time" from the start page: bring today forward, then open the sheet once its day is loaded.
+  const addTimeToday = () => {
+    setArea("worktime");
+    if (days.includes(today) && day !== today) goTo(today);
+    setPendingEntry(true);
+  };
+  useEffect(() => {
+    if (pendingEntry && view && (!days.includes(today) || view.day === today)) {
+      setPendingEntry(false);
+      loadTargets();
+      setEntry("new");
+    }
+  }); // eslint-disable-line react-hooks/exhaustive-deps
   const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
@@ -259,7 +285,8 @@ export function App() {
     switch (action) {
       case "settings": return setSettings(true);
       case "area_today": return setArea("today");
-      case "area_sessions": return setArea("sessions");
+      case "area_projects": return setArea("projects");
+      case "area_limits": return setArea("limits");
       case "area_worktime": return setArea("worktime");
       case "palette": return setPalette(true);
       case "overview": return (setArea("worktime"), setPage("day"));
@@ -284,8 +311,9 @@ export function App() {
   const canEditNow = status?.collector === "collecting";
   const commands: Command[] = [
     { id: "today", label: t("cmdGoToday"), hint: "⌘1", run: () => setArea("today") },
-    { id: "sessions", label: t("cmdGoSessions"), hint: "⌘2", run: () => setArea("sessions") },
+    { id: "projects", label: t("cmdGoProjects"), hint: "⌘2", run: () => setArea("projects") },
     { id: "worktime", label: t("cmdGoWorktime"), hint: "⌘3", run: () => setArea("worktime") },
+    { id: "limits", label: t("cmdGoLimits"), hint: "⌘4", run: () => setArea("limits") },
     { id: "settings", label: t("settings"), hint: "⌘,", run: () => setSettings(true) },
     ...(days.length > 0 ? [{ id: "export", label: t("exportCsv"), hint: "⌘E", run: () => setExporting(true) }] : []),
     ...(canEditNow ? [{ id: "refresh", label: t("refresh"), hint: "⌘R", run: () => void refresh() }] : []),
@@ -294,109 +322,142 @@ export function App() {
     ...(unknownWindows > 0 ? [{ id: "resolve", label: t("resolve"), hint: "⌥⌘K", run: () => (setArea("worktime"), setReviewing(true)) }] : []),
   ];
 
+  const tapNow = async (install: boolean) => {
+    try {
+      await api.limitsTap(install);
+      setLimits(await api.limits());
+      setNotice({ text: install ? t("tapOnDone") : t("tapOffDone") });
+    } catch (e) {
+      setNotice({ text: errorText(e), error: true });
+    }
+  };
+  const reportError = (text: string) => setNotice({ text, error: true });
+  const limitAlert = limits?.windows.some((w) => !w.expired && w.used_percent >= 100) ? "limits" : null;
+  const bar = (
+    <>
+      {status && status.collector === "collecting" && (
+        <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
+      )}
+    </>
+  );
+
   return (
-    <div className="app">
-      <Sidebar area={area} status={status} onArea={setArea} onSettings={() => setSettings(true)} />
-      <div className={`content${area === "sessions" ? " fill" : ""}`}>
-      <div className="titlebar" data-tauri-drag-region />
-      <div className={`page${area === "sessions" ? " wide" : ""}`}>
-      <Toolbar
-        title={area === "today" ? t("today") : area === "sessions" ? t("areaSessions") : t("areaWorktime")}
-        period={
-          area === "sessions"
-            ? {
-                label: periodLabel(scope, anchor),
-                scope,
-                onScope: (sc) => {
-                  setScope(sc);
-                  setSessionSel(null);
-                },
-                canPrev: !oldest || from > oldest,
-                canNext: to < today,
-                onShift: shiftPeriod,
-              }
-            : area === "worktime" && day
-              ? { label: dayLabel(day), canPrev: !!olderDay, canNext: !!newerDay, onShift: shiftPeriod }
-              : undefined
-        }
-      >
-        {status && status.collector === "collecting" && (
-          <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
+    <div className="v2">
+      <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setSettings(true)} />
+      <div className="main">
+        {area === "today" && (
+          <Bar title={t("today")} sub={dayLabel(today)}>
+            {status && (
+              <span className="live">
+                <i className={`sdot ${status.collector}`} />
+                {status.collector === "collecting" ? t("collecting") : status.collector === "stalled" ? t("collectorStalled") : status.collector === "elsewhere" ? t("collectorElsewhere") : status.collector === "stopped" ? t("collectorStopped") : t("collectorNone")}
+              </span>
+            )}
+            {canEditNow && (
+              <button className="btn" onClick={addTimeToday}>
+                {t("addTime")}
+              </button>
+            )}
+            {bar}
+          </Bar>
         )}
-        {area === "worktime" && view && status?.collector === "collecting" && (
-          <button
-            className="button ghost"
-            onClick={() => {
-              loadTargets();
-              setEntry("new");
-            }}
-          >
-            {t("addTime")}
-          </button>
+        {area === "worktime" && (
+          <Bar title={t("areaWorktime")} period={day ? { label: dayLabel(day), canPrev: !!olderDay, canNext: !!newerDay, onShift: shiftPeriod } : undefined}>
+            {view && load.state === "ready" && (
+              <div className="seg" role="group" aria-label={t("overview") + " / " + t("history")}>
+                <button aria-pressed={page === "day"} onClick={() => setPage("day")}>{t("overview")}</button>
+                <button aria-pressed={page === "history"} onClick={() => setPage("history")}>{t("history")}</button>
+              </div>
+            )}
+            {canEditNow && view && (
+              <button className="btn" onClick={() => (loadTargets(), setEntry("new"))}>
+                {t("addTime")}
+              </button>
+            )}
+            {bar}
+          </Bar>
         )}
-      </Toolbar>
+        {area === "limits" && (
+          <Bar
+            title={t("limitsTitle")}
+            period={{ label: periodLabel(scope, anchor), scope, onScope: setScope, canPrev: !oldest || from > oldest, canNext: to < today, onShift: shiftPeriod }}
+          />
+        )}
 
-      {area === "worktime" && view && load.state === "ready" && (
-        <div className="segments" role="group" aria-label={t("overview") + " / " + t("history")}>
-          <button aria-pressed={page === "day"} onClick={() => setPage("day")}>
-            {t("overview")}
-          </button>
-          <button aria-pressed={page === "history"} onClick={() => setPage("history")}>
-            {t("history")}
-          </button>
-        </div>
-      )}
+        {load.state === "setup" && status && (
+          <div className="body">
+            <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />
+          </div>
+        )}
+        {load.state === "no-derived" && (
+          <div className="body">
+            <div className="empty">
+              <h2>{t("nothingDerived")}</h2>
+              <p>{t("nothingDerivedHint")}</p>
+              <p>{load.message}</p>
+            </div>
+          </div>
+        )}
 
-      {load.state === "ready" && area === "today" && (
-        <Today
-          day={today}
-          hasData={days.includes(today)}
-          reloadKey={load}
-          onOpenSession={(id) => showSessions(id)}
-          onOpenWorktime={() => (days.includes(today) && goTo(today), setArea("worktime"))}
-          onOpenSessions={() => showSessions(null)}
-          onError={(text) => setNotice({ text, error: true })}
-        />
-      )}
-      {load.state === "ready" && area === "sessions" && (
-        <Sessions from={from} to={to} reloadKey={load} selected={sessionSel} onSelect={setSessionSel} onError={(text) => setNotice({ text, error: true })} />
-      )}
+        {load.state === "ready" && area === "today" && (
+          <Home
+            day={today}
+            hasData={days.includes(today)}
+            reloadKey={load}
+            limits={limits}
+            onOpenSession={(id) => showProject(id)}
+            onOpenWorktime={() => (days.includes(today) && goTo(today), setArea("worktime"))}
+            onOpenLimits={() => setArea("limits")}
+            onError={reportError}
+          />
+        )}
+        {load.state === "ready" && area === "projects" && (
+          <Projects
+            from={from}
+            to={to}
+            scope={scope}
+            anchor={anchor}
+            canPrev={!oldest || from > oldest}
+            canNext={to < today}
+            reloadKey={load}
+            focusSession={focusSession}
+            onScope={(sc) => (setScope(sc), setFocusSession(null))}
+            onShift={shiftPeriod}
+            onError={reportError}
+          />
+        )}
+        {load.state === "ready" && area === "limits" && (
+          <LimitsPage from={from} to={to} limits={limits} reloadKey={load} onTap={tapNow} onError={reportError} />
+        )}
 
-      {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
-      {load.state === "no-derived" && (
-        <div className="empty">
-          <h2>{t("nothingDerived")}</h2>
-          <p>{t("nothingDerivedHint")}</p>
-          <p className="muted">{load.message}</p>
-        </div>
-      )}
-
-      {area === "worktime" && view && totals && load.state === "ready" && page === "history" && (
-        <div className="history">
-          <CostLine cost={view.cost} />
-          <dl className="facts">
-            <div>
-              <dd>{totals.sessions}</dd>
-              <dt>{t("factSessions")}</dt>
+        {area === "worktime" && view && totals && load.state === "ready" && page === "history" && (
+          <div className="body">
+            <div className="history">
+              <CostLine cost={view.cost} />
+              <dl className="facts">
+                <div>
+                  <dd>{totals.sessions}</dd>
+                  <dt>{t("factSessions")}</dt>
+                </div>
+                <div>
+                  <dd>{duration(totals.mainExec + totals.subExec)}</dd>
+                  <dt>{t("factAgentTime")}</dt>
+                </div>
+                <div>
+                  <dd>{totals.prompts}</dd>
+                  <dt>{t("factPrompts")}</dt>
+                </div>
+                <div>
+                  <dd>{compact(totals.output)}</dd>
+                  <dt>{t("factTokens")}</dt>
+                </div>
+              </dl>
+              <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
             </div>
-            <div>
-              <dd>{duration(totals.mainExec + totals.subExec)}</dd>
-              <dt>{t("factAgentTime")}</dt>
-            </div>
-            <div>
-              <dd>{totals.prompts}</dd>
-              <dt>{t("factPrompts")}</dt>
-            </div>
-            <div>
-              <dd>{compact(totals.output)}</dd>
-              <dt>{t("factTokens")}</dt>
-            </div>
-          </dl>
-          <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
-        </div>
-      )}
+          </div>
+        )}
       {area === "worktime" && view && totals && load.state === "ready" && page === "day" && (
-        <>
+        <div className="body">
           <div className="main-card">
             <BigNumber
               human={totals.human}
@@ -447,10 +508,9 @@ export function App() {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
 
-      </div>
       </div>
 
       {settings && status && (
