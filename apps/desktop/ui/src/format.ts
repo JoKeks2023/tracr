@@ -132,3 +132,20 @@ export function ago(ms: number, now: number): string {
 export const sessionsN = (n: number): string => (n === 1 ? t("sessionOne") : t("sessionCount", { n }));
 export const branchesN = (n: number): string => (n === 1 ? t("branchOne") : t("branchesN", { n }));
 export const subagentsN = (n: number): string => (n === 1 ? t("subagentOne") : t("subagentCount", { n }));
+
+/** Adds estimates of several sessions: unpriced parts stay unpriced, nothing becomes zero. */
+export function mergeCost(list: CostView[]): CostView {
+  const out: CostView = { amount_nano: null, priced_records: 0, partially_priced_records: 0, unpriced_records: 0, not_estimated_records: 0, priced_tokens: 0, unpriced_tokens: 0, reasons: [], assumptions: [] };
+  for (const c of list) {
+    if (c.amount_nano !== null) out.amount_nano = (out.amount_nano ?? 0) + c.amount_nano;
+    out.priced_records += c.priced_records;
+    out.partially_priced_records += c.partially_priced_records;
+    out.unpriced_records += c.unpriced_records;
+    out.not_estimated_records += c.not_estimated_records;
+    out.priced_tokens += c.priced_tokens;
+    out.unpriced_tokens += c.unpriced_tokens;
+    for (const r of c.reasons) if (!out.reasons.includes(r)) out.reasons.push(r);
+    for (const a of c.assumptions) if (!out.assumptions.includes(a)) out.assumptions.push(a);
+  }
+  return out;
+}

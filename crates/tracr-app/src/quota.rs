@@ -33,6 +33,8 @@ pub struct QuotaPrefs {
     pub notify_waiting: bool,
     /// Notify when Claude Code finishes and it is your turn.
     pub notify_finished: bool,
+    /// List automated sessions too (e.g. Codex's auto-review). Off: they are left out of lists and totals.
+    pub show_automated: bool,
 }
 
 impl Default for QuotaPrefs {
@@ -45,6 +47,7 @@ impl Default for QuotaPrefs {
             rings: false,
             notify_waiting: true,
             notify_finished: true,
+            show_automated: false,
         }
     }
 }

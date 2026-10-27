@@ -11,12 +11,13 @@ export interface Prefs {
   rings: boolean;
   notifyWaiting: boolean;
   notifyFinished: boolean;
+  showAutomated: boolean;
 }
 
-const DEFAULTS: Prefs = { remaining: false, paceAware: true, menuBar: true, notify: true, rings: false, notifyWaiting: true, notifyFinished: true };
+const DEFAULTS: Prefs = { remaining: false, paceAware: true, menuBar: true, notify: true, rings: false, notifyWaiting: true, notifyFinished: true, showAutomated: false };
 
-const fromBackend = (p: QuotaPrefs): Prefs => ({ remaining: p.remaining, paceAware: p.pace_aware, menuBar: p.menu_bar, notify: p.notify, rings: p.rings, notifyWaiting: p.notify_waiting, notifyFinished: p.notify_finished });
-const toBackend = (p: Prefs): QuotaPrefs => ({ remaining: p.remaining, pace_aware: p.paceAware, menu_bar: p.menuBar, notify: p.notify, rings: p.rings, notify_waiting: p.notifyWaiting, notify_finished: p.notifyFinished });
+const fromBackend = (p: QuotaPrefs): Prefs => ({ remaining: p.remaining, paceAware: p.pace_aware, menuBar: p.menu_bar, notify: p.notify, rings: p.rings, notifyWaiting: p.notify_waiting, notifyFinished: p.notify_finished, showAutomated: p.show_automated });
+const toBackend = (p: Prefs): QuotaPrefs => ({ remaining: p.remaining, pace_aware: p.paceAware, menu_bar: p.menuBar, notify: p.notify, rings: p.rings, notify_waiting: p.notifyWaiting, notify_finished: p.notifyFinished, show_automated: p.showAutomated });
 
 const Ctx = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => void }>({ prefs: DEFAULTS, set: () => {} });
 

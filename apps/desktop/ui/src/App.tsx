@@ -13,7 +13,8 @@ import { Home } from "./v2/Home";
 import { LimitsPage } from "./v2/LimitsPage";
 import { Projects } from "./v2/Projects";
 import { Rail } from "./v2/Rail";
-import { QuotaPrefsProvider } from "./v2/quota";
+import { useQuotaPrefs } from "./v2/quota";
+import { mergeCost } from "./format";
 import "./v2/theme.css";
 import { isoToday, periodLabel, rangeOf, shiftAnchor, type Area, type Scope } from "./nav";
 import { TimerControl } from "./TimerControl";
@@ -73,7 +74,14 @@ export function App() {
   const [hideRoots, setHideRoots] = useState(false);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [day, setDay] = useState<string | null>(null);
-  const [view, setView] = useState<DayAgents | null>(null);
+  const { prefs } = useQuotaPrefs();
+  const [rawView, setView] = useState<DayAgents | null>(null);
+  // Automated sessions (e.g. Codex's auto-review) are left out of lists and cost unless asked for; time tracking is untouched.
+  const view = useMemo<DayAgents | null>(() => {
+    if (!rawView || prefs.showAutomated) return rawView;
+    const sessions = rawView.sessions.filter((s) => !s.automated);
+    return { ...rawView, sessions, cost: { ...rawView.cost, identified: mergeCost(sessions.map((s) => s.cost)) } };
+  }, [rawView, prefs.showAutomated]);
   const [selected, setSelected] = useState<string | null>(null);
   const [area, setArea] = useState<Area>("today");
   const [scope, setScope] = useState<Scope>("week");
@@ -342,7 +350,6 @@ export function App() {
   );
 
   return (
-    <QuotaPrefsProvider>
     <div className="v2">
       <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setArea("settings")} />
       <div className="main">
@@ -576,6 +583,5 @@ export function App() {
       {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
       {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
-    </QuotaPrefsProvider>
   );
 }

@@ -73,11 +73,12 @@ export function QuotaBar({ w, big }: { w: LimitWindow; big?: boolean }) {
       <div className="top">
         <span className="nm">{windowName(w)}</span>
         <span className={`mono ${big ? "qbig" : ""}`} title={prefs.remaining ? t("quotaLeft") : t("quotaUsed")}>
-          {Math.round(shown)} %{big && <small className="qwhat">{prefs.remaining ? t("quotaLeft") : t("quotaUsed")}</small>}
+          {w.expired ? "—" : `${Math.round(shown)} %`}
+          {big && !w.expired && <small className="qwhat">{prefs.remaining ? t("quotaLeft") : t("quotaUsed")}</small>}
         </span>
       </div>
       <div className={`meter ${tone}`} role="progressbar" aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100} aria-label={`${windowName(w)}: ${Math.round(used)} % ${t("quotaUsed")}`}>
-        <i style={{ width: `${used}%`, opacity: w.expired ? 0.4 : 1 }} />
+        <i style={{ width: w.expired ? "0%" : `${used}%` }} />
         {fc && <b className="tick" style={{ left: `${Math.min(100, fc.elapsed * 100)}%` }} title={t("paceTick")} />}
       </div>
       <div className="vnote qline">

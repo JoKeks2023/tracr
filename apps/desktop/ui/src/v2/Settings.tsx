@@ -296,6 +296,14 @@ export function Settings({
                 <button className="btn" disabled={busy} onClick={() => choose("provider")}>{t("addFolder")}</button>
               </div>
             </Panel>
+            <Panel title={t("automatedTitle")}>
+              <Row label={t("automatedShow")} note={t("automatedNote")}>
+                <div className="seg" role="group" aria-label={t("automatedShow")}>
+                  <button aria-pressed={!prefs.showAutomated} onClick={() => setPrefs({ showAutomated: false })}>{t("off")}</button>
+                  <button aria-pressed={prefs.showAutomated} onClick={() => setPrefs({ showAutomated: true })}>{t("on")}</button>
+                </div>
+              </Row>
+            </Panel>
             <Panel title={t("repositories")}>
               <p className="vnote">{t("repositoriesNote")}</p>
               <Roots kind="repository" roots={status.approved_repository_roots} home={status.home} busy={busy} empty={t("noRepoFolder")} asking={asking} onAsk={setAsking} onRemove={remove} />

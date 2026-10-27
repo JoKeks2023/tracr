@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
-import { ago, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
+import { ago, mergeCost, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import { shiftAnchor } from "../nav";
 import type { DayAgents, HooksView, Limits, LiveSession, SessionDay, SessionList } from "../types";
@@ -52,7 +52,7 @@ function DayStrip({ view }: { view: DayAgents }) {
           </div>
         </div>
         <div className="ticks">
-          <span />
+          <i />
           <div className="mono">
             {ticks.map((tk) => (
               <span key={tk} style={{ left: pos(tk) }}>{hhmm(tk, tz)}</span>
@@ -118,26 +118,32 @@ export function Home({
   onOpenSettings: () => void;
   onError: (text: string) => void;
 }) {
-  const [view, setView] = useState<DayAgents | null>(null);
+  const { prefs } = useQuotaPrefs();
+  const [raw, setRaw] = useState<DayAgents | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Automated sessions (e.g. Codex's auto-review) are not work you do: left out unless asked for.
+  const view = useMemo<DayAgents | null>(() => {
+    if (!raw || prefs.showAutomated) return raw;
+    const sessions = raw.sessions.filter((s) => !s.automated);
+    return { ...raw, sessions, cost: { ...raw.cost, identified: mergeCost(sessions.map((s) => s.cost)) } };
+  }, [raw, prefs.showAutomated]);
   const [now, setNow] = useState(Date.now());
   const [yesterday, setYesterday] = useState<SessionList | null>(null);
   const [hooks, setHooks] = useState<HooksView | null>(null);
-  const { prefs } = useQuotaPrefs();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(id);
   }, []);
   useEffect(() => {
     if (!hasData) {
-      setView(null);
+      setRaw(null);
       setLoaded(true);
       return;
     }
     let live = true;
     api
       .dayAgents(day)
-      .then((v) => live && (setView(v), setLoaded(true)))
+      .then((v) => live && (setRaw(v), setLoaded(true)))
       .catch((e) => live && (setLoaded(true), onError(errorText(e))));
     return () => {
       live = false;

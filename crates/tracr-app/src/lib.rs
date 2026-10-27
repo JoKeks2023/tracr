@@ -632,7 +632,17 @@ impl Reader {
 
     /// Sessions active between two reporting days (inclusive), newest first.
     pub fn sessions(&self, from: &str, to: &str) -> Result<day::SessionList> {
-        day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)
+        let mut list = day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)?;
+        if !quota::load_prefs(&self.data_dir).show_automated {
+            // Automated sessions (e.g. Codex's auto-review) are not work the user does: out of the list and its total.
+            list.sessions.retain(|s| !s.automated);
+            let mut cost = day::CostView::default();
+            for s in &list.sessions {
+                cost.absorb(&s.cost);
+            }
+            list.cost = cost;
+        }
+        Ok(list)
     }
 
     /// One session laid out in time: actors, prompts, tool calls, request sizes.

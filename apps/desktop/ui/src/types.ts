@@ -91,6 +91,8 @@ export interface DayCost {
 }
 
 export interface SessionDay {
+  /** Work the provider runs by itself (e.g. Codex's auto-review). */
+  automated: boolean;
   session_id: string;
   provider: string;
   native_session_id: string;
@@ -445,6 +447,7 @@ export interface QuotaPrefs {
   rings: boolean;
   notify_waiting: boolean;
   notify_finished: boolean;
+  show_automated: boolean;
 }
 
 export interface LiveSession {

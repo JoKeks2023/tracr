@@ -133,3 +133,20 @@ fn sessions_outside_a_repository_group_by_working_folder() {
     assert_eq!(o.entries[0].sessions, 1);
     assert!(o.entries[0].key.starts_with("dir:"));
 }
+
+#[test]
+fn a_session_of_only_automated_models_is_automated_and_one_without_usage_is_not() {
+    use tracr_app::day::is_automated;
+    assert!(is_automated([Some("codex-auto-review")].into_iter()));
+    assert!(is_automated(
+        [Some("codex-auto-review"), Some("<synthetic>")].into_iter()
+    ));
+    assert!(!is_automated(
+        [Some("codex-auto-review"), Some("gpt-6.1-sol")].into_iter()
+    ));
+    assert!(
+        !is_automated([None].into_iter()),
+        "an unknown model is not assumed automated"
+    );
+    assert!(!is_automated(std::iter::empty()), "no usage, no verdict");
+}

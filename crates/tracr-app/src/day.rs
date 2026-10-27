@@ -235,8 +235,25 @@ pub struct DayCost {
     pub spanning: CostView,
 }
 
+/// Models that only ever run on the provider's own initiative. A session whose
+/// identified usage is nothing but these is automated; a session without usage is not.
+pub const AUTOMATED_MODELS: [&str; 2] = ["codex-auto-review", "<synthetic>"];
+
+pub fn is_automated<'a>(models: impl Iterator<Item = Option<&'a str>>) -> bool {
+    let mut any = false;
+    for m in models {
+        any = true;
+        if !m.is_some_and(|m| AUTOMATED_MODELS.contains(&m)) {
+            return false;
+        }
+    }
+    any
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionDay {
+    /// Work the provider runs by itself (e.g. Codex's auto-review): not a session the user works in.
+    pub automated: bool,
     pub session_id: String,
     pub provider: String,
     pub native_session_id: String,
@@ -700,6 +717,12 @@ fn session_days(
             .collect();
         let (repository, repository_label) = derived::session_repository(conn, &s.id)?;
         sessions.push(SessionDay {
+            automated: is_automated(
+                usage
+                    .iter()
+                    .filter(|u| u.identified)
+                    .map(|u| u.model.as_deref()),
+            ),
             cost,
             reported,
             repository,
