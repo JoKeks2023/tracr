@@ -17,3 +17,9 @@ Backend: `tracr-store/src/derived.rs` (`tool_call_times_of`, `usage_points_of`, 
 UI: tabs in the Sitzungen detail (`Sessions.tsx`); `SessionInsights.tsx` has `TraceView` (lanes per actor, your prompts, tool ticks by kind, pauses over 5 min shortened), `ContextView` (request input size over the main chain, peak/latest/requests/cache share, drops marked as inferred), `ToolsView` (counts per tool).
 Choices: no context percentage (the model's limit is not known to tracr); a size drop of more than half is marked "possible compaction, inferred", because compaction markers are extracted but not stored in the derived store; tool failure is not shown (not recorded). The main chain has actor kind `unknown` with no agent id; every non-`known` actor is shown as the main chain.
 Test: `tests/sessions.rs::trace_lays_out_prompts_tools_and_request_sizes_without_content`.
+
+## Start page (Heute)
+
+Reworked `Today.tsx` after a screenshot showed "0m tracked" as the hero while 4 h were unresolved, identical session titles, and a three-lane sensor timeline on the start page.
+Order: facts strip (Erfasst, Ungeklärt, Agenten, Geschätzte Kosten; same weight, unresolved in warning colour), "Braucht dich" row with the action, "Dein Tag" strip (you: tracked/unresolved; agents: when they ran), sessions today with provider, run span and repo·branch, projects only when time is tracked, cost line. The full timeline with device and coverage lanes stays under Arbeitszeit → Agenten-Zeitleiste.
+Also: no "no activity" flash while loading; "1 Abschnitt" singular; unpriced shows "—" instead of "ohne Preis" in every row; a session's span is its run time in the shown period (date added when it crosses midnight); provider names as words.

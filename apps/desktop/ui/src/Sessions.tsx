@@ -107,7 +107,7 @@ export function Sessions({
             <div key={d} className="session-group">
               <h2 className="group-title">{dayLabel(d)}</h2>
               {rows.map((s) => (
-                <SessionRow key={s.session_id} s={s} pricing={list.pricing} selected={s.session_id === selected} onOpen={() => onSelect(s.session_id)} />
+                <SessionRow key={s.session_id} s={s} pricing={list.pricing} tz={list.timezone} selected={s.session_id === selected} onOpen={() => onSelect(s.session_id)} />
               ))}
             </div>
           ))

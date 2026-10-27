@@ -87,3 +87,22 @@ export function tildify(path: string, home: string | null): string {
   const h = home.replace(/\/+$/, "");
   return path === h ? "~" : path.startsWith(`${h}/`) ? `~${path.slice(h.length)}` : path;
 }
+
+/** A provider as a person names it. */
+export function providerName(p: string): string {
+  return ({ claude_code: "Claude Code", codex: "Codex" } as Record<string, string>)[p] ?? p.replaceAll("_", " ");
+}
+
+/** "1 interval" / "3 intervals" (the unclear windows of a day). */
+export function intervals(n: number): string {
+  return n === 1 ? t("intervalOne") : t("unclearHint", { n });
+}
+
+/** "09:12–10:40", or with the first day named when the session crossed midnight. */
+export function spanLabel(first: number, last: number, tz: string): string {
+  const day = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(ms);
+  const range = `${hhmm(first, tz)}–${hhmm(last, tz)}`;
+  if (day(first) === day(last)) return range;
+  const short = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: tz }).format(first);
+  return `${short} ${range}`;
+}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { duration, estimate, reasonText } from "./format";
+import { duration, estimate, intervals, reasonText } from "./format";
 import { t } from "./i18n";
 import type { DayAgents, DayCost, HumanDay, ProjectTotal } from "./types";
 
@@ -83,7 +83,7 @@ export function Attention({ human, windows, onResolve }: { human: { unknown_ms: 
     <section className="attention">
       <div>
         <div className="attention-title">{t("unclearTitle", { time: duration(human.unknown_ms) })}</div>
-        <div className="muted">{t("unclearHint", { n: windows })}</div>
+        <div className="muted">{intervals(windows)}</div>
         {why && (
           <details className="why">
             <summary>{t("why")}</summary>

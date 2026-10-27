@@ -599,3 +599,29 @@ table.data tr + tr td { border-top: 1px solid var(--hairline); }
 .ctx-drop { fill: var(--warning-11); }
 .tools-table td:last-child { display: flex; align-items: center; gap: var(--space-3); }
 .bar-track.inline { display: inline-block; width: 8rem; }
+
+/* ---- Today: the start page (T-0015) -------------------------------------------- */
+.today { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-8); }
+.today-date { margin: calc(-1 * var(--space-4)) 0 calc(-1 * var(--space-4)); font-size: 13px; }
+.facts-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-6); margin: 0; padding-bottom: var(--space-6); border-bottom: 1px solid var(--hairline); }
+.fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fact dt { font: 500 12px/1.5 var(--font-sans); letter-spacing: 0.01em; color: var(--text-muted); }
+.fact dd { margin: 0; font: 600 28px/1.15 var(--font-display, var(--font-sans)); letter-spacing: -0.015em; color: var(--gray-12); font-variant-numeric: tabular-nums; }
+.fact.warn dd { color: var(--warning-11); }
+.fact.muted dd { color: var(--text-muted); }
+.fact-note { font-size: 12px; color: var(--text-muted); }
+.needs-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-3); border-radius: var(--radius-md); background: var(--gray-3); font-size: 13px; }
+.needs-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--warning-9); flex: none; }
+.needs-row .spacer { flex: 1; }
+.strip { display: flex; flex-direction: column; gap: var(--space-2); }
+.strip-lane { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); align-items: center; gap: var(--space-3); }
+.strip-label { font-size: 12px; color: var(--text-muted); }
+.strip-track { position: relative; height: 0.875rem; border-radius: 3px; background: var(--gray-3); }
+.strip-track.ticks { height: 1rem; background: none; }
+.strip-track.ticks span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--text-muted); }
+.strip-seg { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.strip-seg.counted, .swatch.counted { background: var(--accent-9); }
+.strip-seg.unclear, .swatch.unclear { background: var(--warning-9); }
+.strip-seg.agent, .swatch.agent { background: var(--gray-9); }
+.legend-line { display: flex; gap: var(--space-4); margin: var(--space-1) 0 0 calc(4.5rem + var(--space-3)); }
+@media (max-width: 720px) { .facts-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
