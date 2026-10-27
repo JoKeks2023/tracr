@@ -18,7 +18,8 @@ fn codex_line(ts: &str, primary: f64, secondary: f64) -> String {
                 "limit_id": "codex",
                 "primary": {"used_percent": primary, "window_minutes": 300, "resets_at": 4_102_444_800i64},
                 "secondary": {"used_percent": secondary, "window_minutes": 10080, "resets_at": 4_102_444_800i64},
-                "plan_type": "plus"
+                "plan_type": "plus",
+                "credits": {"has_credits": false, "unlimited": false, "balance": "0"}
             }
         }
     })
@@ -178,4 +179,22 @@ fn install_without_a_settings_file_or_status_line_and_uninstall_removes_it() {
     let v: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&settings).unwrap()).unwrap();
     assert!(v.get("statusLine").is_none());
+}
+
+#[test]
+fn codex_credits_are_read_with_the_limits() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("rollout-c.jsonl"),
+        codex_line("2026-10-27T10:05:00.000Z", 40.0, 26.0) + "\n",
+    )
+    .unwrap();
+    let l = limits::read(
+        &dir.path().join("data"),
+        &[dir.path().to_path_buf()],
+        &dir.path().join("none.json"),
+    );
+    assert_eq!(l.credits.len(), 1);
+    assert!(!l.credits[0].has_credits && !l.credits[0].unlimited);
+    assert_eq!(l.credits[0].balance.as_deref(), Some("0"));
 }

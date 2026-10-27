@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
-import { compact, modelName } from "../format";
+import { compact, modelName, providerName } from "../format";
 import { t } from "../i18n";
 import type { Limits, SessionList } from "../types";
 import { useQuotaPrefs } from "./quota";
-import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch } from "./ui";
+import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, clockLabel } from "./ui";
 
 interface ModelRow {
   model: string;
@@ -109,6 +109,12 @@ export function LimitsPage({
           <p className="vnote">{t("quotaNone")}. {t("quotaNoneHint")}</p>
         </Panel>
       )}
+
+      {(limits?.credits ?? []).map((c) => (
+        <Panel key={c.provider} title={`${providerName(c.provider)} · ${t("credits")}`} aside={t("statedAt", { time: clockLabel(c.observed_at) })}>
+          <p className="mono">{c.unlimited ? t("creditsUnlimited") : c.has_credits ? `${c.balance ?? "?"}` : t("creditsNone")}</p>
+        </Panel>
+      ))}
 
       <Panel title="Claude Code" aside={tap?.installed ? (tap.chained ? "✓ + status line" : "✓") : undefined}>
         <div className="need" style={{ borderTop: 0, paddingTop: 0 }}>

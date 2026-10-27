@@ -41,9 +41,21 @@ pub struct LimitWindow {
     pub expired: bool,
 }
 
+/// Prepaid credits as Codex states them next to its limits.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Credits {
+    pub provider: String,
+    pub has_credits: bool,
+    pub unlimited: bool,
+    /// The balance exactly as written, e.g. "0".
+    pub balance: Option<String>,
+    pub observed_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Limits {
     pub windows: Vec<LimitWindow>,
+    pub credits: Vec<Credits>,
     pub claude_tap: TapState,
 }
 
@@ -97,7 +109,7 @@ fn collect_rollouts(dir: &Path, depth: u8, out: &mut Vec<(SystemTime, PathBuf)>)
 }
 
 /// The last `rate_limits` of one rollout file, as windows.
-fn rollout_windows(path: &Path) -> Option<Vec<LimitWindow>> {
+fn rollout_snapshot(path: &Path) -> Option<CodexSnapshot> {
     let file = fs::File::open(path).ok()?;
     let mut file = if path.extension().is_some_and(|e| e == "zst") {
         tracr_ingest::reader::decompress(file).ok()?
@@ -114,10 +126,10 @@ fn rollout_windows(path: &Path) -> Option<Vec<LimitWindow>> {
     text.lines()
         .rev()
         .filter(|l| l.contains("\"rate_limits\""))
-        .find_map(|l| codex_line_windows(l, now))
+        .find_map(|l| codex_line_snapshot(l, now))
 }
 
-fn codex_line_windows(line: &str, now: i64) -> Option<Vec<LimitWindow>> {
+fn codex_line_snapshot(line: &str, now: i64) -> Option<CodexSnapshot> {
     let v: Value = serde_json::from_str(line).ok()?;
     let observed_at = UtcMillis::parse_rfc3339(v.get("timestamp")?.as_str()?)?.0;
     let rl = v.get("payload")?.get("rate_limits")?;
@@ -146,18 +158,40 @@ fn codex_line_windows(line: &str, now: i64) -> Option<Vec<LimitWindow>> {
             plan: plan.clone(),
         });
     }
-    (!out.is_empty()).then_some(out)
+    let credits = rl
+        .get("credits")
+        .filter(|c| c.is_object())
+        .map(|c| Credits {
+            provider: "codex".to_owned(),
+            has_credits: c
+                .get("has_credits")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            unlimited: c.get("unlimited").and_then(Value::as_bool).unwrap_or(false),
+            balance: c.get("balance").and_then(Value::as_str).map(str::to_owned),
+            observed_at,
+        });
+    (!out.is_empty()).then_some(CodexSnapshot {
+        windows: out,
+        credits,
+    })
 }
 
 /// The last answer per rollout file, keyed by path and modification time: the menu bar asks often, a rollout rarely changes.
-type CodexCache = std::collections::HashMap<PathBuf, (SystemTime, Option<Vec<LimitWindow>>)>;
+type CodexCache = std::collections::HashMap<PathBuf, (SystemTime, Option<CodexSnapshot>)>;
+
+#[derive(Debug, Clone)]
+struct CodexSnapshot {
+    windows: Vec<LimitWindow>,
+    credits: Option<Credits>,
+}
 
 fn cache() -> &'static std::sync::Mutex<CodexCache> {
     static C: std::sync::OnceLock<std::sync::Mutex<CodexCache>> = std::sync::OnceLock::new();
     C.get_or_init(Default::default)
 }
 
-fn cached_rollout_windows(path: &Path, modified: SystemTime) -> Option<Vec<LimitWindow>> {
+fn cached_rollout_snapshot(path: &Path, modified: SystemTime) -> Option<CodexSnapshot> {
     let mut c = cache().lock().ok()?;
     if let Some((m, w)) = c.get(path)
         && *m == modified
@@ -165,13 +199,13 @@ fn cached_rollout_windows(path: &Path, modified: SystemTime) -> Option<Vec<Limit
         return w.clone().map(|mut w| {
             // `expired` depends on the clock, not on the file.
             let now = now_ms();
-            for x in &mut w {
+            for x in &mut w.windows {
                 x.expired = x.resets_at.is_some_and(|r| r < now);
             }
             w
         });
     }
-    let w = rollout_windows(path);
+    let w = rollout_snapshot(path);
     if c.len() > 64 {
         c.clear();
     }
@@ -179,20 +213,24 @@ fn cached_rollout_windows(path: &Path, modified: SystemTime) -> Option<Vec<Limit
     w
 }
 
-/// The newest Codex figures under the approved provider roots.
-pub fn codex_windows(roots: &[PathBuf]) -> Vec<LimitWindow> {
+fn newest_codex_snapshot(roots: &[PathBuf]) -> Option<CodexSnapshot> {
     let mut files = Vec::new();
     for r in roots {
         collect_rollouts(r, 0, &mut files);
     }
     files.sort_by_key(|f| std::cmp::Reverse(f.0));
     // The newest file that carries limits wins; look at a few in case the newest has none yet.
-    for (modified, p) in files.iter().take(6) {
-        if let Some(w) = cached_rollout_windows(p, *modified) {
-            return w;
-        }
-    }
-    Vec::new()
+    files
+        .iter()
+        .take(6)
+        .find_map(|(modified, p)| cached_rollout_snapshot(p, *modified))
+}
+
+/// The newest Codex figures under the approved provider roots.
+pub fn codex_windows(roots: &[PathBuf]) -> Vec<LimitWindow> {
+    newest_codex_snapshot(roots)
+        .map(|s| s.windows)
+        .unwrap_or_default()
 }
 
 // ---- Claude Code: statusLine tap -------------------------------------------------
@@ -427,10 +465,15 @@ pub fn uninstall_tap(data_dir: &Path, settings: &Path) -> Result<()> {
 
 /// Every window the providers have reported: Codex from its rollouts, Claude from the tap.
 pub fn read(data_dir: &Path, provider_roots: &[PathBuf], settings: &Path) -> Limits {
-    let mut windows = codex_windows(provider_roots);
+    let codex = newest_codex_snapshot(provider_roots);
+    let mut windows = codex
+        .as_ref()
+        .map(|s| s.windows.clone())
+        .unwrap_or_default();
     windows.extend(claude_windows(data_dir));
     Limits {
         windows,
+        credits: codex.and_then(|s| s.credits).into_iter().collect(),
         claude_tap: tap_state(data_dir, settings),
     }
 }

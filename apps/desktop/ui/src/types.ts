@@ -394,8 +394,16 @@ export interface TapState {
   chained: boolean;
   settings_path: string;
 }
+export interface Credits {
+  provider: string;
+  has_credits: boolean;
+  unlimited: boolean;
+  balance: string | null;
+  observed_at: number;
+}
 export interface Limits {
   windows: LimitWindow[];
+  credits: Credits[];
   claude_tap: TapState;
 }
 

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
 import { ago, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
-import type { DayAgents, Limits, SessionDay } from "../types";
+import { shiftAnchor } from "../nav";
+import type { DayAgents, Limits, SessionDay, SessionList } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, Stat, clockLabel, windowName } from "./ui";
 
@@ -118,6 +119,7 @@ export function Home({
   const [view, setView] = useState<DayAgents | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [yesterday, setYesterday] = useState<SessionList | null>(null);
   const { prefs } = useQuotaPrefs();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -138,6 +140,18 @@ export function Home({
       live = false;
     };
   }, [day, hasData, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let live = true;
+    const y = shiftAnchor("day", day, -1);
+    api
+      .sessions(y, y)
+      .then((l) => live && setYesterday(l))
+      .catch(() => live && setYesterday(null));
+    return () => {
+      live = false;
+    };
+  }, [day, reloadKey]);
 
   const sum = useMemo(() => {
     if (!view) return null;
@@ -190,7 +204,7 @@ export function Home({
         <Stat label={t("todayCounted")} value={duration(sum.counted)} note={view.review ? t("reviewed") : t("provisional")} />
         <Stat label={t("todayUnclear")} value={duration(sum.unknown)} tone={sum.unknown > 0 ? "warn" : "muted"} note={sum.windows > 0 ? intervals(sum.windows) : undefined} />
         <Stat label={t("todayAgents")} value={duration(sum.agentMs)} note={sessionsN(view.sessions.length)} />
-        <Stat label={t("statCost")} value={cost.amount_nano === null ? "—" : estimate(cost, view.cost.pricing.currency)} note={cost.amount_nano === null ? t("unpricedWord") : t("todayCostNote")} tone={cost.amount_nano === null ? "muted" : undefined} />
+        <Stat label={t("statCost")} value={cost.amount_nano === null ? "—" : estimate(cost, view.cost.pricing.currency)} note={[cost.amount_nano === null ? t("unpricedWord") : t("todayCostNote"), yesterday && yesterday.sessions.length > 0 ? t("yesterdayCost", { x: yesterday.cost.amount_nano === null ? "—" : estimate(yesterday.cost, yesterday.pricing.currency) }) : ""].filter(Boolean).join(" · ")} tone={cost.amount_nano === null ? "muted" : undefined} />
       </div>
 
       <div className="row2">
