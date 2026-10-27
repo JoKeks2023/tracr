@@ -4,6 +4,7 @@ import { tildify } from "../format";
 import { t } from "../i18n";
 import { RootsPicker } from "../RootsPicker";
 import type { Limits, ProjectOp, ProjectsView, Status } from "../types";
+import { useQuotaPrefs } from "./quota";
 import { Panel } from "./ui";
 
 type Pane = "sources" | "projects" | "time" | "quota" | "recording" | "about";
@@ -260,6 +261,7 @@ export function Settings({
       return value === "" ? t("zoneSystem", { zone: status.system_timezone ?? "" }) : t("zoneSet", { zone: value });
     });
   const tap = limits?.claude_tap;
+  const { prefs, set: setPrefs } = useQuotaPrefs();
 
   return (
     <div className="st">
@@ -327,6 +329,20 @@ export function Settings({
                 </button>
               </Row>
               {tap && <Row label={t("tapFile")}><span className="mono path">{tildify(tap.settings_path, status.home)}</span></Row>}
+            </Panel>
+            <Panel title={t("quotaDisplay")}>
+              <Row label={t("quotaDisplay")} note={t("quotaDisplayNote")}>
+                <div className="seg" role="group" aria-label={t("quotaDisplay")}>
+                  <button aria-pressed={!prefs.remaining} onClick={() => setPrefs({ remaining: false })}>{t("quotaUsed")}</button>
+                  <button aria-pressed={prefs.remaining} onClick={() => setPrefs({ remaining: true })}>{t("quotaLeft")}</button>
+                </div>
+              </Row>
+              <Row label={t("quotaPaceAware")} note={t("quotaPaceAwareNote")}>
+                <div className="seg" role="group" aria-label={t("quotaPaceAware")}>
+                  <button aria-pressed={prefs.paceAware} onClick={() => setPrefs({ paceAware: true })}>{t("on")}</button>
+                  <button aria-pressed={!prefs.paceAware} onClick={() => setPrefs({ paceAware: false })}>{t("off")}</button>
+                </div>
+              </Row>
             </Panel>
             <Panel title="Codex">
               <p className="vnote">{t("codexQuotaNote")}</p>

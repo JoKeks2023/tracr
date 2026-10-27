@@ -164,7 +164,8 @@ export function Home({
   }
 
   const tz = view.timezone;
-  const windows = [...(limits?.windows ?? [])].sort((a, b) => a.provider.localeCompare(b.provider) || (a.window_minutes ?? 0) - (b.window_minutes ?? 0));
+  // Tightest first: what runs out soonest is what you look at first.
+  const windows = [...(limits?.windows ?? [])].sort((a, b) => Number(a.expired) - Number(b.expired) || b.used_percent - a.used_percent);
   const reached = windows.filter((w) => !w.expired && w.used_percent >= 100);
   const hasClaude = view.sessions.some((s) => s.provider === "claude_code");
   const needs: { key: string; color: string; title: string; note: string; action: string; run: () => void }[] = [];

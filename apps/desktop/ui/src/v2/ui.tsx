@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { locale, t } from "../i18n";
 import { providerName } from "../format";
 import type { LimitWindow } from "../types";
+import { forecastOf, levelOf, useNow, useQuotaPrefs } from "./quota";
 
 export function Stat({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: "warn" | "muted" }) {
   return (
@@ -38,34 +39,53 @@ export function windowName(w: LimitWindow): string {
   return `${providerName(w.provider)} · ${span}`;
 }
 
-export function toneOf(pct: number): "" | "warn" | "bad" {
-  return pct >= 100 ? "bad" : pct >= 80 ? "warn" : "";
+/** "1h 12m" / "38m" for a span of milliseconds. */
+export function spanText(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h >= 48 ? `${Math.round(h / 24)}d` : `${h}h ${m % 60}m`;
 }
 
-/** One provider-reported window: the percent, a bar, when it resets and when it was stated. */
+/** One provider-reported window: the figure, a bar with a pace tick, when it resets, whether it lasts. */
 export function QuotaBar({ w, big }: { w: LimitWindow; big?: boolean }) {
-  const pct = Math.max(0, Math.min(100, w.used_percent));
-  const tone = w.expired ? "" : toneOf(w.used_percent);
-  const reached = !w.expired && w.used_percent >= 100;
+  const { prefs } = useQuotaPrefs();
+  const now = useNow();
+  const used = Math.max(0, Math.min(100, w.used_percent));
+  const shown = prefs.remaining ? 100 - used : used;
+  const level = levelOf(w, prefs.paceAware);
+  const fc = forecastOf(w);
+  const reached = !w.expired && used >= 100;
+  const tone = level === "ok" ? "" : level === "warn" ? "warn" : "bad";
+  const resets = w.resets_at && !w.expired ? t("resetsIn", { time: spanText(w.resets_at - now), at: clockLabel(w.resets_at) }) : "";
+  const forecast = w.expired
+    ? t("windowExpired")
+    : reached
+      ? t("limitReached")
+      : fc
+        ? fc.runsOutAt !== null
+          ? t("runsOut", { in: spanText(fc.runsOutAt - now), before: spanText(w.resets_at! - fc.runsOutAt) })
+          : t("lastsUntilReset")
+        : "";
+  const paceText = fc ? t(fc.pace === "hot" ? "paceHot" : fc.pace === "room" ? "paceRoom" : "paceOk") : null;
   return (
     <div className="q">
       <div className="top">
         <span className="nm">{windowName(w)}</span>
-        <span className={`mono ${big ? "qbig" : ""}`}>{Math.round(w.used_percent)} %</span>
+        <span className={`mono ${big ? "qbig" : ""}`} title={prefs.remaining ? t("quotaLeft") : t("quotaUsed")}>
+          {Math.round(shown)} %{big && <small className="qwhat">{prefs.remaining ? t("quotaLeft") : t("quotaUsed")}</small>}
+        </span>
       </div>
-      <div className={`meter ${tone}`} role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label={windowName(w)}>
-        <i style={{ width: `${pct}%`, opacity: w.expired ? 0.4 : 1 }} />
+      <div className={`meter ${tone}`} role="progressbar" aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100} aria-label={`${windowName(w)}: ${Math.round(used)} % ${t("quotaUsed")}`}>
+        <i style={{ width: `${used}%`, opacity: w.expired ? 0.4 : 1 }} />
+        {fc && <b className="tick" style={{ left: `${Math.min(100, fc.elapsed * 100)}%` }} title={t("paceTick")} />}
       </div>
-      <div className="vnote">
-        {w.expired
-          ? t("windowExpired")
-          : reached
-            ? `${t("limitReached")}${w.resets_at ? ` · ${t("resetsAt", { time: clockLabel(w.resets_at) })}` : ""}`
-            : w.resets_at
-              ? t("resetsAt", { time: clockLabel(w.resets_at) })
-              : ""}{" "}
-        · {t("statedAt", { time: clockLabel(w.observed_at) })}
+      <div className="vnote qline">
+        {resets && <span>{resets}</span>}
+        {paceText && <span className={`pace ${fc!.pace}`}>{paceText}</span>}
       </div>
+      {forecast && <div className="vnote">{forecast}</div>}
+      <div className="vnote">{t("statedAt", { time: clockLabel(w.observed_at) })}</div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { Home } from "./v2/Home";
 import { LimitsPage } from "./v2/LimitsPage";
 import { Projects } from "./v2/Projects";
 import { Rail } from "./v2/Rail";
+import { QuotaPrefsProvider } from "./v2/quota";
 import "./v2/theme.css";
 import { isoToday, periodLabel, rangeOf, shiftAnchor, type Area, type Scope } from "./nav";
 import { TimerControl } from "./TimerControl";
@@ -341,6 +342,7 @@ export function App() {
   );
 
   return (
+    <QuotaPrefsProvider>
     <div className="v2">
       <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setArea("settings")} />
       <div className="main">
@@ -573,5 +575,6 @@ export function App() {
       {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
       {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
+    </QuotaPrefsProvider>
   );
 }
