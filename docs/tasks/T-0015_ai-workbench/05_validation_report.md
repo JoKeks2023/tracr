@@ -20,3 +20,9 @@ NOT done: installing the tap into the real `~/.claude/settings.json` (it is an o
 
 Checked: fmt, clippy `-D warnings`, `cargo test --workspace --exclude tracr-desktop`, `tsc --noEmit`, debug build; the window (dark, German, wide) for Heute, Projekte, Limits and Zeit against the demo ledger (screenshots of the tracr window only).
 NOT verified: light appearance, English, narrow window, keyboard use and focus order, VoiceOver, the menu shortcuts (⌘1 to ⌘4, ⌘K), session page tabs and the Claude tap switch in the real window (no clicking in the running app), the tap with a live Claude Code session. The design-review gate (12 questions) is not completed.
+
+## Quota, menu bar, hooks
+
+Checked: fmt, clippy `-D warnings`, `cargo test --workspace --exclude tracr-desktop` (quota 8, hooks 3, limits 6 tests), `tsc`; the tap and the hooks end to end with the real debug CLI against temp settings (install keeps existing hooks, payload text is not stored, uninstall restores the file); Heute in the real window with live Claude figures from the user's own tap (Claude 5 h and weekly windows, pace badge, forecast line, "yesterday" cost).
+NOT verified: the menu bar title and tray menu lines (the screenshot tool captures only the window), notifications (macOS needs a bundled app with permission; a `target/debug` build may not show any), the hooks with a live Claude Code session (not installed into the real settings), the rings view, the Notices pane, light mode and English.
+Caveat found: the user's real `~/.claude/settings.json` currently routes the status line through the debug build and a scratchpad data directory (switched on from the demo app). It must be switched off before those paths disappear.
