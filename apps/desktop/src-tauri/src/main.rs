@@ -353,6 +353,39 @@ async fn session_trace(
         .map_err(err)
 }
 
+fn claude_settings() -> Result<PathBuf, String> {
+    tracr_app::limits::default_claude_settings().ok_or_else(|| "no home directory".to_owned())
+}
+
+/// What the providers report about their usage limits (percent of a window).
+#[tauri::command]
+async fn limits(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::limits::Limits, String> {
+    let settings = claude_settings()?;
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.limits(&settings))
+        .map_err(err)
+}
+
+/// Opt in: route Claude Code's statusLine through tracr (a copy of the settings is made first).
+#[tauri::command]
+async fn limits_tap(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    if !install {
+        return tracr_app::limits::uninstall_tap(&dir, &settings).map_err(err);
+    }
+    let cli = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(|p| p.join("tracr"))
+        .filter(|p| p.exists())
+        .ok_or_else(|| "the tracr command line tool was not found next to the app".to_owned())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    tracr_app::limits::install_tap(&dir, &settings, &cli, now).map_err(err)
+}
+
 #[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
@@ -877,6 +910,8 @@ fn main() {
             days,
             day_agents,
             sessions,
+            limits,
+            limits_tap,
             session_trace,
             refresh,
             export_csv,

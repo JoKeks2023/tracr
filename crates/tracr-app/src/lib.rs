@@ -9,6 +9,7 @@ pub mod day;
 pub mod derive;
 pub mod derive_human;
 pub mod export;
+pub mod limits;
 pub mod manual;
 pub mod pricing;
 pub mod projects;
@@ -635,6 +636,16 @@ impl Reader {
     /// One session laid out in time: actors, prompts, tool calls, request sizes.
     pub fn session_trace(&self, session_id: &str) -> Result<trace::SessionTrace> {
         trace::session_trace(&self.derived()?, &self.reporting_zone()?, session_id)
+    }
+
+    /// Limit figures the providers reported (percent of a window), newest known.
+    pub fn limits(&self, settings: &Path) -> Result<limits::Limits> {
+        let roots: Vec<PathBuf> = self
+            .provider_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        Ok(limits::read(&self.data_dir, &roots, settings))
     }
 
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
