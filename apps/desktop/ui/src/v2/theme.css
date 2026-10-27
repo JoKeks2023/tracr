@@ -213,3 +213,16 @@
 .v2 .ringcard { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
 .v2 .ringtext { font: 600 17px -apple-system, system-ui, sans-serif; fill: var(--tx-hi); font-variant-numeric: tabular-nums; }
 .v2 .ringname { color: var(--tx-2); margin-top: 4px; }
+
+/* divide time */
+.interval-sheet .split, .split { display: flex; flex-direction: column; gap: 10px; }
+.split-bar { display: flex; gap: 2px; height: 26px; border-radius: 6px; overflow: hidden; }
+.split-seg { display: flex; align-items: center; justify-content: center; min-width: 2px; font-size: 11px; color: var(--acc-ink); background: var(--acc); }
+.split-seg.brk { background: var(--dim); }
+.split-seg.leave { background: var(--warn); }
+.split-parts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.split-parts li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); }
+.split-parts li .select, .split-parts li select { max-width: 16rem; }
+.split-cut { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.v2 aside.sheet:focus, .v2 aside.sheet:focus-visible, .v2 .palette:focus, .v2 .palette:focus-visible { outline: none; }

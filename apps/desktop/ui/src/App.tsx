@@ -8,6 +8,7 @@ import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
 import { Attention, Bars, BigNumber, CostLine } from "./Overview";
 import { Palette, type Command } from "./Palette";
+import { DayTools } from "./v2/DayTools";
 import { Bar } from "./v2/Bar";
 import { Home } from "./v2/Home";
 import { LimitsPage } from "./v2/LimitsPage";
@@ -489,6 +490,7 @@ export function App() {
               state={`${view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}${view.discrepancy ? ` · ${t("newEvidenceDiffers")}` : ""}`}
             />
             <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
+            {canEditNow && <DayTools view={view} targets={targets} loadTargets={loadTargets} onChanged={corrected} />}
             <Bars view={view} human={totals.human} />
             {rootsOpen && status && (
               <div className="banner" role="status" title={status.proposed_roots.filter((r) => !r.approved).map((r) => tildify(r.path, status.home)).join("\n")}>
@@ -548,6 +550,7 @@ export function App() {
       {reviewing && view && (
         <ReviewList
           day={view}
+          targets={targets}
           onOpen={(a) => {
             setReviewing(false);
             openAtom(a);

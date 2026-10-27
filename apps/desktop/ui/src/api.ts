@@ -24,6 +24,8 @@ export const api = {
   getQuotaPrefs: () => invoke<QuotaPrefs>("get_quota_prefs"),
   setQuotaPrefs: (prefs: QuotaPrefs) => invoke<void>("set_quota_prefs", { prefs }),
   refresh: () => invoke<Refreshed>("refresh"),
+  /** Several corrections as one step: all are recorded or none. */
+  correctBatch: (reqs: CorrectionRequest[]) => invoke<string[]>("correct_batch", { reqs }),
   correct: (req: CorrectionRequest) => invoke<string>("correct", { req }),
   manual: (req: ManualRequest) => invoke<string>("manual", { req }),
   review: (day: string, reason?: string) => invoke<string>("review", { day, reason }),

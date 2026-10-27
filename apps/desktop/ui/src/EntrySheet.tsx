@@ -2,29 +2,9 @@ import { useEffect, useState } from "react";
 import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
+import { toMs, toTime } from "./format";
 import { TargetSelect, targetKey } from "./TargetSelect";
 import type { ManualEntryInfo, TargetOption } from "./types";
-
-/** "HH:MM" in `tz` on `day` → epoch ms. */
-function toMs(day: string, time: string, tz: string): number | null {
-  const [h, m] = time.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  // Find the instant whose wall time in `tz` is day + time (two passes handle DST).
-  let guess = Date.parse(`${day}T${time}:00Z`);
-  for (let i = 0; i < 2; i++) {
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
-    }).formatToParts(guess);
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-    const shown = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
-    guess += Date.parse(`${day}T${time}:00Z`) - shown;
-  }
-  return guess;
-}
-
-function toTime(ms: number, tz: string): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(ms);
-}
 
 /** Add a retroactive entry, or edit an existing entry. */
 export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {

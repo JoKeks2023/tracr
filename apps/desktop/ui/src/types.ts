@@ -180,7 +180,7 @@ export interface CorrectionInfo {
 export interface TargetOption {
   key: string;
   label: string;
-  group: "repository" | "category" | "other";
+  group: "project" | "repository" | "category" | "other";
 }
 
 export interface CorrectionRequest {
