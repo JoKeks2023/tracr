@@ -287,6 +287,8 @@ export interface Status {
   ledger_present: boolean;
   approved_roots: string[];
   approved_repository_roots: string[];
+  approved_config_roots: string[];
+  proposed_config_root: string | null;
   proposed_roots: { path: string; approved: boolean }[];
   home: string | null;
   app_version: string;
@@ -457,9 +459,15 @@ export interface LiveSession {
   since: number;
   kind: string | null;
 }
+export interface ResponseTimes {
+  count: number;
+  mean_ms: number;
+  max_ms: number;
+}
 export interface HooksView {
   installed: boolean;
   live: LiveSession[];
+  response: ResponseTimes;
 }
 
 export interface ModelCost {
@@ -520,4 +528,31 @@ export interface CostAlertPrefs {
   window_minutes: number;
   day: number;
   month: number;
+}
+
+export interface RegistryEntry {
+  native_session_id: string;
+  pid: number | null;
+  alive: boolean;
+  status: string | null;
+  status_since: number | null;
+  started_at: number | null;
+  name: string | null;
+  cwd: string | null;
+  version: string | null;
+  kind: string | null;
+}
+export interface SessionStat {
+  native_session_id: string;
+  session_id: string;
+  cost_last_hour_nano: number | null;
+  last_request_at: number;
+  context_tokens: number | null;
+  cache_hit: number | null;
+  cache_ttl_left_ms: number;
+}
+export interface Fleet {
+  registry_available: boolean;
+  entries: RegistryEntry[];
+  stats: SessionStat[];
 }

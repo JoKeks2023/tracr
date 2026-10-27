@@ -29,6 +29,8 @@ static GERMAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::ne
 /// What the menu bar shows for the quota right now, written by the quota watcher.
 static QUOTA_TITLE: Mutex<Option<String>> = Mutex::new(None);
 static QUOTA_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// How many Claude Code sessions wait for you right now (from the hooks), for the menu bar.
+static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn german() -> bool {
     GERMAN.load(std::sync::atomic::Ordering::Relaxed)
@@ -47,6 +49,14 @@ impl Ctx {
         self.data_dir
             .clone()
             .ok_or_else(|| "no data directory: set TRACR_DATA_DIR".to_owned())
+    }
+
+    fn config_roots(&self) -> Vec<String> {
+        self.data_dir
+            .as_ref()
+            .and_then(|d| Reader::open(d).ok())
+            .and_then(|r| r.config_roots().ok())
+            .unwrap_or_default()
     }
 
     fn repository_roots(&self) -> Vec<String> {
@@ -135,6 +145,10 @@ struct Status {
     ledger_present: bool,
     approved_roots: Vec<String>,
     approved_repository_roots: Vec<String>,
+    /// Claude Code's home folder(s) tracr may read (the session registry, later the configuration).
+    approved_config_roots: Vec<String>,
+    /// `~/.claude` when it exists and is not approved yet.
+    proposed_config_root: Option<String>,
     proposed_roots: Vec<ProposedRoot>,
     /// The user's home folder, so the window can show `~/…` instead of a user name.
     home: Option<String>,
@@ -199,6 +213,16 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
             .collect(),
         approved_roots: approved,
         approved_repository_roots: ctx.repository_roots(),
+        approved_config_roots: ctx.config_roots(),
+        proposed_config_root: std::env::var_os("HOME")
+            .map(|h| PathBuf::from(h).join(".claude"))
+            .filter(|p| p.is_dir())
+            .map(|p| p.display().to_string())
+            .filter(|p| {
+                !ctx.config_roots().iter().any(|r| {
+                    r == p || std::fs::canonicalize(p).is_ok_and(|c| c.display().to_string() == *r)
+                })
+            }),
         home: std::env::var("HOME").ok(),
         app_version: env!("CARGO_PKG_VERSION"),
         timezone: zone.as_ref().map(|z| z.name.clone()),
@@ -240,10 +264,24 @@ async fn approve_roots(ctx: tauri::State<'_, Ctx>, paths: Vec<String>) -> Result
     })
 }
 
+/// Approves Claude Code's home folder (`~/.claude`) when it is the proposed one (an explicit user action).
+#[tauri::command]
+async fn approve_config_root(ctx: tauri::State<'_, Ctx>) -> Result<(), String> {
+    let proposed = std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".claude"))
+        .filter(|p| p.is_dir())
+        .ok_or_else(|| "no ~/.claude folder here".to_owned())?;
+    ctx.change_roots("config root approved; restarting", |app| {
+        app.add_root(RootKind::Config, &proposed)?;
+        Ok(())
+    })
+}
+
 fn root_kind(kind: &str) -> Result<RootKind, String> {
     match kind {
         "provider" => Ok(RootKind::Provider),
         "repository" => Ok(RootKind::Repository),
+        "config" => Ok(RootKind::Config),
         other => Err(format!("unknown root kind {other}")),
     }
 }
@@ -315,6 +353,7 @@ async fn choose_root(
     let title = match kind {
         RootKind::Provider => "Choose a folder with agent history tracr may read",
         RootKind::Repository => "Choose a folder that contains your git repositories",
+        RootKind::Config => "Choose Claude Code's home folder (usually ~/.claude)",
     };
     let Some(path) = app
         .dialog()
@@ -431,6 +470,8 @@ async fn set_quota_prefs(
 struct HooksView {
     installed: bool,
     live: Vec<tracr_app::hooks::LiveSession>,
+    /// How long you took to answer in the last 24 hours.
+    response: tracr_app::hooks::ResponseTimes,
 }
 
 #[tauri::command]
@@ -440,6 +481,7 @@ async fn hooks_state(ctx: tauri::State<'_, Ctx>) -> Result<HooksView, String> {
     Ok(HooksView {
         installed: tracr_app::hooks::installed(&settings),
         live: tracr_app::hooks::live(&dir, now_ms(), 24 * 3_600_000),
+        response: tracr_app::hooks::response_times(&dir, now_ms() - 24 * 3_600_000),
     })
 }
 
@@ -484,6 +526,16 @@ async fn set_cost_alerts(
     prefs: tracr_app::costwatch::CostAlertPrefs,
 ) -> Result<(), String> {
     tracr_app::costwatch::save(&ctx.dir()?, &prefs).map_err(err)
+}
+
+/// Which Claude Code sessions run right now, with spend of the last hour and the life of their prompt cache.
+#[tauri::command]
+async fn fleet_state(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::fleet::Fleet, String> {
+    let dir = ctx.dir()?;
+    tauri::async_runtime::spawn_blocking(move || Reader::open(&dir).and_then(|r| r.fleet(now_ms())))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
 }
 
 #[tauri::command]
@@ -910,6 +962,14 @@ fn hook_tick(app: &tauri::AppHandle, last_seen: &mut i64) {
         *last_seen = newest.max(now_ms() - 1); // events before this launch are history
         return;
     }
+    let waiting = tracr_app::hooks::live(&dir, now_ms(), 24 * 3_600_000)
+        .iter()
+        .filter(|l| l.state == tracr_app::hooks::LiveState::Waiting)
+        .count();
+    let changed = WAITING.swap(waiting, std::sync::atomic::Ordering::Relaxed) != waiting;
+    if changed {
+        refresh_tray(app);
+    }
     let reader = Reader::open(&dir).ok();
     for e in events.iter().filter(|e| e.at > *last_seen) {
         let (want, title) = match (e.event.as_str(), german()) {
@@ -944,6 +1004,18 @@ fn refresh_tray(app: &tauri::AppHandle) {
         format!("{}:{:02}", mins / 60, mins % 60)
     });
     let quota_title = QUOTA_TITLE.lock().ok().and_then(|t| t.clone());
+    let waiting = WAITING.load(std::sync::atomic::Ordering::Relaxed);
+    let quota_title = match (waiting, quota_title) {
+        (0, q) => q,
+        (n, q) => {
+            let w = if german() {
+                format!("{n} wartet")
+            } else {
+                format!("{n} waiting")
+            };
+            Some(q.map_or(w.clone(), |q| format!("{w} · {q}")))
+        }
+    };
     let title = match (title, quota_title) {
         (Some(t), Some(q)) => Some(format!("{t}  {q}")),
         (t, q) => t.or(q),
@@ -1215,6 +1287,7 @@ fn main() {
             status,
             approve_roots,
             choose_root,
+            approve_config_root,
             remove_root,
             set_timezone,
             projects,
@@ -1222,6 +1295,7 @@ fn main() {
             days,
             day_agents,
             sessions,
+            fleet_state,
             get_cost_alerts,
             set_cost_alerts,
             analytics,

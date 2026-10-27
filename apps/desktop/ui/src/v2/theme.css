@@ -234,3 +234,9 @@
 
 .v2 .qcard .top { flex-direction: column; align-items: flex-start; gap: 2px; }
 .v2 .qbig { white-space: nowrap; }
+
+/* fleet cards */
+.v2 .card { cursor: pointer; }
+.v2 .cardname { margin-top: -4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2 .chip.hot { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
+.v2 .card-actions { display: flex; gap: 8px; }

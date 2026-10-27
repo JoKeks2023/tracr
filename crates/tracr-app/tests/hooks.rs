@@ -119,3 +119,25 @@ fn install_adds_beside_existing_hooks_and_uninstall_leaves_theirs() {
     assert_eq!(back, original, "exactly as it was");
     assert!(!hooks::installed(&settings));
 }
+
+#[test]
+fn response_times_are_the_waits_between_stop_and_the_next_prompt() {
+    let dir = TempDir::new().unwrap();
+    for (ev, s, at) in [
+        ("Stop", "a", 1_000),
+        ("UserPromptSubmit", "a", 61_000), // 60 s
+        ("Stop", "a", 70_000),
+        ("UserPromptSubmit", "a", 250_000), // 180 s
+        ("Stop", "b", 80_000),              // never answered
+        ("UserPromptSubmit", "c", 90_000),  // a prompt without a stop before it
+    ] {
+        hooks::record(dir.path(), &payload(ev, s), at).unwrap();
+    }
+    let r = hooks::response_times(dir.path(), 0);
+    assert_eq!((r.count, r.mean_ms, r.max_ms), (2, 120_000, 180_000));
+    assert_eq!(
+        hooks::response_times(dir.path(), 100_000).count,
+        0,
+        "events before `since` do not count"
+    );
+}

@@ -346,6 +346,23 @@ export function Settings({
                 <button className="btn" disabled={busy} onClick={() => choose("provider")}>{t("addFolder")}</button>
               </div>
             </Panel>
+            <Panel title={t("configRootTitle")}>
+              <p className="vnote">{t("configRootNote")}</p>
+              <Roots kind="config" roots={status.approved_config_roots} home={status.home} busy={busy} empty={t("configRootNone")} asking={asking} onAsk={setAsking} onRemove={remove} />
+              {status.proposed_config_root && (
+                <div className="found">
+                  <div className="vnote">{t("foundOnMac")}</div>
+                  <div className="srow">
+                    <div className="lbl mono">{tildify(status.proposed_config_root, status.home)}</div>
+                    <div className="ctl">
+                      <button className="btn p" disabled={busy} onClick={() => run(async () => { await api.approveConfigRoot(); return t("configRootApproved"); })}>
+                        {t("setupApprove")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Panel>
             <Panel title={t("automatedTitle")}>
               <Row label={t("automatedShow")} note={t("automatedNote")}>
                 <div className="seg" role="group" aria-label={t("automatedShow")}>

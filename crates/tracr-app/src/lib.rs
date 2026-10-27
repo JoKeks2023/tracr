@@ -11,6 +11,7 @@ pub mod day;
 pub mod derive;
 pub mod derive_human;
 pub mod export;
+pub mod fleet;
 pub mod hooks;
 pub mod limits;
 pub mod manual;
@@ -66,6 +67,8 @@ pub fn proposed_provider_roots() -> Vec<PathBuf> {
         .collect()
 }
 pub const REPOSITORY_ROOTS_KEY: &str = "approved_repository_roots";
+/// Folders tracr may read as Claude Code's own home (`~/.claude`): the session registry and, later, its configuration.
+pub const CONFIG_ROOTS_KEY: &str = "approved_config_roots";
 const CLIENT: &str = "tracr-cli";
 
 /// The adapters tracr ships (T-0004: Claude Code transcripts).
@@ -80,6 +83,8 @@ pub fn registry() -> Registry {
 pub enum RootKind {
     Provider,
     Repository,
+    /// Claude Code's home folder (`~/.claude`).
+    Config,
 }
 
 impl RootKind {
@@ -87,6 +92,7 @@ impl RootKind {
         match self {
             Self::Provider => PROVIDER_ROOTS_KEY,
             Self::Repository => REPOSITORY_ROOTS_KEY,
+            Self::Config => CONFIG_ROOTS_KEY,
         }
     }
 }
@@ -647,6 +653,21 @@ impl Reader {
         Ok(list)
     }
 
+    /// Running sessions (Claude Code's registry, from the approved home folder) with spend of the last hour and cache life.
+    pub fn fleet(&self, now: i64) -> Result<fleet::Fleet> {
+        let roots: Vec<PathBuf> = self
+            .config_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        fleet::fleet(
+            &self.derived()?,
+            &roots,
+            now,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
+    }
+
     /// What has been spent right now (for the cost alerts).
     pub fn cost_measures(
         &self,
@@ -860,6 +881,11 @@ impl Reader {
     /// Approved repository roots, under which git is probed read-only.
     pub fn repository_roots(&self) -> Result<Vec<String>> {
         read_roots(&self.conn, RootKind::Repository)
+    }
+
+    /// Claude Code home folders the user approved (`~/.claude`).
+    pub fn config_roots(&self) -> Result<Vec<String>> {
+        read_roots(&self.conn, RootKind::Config)
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {

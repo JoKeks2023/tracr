@@ -3,7 +3,7 @@ import { api, errorText } from "../api";
 import { ago, mergeCost, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import { shiftAnchor } from "../nav";
-import type { DayAgents, HooksView, Limits, LiveSession, SessionDay, SessionList } from "../types";
+import type { DayAgents, Fleet, HooksView, Limits, LiveSession, RegistryEntry, SessionDay, SessionList, SessionStat } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, Stat, clockLabel, windowName } from "./ui";
 
@@ -64,19 +64,58 @@ function DayStrip({ view }: { view: DayAgents }) {
   );
 }
 
-function SessionCard({ s, view, now, live, onOpen }: { s: SessionDay; view: DayAgents; now: number; live?: LiveSession; onOpen: () => void }) {
+function spanText(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function SessionCard({
+  s,
+  view,
+  now,
+  live,
+  stat,
+  reg,
+  waiting,
+  fleetAt,
+  onOpen,
+}: {
+  s: SessionDay;
+  view: DayAgents;
+  now: number;
+  live?: LiveSession;
+  stat?: SessionStat;
+  reg?: RegistryEntry;
+  waiting?: boolean;
+  /** When the fleet figures were read: the cache life is counted from then. */
+  fleetAt: number;
+  onOpen: () => void;
+}) {
   const models = [...new Set(s.usage.filter((u) => u.identified).map((u) => modelName(u.model)))];
   const subs = s.actors.filter((a) => a.actor_kind === "known").length;
   const run = s.actors.flatMap((a) => a.segments);
   const first = run.length ? Math.min(...run.map((g) => g.start)) : s.first_evidence_at;
   const last = s.last_evidence_at ?? first;
   const agentMs = s.actors.reduce((n, a) => n + a.execution_ms, 0);
+  const [copied, setCopied] = useState(false);
+  const ttl = stat ? fleetAt + stat.cache_ttl_left_ms - now : null;
+  const cacheLeft = ttl === null ? null : Math.round(ttl / 1000) * 1000;
+  const resumable = !!reg?.cwd && !reg?.alive;
+  const copyResume = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const cmd = `cd '${(reg!.cwd ?? "").replace(/'/g, "'\\''")}' && claude --resume ${s.native_session_id}`;
+    void navigator.clipboard?.writeText(cmd).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
   return (
-    <button className="card" onClick={onOpen}>
+    <div className="card" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && onOpen()}>
       <div className="t1">
         <b>{s.label ?? t("noWorkingDir")}</b>
         <span className="mono vnote">{live?.state === "waiting" ? t("liveWaiting", { time: ago(live.since, now) }) : live?.state === "your_turn" ? t("liveYourTurn", { time: ago(live.since, now) }) : last ? ago(last, now) : ""}</span>
       </div>
+      {reg?.name && <div className="vnote cardname">{reg.name}</div>}
       <div className="chips">
         {s.git_branch && <span className="chip mono">{s.git_branch}</span>}
         <span className="chip">{providerName(s.provider)}</span>
@@ -84,15 +123,28 @@ function SessionCard({ s, view, now, live, onOpen }: { s: SessionDay; view: DayA
           <span key={m} className="chip">{m}</span>
         ))}
         {subs > 0 && <span className="chip">{subagentsN(subs)}</span>}
+        {cacheLeft !== null && (reg?.alive || waiting) && (
+          <span className={`chip ${waiting && cacheLeft < 120_000 ? "hot" : ""}`}>
+            {cacheLeft <= 0 ? t("cacheExpired") : t("cacheLeft", { time: spanText(cacheLeft) })}
+          </span>
+        )}
       </div>
       <div className="meters">
         <span>{first && last ? spanLabel(first, last, view.timezone) : ""}</span>
         <span>{duration(agentMs)}</span>
         <span>{compact(sessionTokens(s.usage))} {t("metaTokens")}</span>
+        {stat?.context_tokens ? <span title={t("contextLast")}>{t("contextShort")} {compact(stat.context_tokens)}</span> : null}
+        {stat?.cache_hit != null && <span>{t("cacheShort")} {Math.round(stat.cache_hit * 100)} %</span>}
         <span className="grow" />
+        {stat?.cost_last_hour_nano ? <span className="mono vnote" title={t("costPerHour")}>${(stat.cost_last_hour_nano / 1e9).toFixed(2)}/h</span> : null}
         <span className="mono">{s.cost.amount_nano === null ? "—" : estimate(s.cost, view.cost.pricing.currency)}</span>
       </div>
-    </button>
+      {resumable && (
+        <div className="card-actions">
+          <button className="btn s" onClick={copyResume}>{copied ? t("copied") : t("copyResume")}</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -130,6 +182,8 @@ export function Home({
   const [now, setNow] = useState(Date.now());
   const [yesterday, setYesterday] = useState<SessionList | null>(null);
   const [hooks, setHooks] = useState<HooksView | null>(null);
+  const [fleet, setFleet] = useState<Fleet | null>(null);
+  const [fleetAt, setFleetAt] = useState(Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(id);
@@ -152,7 +206,10 @@ export function Home({
 
   // Who is working, who needs you: every few seconds once the hooks are on.
   useEffect(() => {
-    const read = () => void api.hooksState().then(setHooks).catch(() => setHooks(null));
+    const read = () => {
+      void api.hooksState().then(setHooks).catch(() => setHooks(null));
+      void api.fleetState().then((f) => (setFleet(f), setFleetAt(Date.now()))).catch(() => setFleet(null));
+    };
     read();
     const id = window.setInterval(read, 5_000);
     return () => window.clearInterval(id);
@@ -214,15 +271,30 @@ export function Home({
   if (hasClaude && hooks && !hooks.installed) {
     needs.push({ key: "hooks", color: "var(--info)", title: t("needHooks"), note: t("needHooksNote"), action: t("needOpen"), run: onOpenSettings });
   }
+  if (hasClaude && fleet && !fleet.registry_available) {
+    needs.push({ key: "registry", color: "var(--info)", title: t("needRegistry"), note: t("needRegistryNote"), action: t("needOpen"), run: onOpenSettings });
+  }
   const liveBy = new Map<string, LiveSession>((hooks?.installed ? hooks.live : []).map((l) => [l.session, l]));
   const liveOf = (s: SessionDay) => liveBy.get(s.native_session_id);
+  const regBy = new Map<string, RegistryEntry>((fleet?.entries ?? []).map((e) => [e.native_session_id, e]));
+  const regOf = (s: SessionDay) => regBy.get(s.native_session_id);
+  const statBy = new Map<string, SessionStat>((fleet?.stats ?? []).map((x) => [x.native_session_id, x]));
+  const registry = !!fleet?.registry_available;
   const waiting = sum.sessions.filter((s) => ["waiting", "your_turn"].includes(liveOf(s)?.state ?? ""));
+  // Working: the hook says so, else Claude's registry says busy, else (no information) recent evidence.
   const isWorking = (s: SessionDay) => {
     const l = liveOf(s);
-    return l ? l.state === "working" || l.state === "started" : (s.last_evidence_at ?? 0) >= now - ACTIVE_MS;
+    if (l) return l.state === "working" || l.state === "started";
+    const r = regOf(s);
+    if (registry && r) return r.alive && r.status === "busy";
+    return !registry && (s.last_evidence_at ?? 0) >= now - ACTIVE_MS;
   };
+  const isReady = (s: SessionDay) => registry && !!regOf(s)?.alive && !isWorking(s);
   const active = sum.sessions.filter((s) => !waiting.includes(s) && isWorking(s));
-  const earlier = sum.sessions.filter((s) => !waiting.includes(s) && !isWorking(s)).slice(0, 8);
+  const ready = sum.sessions.filter((s) => !waiting.includes(s) && !isWorking(s) && isReady(s));
+  const earlier = sum.sessions.filter((s) => !waiting.includes(s) && !isWorking(s) && !isReady(s)).slice(0, 8);
+  const burn = (fleet?.stats ?? []).reduce((n, x) => n + (x.cost_last_hour_nano ?? 0), 0) / 1e9;
+  const response = hooks?.installed ? hooks.response : null;
   const cost = view.cost.identified;
 
   return (
@@ -232,6 +304,8 @@ export function Home({
         <Stat label={t("todayUnclear")} value={duration(sum.unknown)} tone={sum.unknown > 0 ? "warn" : "muted"} note={sum.windows > 0 ? intervals(sum.windows) : undefined} />
         <Stat label={t("todayAgents")} value={duration(sum.agentMs)} note={sessionsN(view.sessions.length)} />
         <Stat label={t("statCost")} value={cost.amount_nano === null ? "—" : estimate(cost, view.cost.pricing.currency)} note={[cost.amount_nano === null ? t("unpricedWord") : t("todayCostNote"), yesterday && yesterday.sessions.length > 0 ? t("yesterdayCost", { x: yesterday.cost.amount_nano === null ? "—" : estimate(yesterday.cost, yesterday.pricing.currency) }) : ""].filter(Boolean).join(" · ")} tone={cost.amount_nano === null ? "muted" : undefined} />
+        {burn > 0 && <Stat label={t("burnNow")} value={`$${burn.toFixed(2)}/h`} note={t("burnNote")} />}
+        {response && response.count > 0 && <Stat label={t("responseTime")} value={spanText(response.mean_ms)} note={t("responseNote", { max: spanText(response.max_ms), n: response.count })} />}
       </div>
 
       <div className="row2">
@@ -271,18 +345,24 @@ export function Home({
         {hooks?.installed && (
           <section className="col" aria-label={t("colWaiting")}>
             <h2><i className="sdot" style={{ background: "var(--bad)" }} />{t("colWaiting")} <em>{waiting.length}</em></h2>
-            {waiting.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} live={liveOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
+            {waiting.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} fleetAt={fleetAt} live={liveOf(s)} stat={statBy.get(s.native_session_id)} reg={regOf(s)} waiting onOpen={() => onOpenSession(s.session_id)} />)}
             {waiting.length === 0 && <p className="vnote">{t("needNone")}</p>}
           </section>
         )}
         <section className="col" aria-label={t("colActive")}>
-          <h2><i className="sdot collecting" />{t("colActive")} <em>{active.length}</em></h2>
-          {active.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} live={liveOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
+          <h2><i className="sdot collecting" />{registry || hooks?.installed ? t("colRunning") : t("colActive")} <em>{active.length}</em></h2>
+          {active.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} fleetAt={fleetAt} live={liveOf(s)} stat={statBy.get(s.native_session_id)} reg={regOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
           {active.length === 0 && <p className="vnote">{t("boardNone")}</p>}
         </section>
+        {registry && (
+          <section className="col" aria-label={t("colReady")}>
+            <h2><i className="sdot" style={{ background: "var(--info)" }} />{t("colReady")} <em>{ready.length}</em></h2>
+            {ready.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} fleetAt={fleetAt} live={liveOf(s)} stat={statBy.get(s.native_session_id)} reg={regOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
+          </section>
+        )}
         <section className="col" aria-label={t("colEarlier")}>
-          <h2><i className="sdot" />{t("colEarlier")} <em>{sum.sessions.length - active.length}</em></h2>
-          {earlier.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} onOpen={() => onOpenSession(s.session_id)} />)}
+          <h2><i className="sdot" />{t("colEarlier")} <em>{sum.sessions.length - active.length - waiting.length - ready.length}</em></h2>
+          {earlier.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} fleetAt={fleetAt} stat={statBy.get(s.native_session_id)} reg={regOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
         </section>
       </div>
 

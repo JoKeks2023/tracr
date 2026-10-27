@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-export type RootKind = "provider" | "repository";
+export type RootKind = "provider" | "repository" | "config";
 import type { ProjectOp, ProjectsView } from "./types";
-import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, Analytics, CostAlertPrefs, Status, TargetOption } from "./types";
+import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, Analytics, CostAlertPrefs, Fleet, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
 export const api = {
@@ -18,6 +18,8 @@ export const api = {
   limitsTap: (install: boolean) => invoke<void>("limits_tap", { install }),
   /** Sessions of a range grouped by project, repository or none. */
   projectOverview: (from: string, to: string) => invoke<ProjectOverview>("project_overview", { from, to }),
+  /** Running Claude Code sessions (registry of the approved home), spend of the last hour, cache life. */
+  fleetState: () => invoke<Fleet>("fleet_state"),
   hooksState: () => invoke<HooksView>("hooks_state"),
   /** Opt in or out of Claude Code's hooks (needs you, your turn); a copy of the settings is made first. */
   hooksSet: (install: boolean) => invoke<void>("hooks_set", { install }),
@@ -35,6 +37,8 @@ export const api = {
   review: (day: string, reason?: string) => invoke<string>("review", { day, reason }),
   dismiss: (day: string, fingerprint: string) => invoke<string>("dismiss", { day, fingerprint }),
   targets: () => invoke<TargetOption[]>("targets"),
+  /** Approves `~/.claude` (Claude Code's home: the session registry, later its configuration). */
+  approveConfigRoot: () => invoke<void>("approve_config_root"),
   approveRoots: (paths: string[]) => invoke<void>("approve_roots", { paths }),
   /** Opens the native folder panel and approves the pick. Resolves to the path, or null if cancelled. */
   chooseRoot: (kind: RootKind) => invoke<string | null>("choose_root", { kind }),

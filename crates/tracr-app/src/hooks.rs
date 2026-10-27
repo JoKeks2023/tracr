@@ -258,3 +258,38 @@ pub fn uninstall(settings: &Path) -> Result<()> {
     }
     write_atomically(settings, &v)
 }
+
+/// How long you took to answer: the time from Claude finishing (Stop) to your next prompt in the same session.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct ResponseTimes {
+    pub count: i64,
+    pub mean_ms: i64,
+    pub max_ms: i64,
+}
+
+/// Waits between a Stop and the next prompt of the same session, for events since `since`.
+pub fn response_times(data_dir: &Path, since: i64) -> ResponseTimes {
+    let mut stopped: BTreeMap<String, i64> = BTreeMap::new();
+    let (mut n, mut sum, mut max) = (0i64, 0i64, 0i64);
+    for e in events(data_dir).into_iter().filter(|e| e.at >= since) {
+        match e.event.as_str() {
+            "Stop" => {
+                stopped.insert(e.session, e.at);
+            }
+            "UserPromptSubmit" => {
+                if let Some(at) = stopped.remove(&e.session) {
+                    let wait = (e.at - at).max(0);
+                    n += 1;
+                    sum += wait;
+                    max = max.max(wait);
+                }
+            }
+            _ => {}
+        }
+    }
+    ResponseTimes {
+        count: n,
+        mean_ms: if n > 0 { sum / n } else { 0 },
+        max_ms: max,
+    }
+}
