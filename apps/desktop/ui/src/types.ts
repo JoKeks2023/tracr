@@ -329,3 +329,12 @@ export type ProjectOp =
   | { op: "rename"; id: string; name: string }
   | { op: "delete"; id: string }
   | { op: "map"; repository: string; project: string | null };
+
+export interface SessionList {
+  timezone: string;
+  from: string;
+  to: string;
+  sessions: SessionDay[];
+  cost: CostView;
+  pricing: PricingInfo;
+}

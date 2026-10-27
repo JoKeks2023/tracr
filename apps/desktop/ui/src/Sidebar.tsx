@@ -1,18 +1,7 @@
-import { dayLabel, tildify } from "./format";
+import { tildify } from "./format";
+import { AREAS, type Area } from "./nav";
 import { t } from "./i18n";
 import type { Status } from "./types";
-
-function isoDay(offset: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return new Intl.DateTimeFormat("en-CA").format(d);
-}
-
-function label(day: string): string {
-  if (day === isoDay(0)) return t("today");
-  if (day === isoDay(-1)) return t("yesterday");
-  return dayLabel(day);
-}
 
 function collectorLabel(c: Status["collector"]): string {
   return {
@@ -24,18 +13,22 @@ function collectorLabel(c: Status["collector"]): string {
   }[c];
 }
 
-/** Durable navigation: the days, then the recording state and settings at the foot. */
+const AREA_LABEL: Record<Area, "today" | "areaSessions" | "areaWorktime"> = {
+  today: "today",
+  sessions: "areaSessions",
+  worktime: "areaWorktime",
+};
+
+/** Durable navigation: where to go, then the recording state and settings at the foot. */
 export function Sidebar({
-  days,
-  day,
+  area,
   status,
-  onSelect,
+  onArea,
   onSettings,
 }: {
-  days: string[];
-  day: string | null;
+  area: Area;
   status: Status | null;
-  onSelect: (d: string) => void;
+  onArea: (a: Area) => void;
   onSettings: () => void;
 }) {
   const rt = status?.runtime;
@@ -49,14 +42,13 @@ export function Sidebar({
         .join("\n")
     : "";
   return (
-    <nav className="sidebar" aria-label={t("daysTitle")}>
+    <nav className="sidebar" aria-label={t("navTitle")}>
       <div className="sidebar-drag" data-tauri-drag-region />
-      {days.length > 0 && <h2 className="sidebar-title">{t("daysTitle")}</h2>}
       <ul className="sidebar-days">
-        {days.map((d) => (
-          <li key={d}>
-            <button className="side-item" aria-current={d === day ? "page" : undefined} onClick={() => onSelect(d)}>
-              {label(d)}
+        {AREAS.map((a) => (
+          <li key={a}>
+            <button className="side-item" aria-current={a === area ? "page" : undefined} onClick={() => onArea(a)}>
+              {t(AREA_LABEL[a])}
             </button>
           </li>
         ))}

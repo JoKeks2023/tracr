@@ -626,6 +626,11 @@ impl Reader {
         })
     }
 
+    /// Sessions active between two reporting days (inclusive), newest first.
+    pub fn sessions(&self, from: &str, to: &str) -> Result<day::SessionList> {
+        day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)
+    }
+
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
         let manual = ledger::manual_entries(&self.conn)?;

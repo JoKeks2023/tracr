@@ -7,6 +7,11 @@ import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
 import { Attention, Bars, BigNumber, CostLine } from "./Overview";
+import { Palette, type Command } from "./Palette";
+import { Sessions } from "./Sessions";
+import { Today } from "./Today";
+import { Toolbar } from "./Toolbar";
+import { isoToday, periodLabel, rangeOf, shiftAnchor, type Area, type Scope } from "./nav";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
@@ -67,6 +72,11 @@ export function App() {
   const [day, setDay] = useState<string | null>(null);
   const [view, setView] = useState<DayAgents | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [area, setArea] = useState<Area>("today");
+  const [scope, setScope] = useState<Scope>("week");
+  const [anchor, setAnchor] = useState<string>(isoToday());
+  const [sessionSel, setSessionSel] = useState<string | null>(null);
+  const [palette, setPalette] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
@@ -215,6 +225,29 @@ export function App() {
     setDay(d);
   };
   const [page, setPage] = useState<"day" | "history">("day");
+  const today = isoToday();
+  const oldest = days[days.length - 1];
+  const [from, to] = rangeOf(scope, anchor);
+  const showSessions = (id: string | null, d = today, sc: Scope = "day") => {
+    setScope(sc);
+    setAnchor(d);
+    setSessionSel(id);
+    setArea("sessions");
+  };
+  const shiftPeriod = (dir: -1 | 1) => {
+    if (area === "worktime") {
+      const target = dir < 0 ? olderDay : newerDay;
+      if (target) goTo(target);
+    } else if (area === "sessions") {
+      setAnchor(shiftAnchor(scope, anchor, dir));
+      setSessionSel(null);
+    }
+  };
+  const goToday = () => {
+    if (area === "worktime") return days[0] ? goTo(days[0]) : undefined;
+    setAnchor(today);
+    setSessionSel(null);
+  };
   const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
@@ -225,16 +258,21 @@ export function App() {
     const canEdit = status?.collector === "collecting";
     switch (action) {
       case "settings": return setSettings(true);
-      case "overview": return setPage("day");
-      case "history": return setPage("history");
-      case "prev_day": return olderDay ? goTo(olderDay) : undefined;
-      case "next_day": return newerDay ? goTo(newerDay) : undefined;
-      case "today": return days[0] ? goTo(days[0]) : undefined;
+      case "area_today": return setArea("today");
+      case "area_sessions": return setArea("sessions");
+      case "area_worktime": return setArea("worktime");
+      case "palette": return setPalette(true);
+      case "overview": return (setArea("worktime"), setPage("day"));
+      case "history": return (setArea("worktime"), setPage("history"));
+      case "prev_day": return shiftPeriod(-1);
+      case "next_day": return shiftPeriod(1);
+      case "today": return goToday();
       case "export": return days.length > 0 ? setExporting(true) : undefined;
       case "refresh": return busy || !canEdit ? undefined : void refresh();
-      case "new_entry": return view && canEdit ? (loadTargets(), setEntry("new")) : undefined;
-      case "review_day": return canReview ? setReviewDay(true) : undefined;
-      case "resolve": return unknownWindows > 0 ? setReviewing(true) : undefined;
+      // Work-time commands act on the work-time day: bring it forward first.
+      case "new_entry": return view && canEdit ? (setArea("worktime"), loadTargets(), setEntry("new")) : undefined;
+      case "review_day": return canReview ? (setArea("worktime"), setReviewDay(true)) : undefined;
+      case "resolve": return unknownWindows > 0 ? (setArea("worktime"), setReviewing(true)) : undefined;
     }
   };
   useEffect(() => {
@@ -243,44 +281,62 @@ export function App() {
     return () => void off.then((f) => f());
   }, []);
 
+  const canEditNow = status?.collector === "collecting";
+  const commands: Command[] = [
+    { id: "today", label: t("cmdGoToday"), hint: "⌘1", run: () => setArea("today") },
+    { id: "sessions", label: t("cmdGoSessions"), hint: "⌘2", run: () => setArea("sessions") },
+    { id: "worktime", label: t("cmdGoWorktime"), hint: "⌘3", run: () => setArea("worktime") },
+    { id: "settings", label: t("settings"), hint: "⌘,", run: () => setSettings(true) },
+    ...(days.length > 0 ? [{ id: "export", label: t("exportCsv"), hint: "⌘E", run: () => setExporting(true) }] : []),
+    ...(canEditNow ? [{ id: "refresh", label: t("refresh"), hint: "⌘R", run: () => void refresh() }] : []),
+    ...(canEditNow && view ? [{ id: "add", label: t("addTime"), hint: "⌘N", run: () => (setArea("worktime"), loadTargets(), setEntry("new")) }] : []),
+    ...(canReview ? [{ id: "review", label: t("reviewDayShort"), hint: "⇧⌘R", run: () => (setArea("worktime"), setReviewDay(true)) }] : []),
+    ...(unknownWindows > 0 ? [{ id: "resolve", label: t("resolve"), hint: "⌥⌘K", run: () => (setArea("worktime"), setReviewing(true)) }] : []),
+  ];
+
   return (
     <div className="app">
-      <Sidebar days={days} day={day} status={status} onSelect={goTo} onSettings={() => setSettings(true)} />
-      <div className="content">
+      <Sidebar area={area} status={status} onArea={setArea} onSettings={() => setSettings(true)} />
+      <div className={`content${area === "sessions" ? " fill" : ""}`}>
       <div className="titlebar" data-tauri-drag-region />
-      <div className="page">
-      <header className="day-header">
-        <div className="day-title">
-          <div className="nav">
-            <button className="button ghost icon compact-nav" aria-label={t("prevDay")} disabled={!olderDay} onClick={() => olderDay && goTo(olderDay)}>
-              ‹
-            </button>
-            <h1>{day ? dayLabel(day) : "tracr"}</h1>
-            <button className="button ghost icon compact-nav" aria-label={t("nextDay")} disabled={!newerDay} onClick={() => newerDay && goTo(newerDay)}>
-              ›
-            </button>
-          </div>
-        </div>
-        <div className="spacer" />
-        <div className="header-actions">
-          {status && status.collector === "collecting" && (
-            <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
-          )}
-          {view && status?.collector === "collecting" && (
-            <button
-              className="button ghost"
-              onClick={() => {
-                loadTargets();
-                setEntry("new");
-              }}
-            >
-              {t("addTime")}
-            </button>
-          )}
-        </div>
-      </header>
+      <div className={`page${area === "sessions" ? " wide" : ""}`}>
+      <Toolbar
+        title={area === "today" ? t("today") : area === "sessions" ? t("areaSessions") : t("areaWorktime")}
+        period={
+          area === "sessions"
+            ? {
+                label: periodLabel(scope, anchor),
+                scope,
+                onScope: (sc) => {
+                  setScope(sc);
+                  setSessionSel(null);
+                },
+                canPrev: !oldest || from > oldest,
+                canNext: to < today,
+                onShift: shiftPeriod,
+              }
+            : area === "worktime" && day
+              ? { label: dayLabel(day), canPrev: !!olderDay, canNext: !!newerDay, onShift: shiftPeriod }
+              : undefined
+        }
+      >
+        {status && status.collector === "collecting" && (
+          <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
+        )}
+        {area === "worktime" && view && status?.collector === "collecting" && (
+          <button
+            className="button ghost"
+            onClick={() => {
+              loadTargets();
+              setEntry("new");
+            }}
+          >
+            {t("addTime")}
+          </button>
+        )}
+      </Toolbar>
 
-      {view && load.state === "ready" && (
+      {area === "worktime" && view && load.state === "ready" && (
         <div className="segments" role="group" aria-label={t("overview") + " / " + t("history")}>
           <button aria-pressed={page === "day"} onClick={() => setPage("day")}>
             {t("overview")}
@@ -289,6 +345,21 @@ export function App() {
             {t("history")}
           </button>
         </div>
+      )}
+
+      {load.state === "ready" && area === "today" && (
+        <Today
+          day={today}
+          hasData={days.includes(today)}
+          reloadKey={load}
+          onOpenSession={(id) => showSessions(id)}
+          onOpenWorktime={() => (days.includes(today) && goTo(today), setArea("worktime"))}
+          onOpenSessions={() => showSessions(null)}
+          onError={(text) => setNotice({ text, error: true })}
+        />
+      )}
+      {load.state === "ready" && area === "sessions" && (
+        <Sessions from={from} to={to} reloadKey={load} selected={sessionSel} onSelect={setSessionSel} onError={(text) => setNotice({ text, error: true })} />
       )}
 
       {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
@@ -300,7 +371,7 @@ export function App() {
         </div>
       )}
 
-      {view && totals && load.state === "ready" && page === "history" && (
+      {area === "worktime" && view && totals && load.state === "ready" && page === "history" && (
         <div className="history">
           <CostLine cost={view.cost} />
           <dl className="facts">
@@ -324,7 +395,7 @@ export function App() {
           <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
         </div>
       )}
-      {view && totals && load.state === "ready" && page === "day" && (
+      {area === "worktime" && view && totals && load.state === "ready" && page === "day" && (
         <>
           <div className="main-card">
             <BigNumber
@@ -439,6 +510,7 @@ export function App() {
         />
       )}
       {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} onClose={() => setSelected(null)} />}
+      {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
       {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
   );

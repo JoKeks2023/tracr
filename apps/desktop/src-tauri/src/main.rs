@@ -15,7 +15,7 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent, Wry};
-use tracr_app::day::{DayAgents, DayList};
+use tracr_app::day::{DayAgents, DayList, SessionList};
 use tracr_app::runtime::{Refreshed, Runtime, RuntimeStatus};
 use tracr_app::{App, Reader, RootKind, SystemClock, default_data_dir, proposed_provider_roots};
 
@@ -340,6 +340,17 @@ async fn days(ctx: tauri::State<'_, Ctx>) -> Result<DayList, String> {
 async fn day_agents(ctx: tauri::State<'_, Ctx>, day: String) -> Result<DayAgents, String> {
     Reader::open(&ctx.dir()?)
         .and_then(|r| r.day_agents(&day))
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn sessions(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<SessionList, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.sessions(&from, &to))
         .map_err(err)
 }
 
@@ -703,7 +714,7 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
             &item(
                 "m:resolve",
                 l("Resolve Open Time…", "Offene Zeit klären…"),
-                Some("CmdOrCtrl+K"),
+                Some("CmdOrCtrl+Alt+K"),
             )?,
             &sep()?,
             &item(
@@ -739,24 +750,46 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
         l("View", "Darstellung"),
         true,
         &[
+            &item("m:area_today", l("Today", "Heute"), Some("CmdOrCtrl+1"))?,
+            &item(
+                "m:area_sessions",
+                l("Sessions", "Sitzungen"),
+                Some("CmdOrCtrl+2"),
+            )?,
+            &item(
+                "m:area_worktime",
+                l("Work Time", "Arbeitszeit"),
+                Some("CmdOrCtrl+3"),
+            )?,
+            &sep()?,
             &item(
                 "m:overview",
-                l("Overview", "Übersicht"),
-                Some("CmdOrCtrl+1"),
+                l("Day Overview", "Tagesübersicht"),
+                Some("CmdOrCtrl+Alt+1"),
             )?,
-            &item("m:history", l("History", "Verlauf"), Some("CmdOrCtrl+2"))?,
+            &item(
+                "m:history",
+                l("Agent Timeline", "Agenten-Zeitleiste"),
+                Some("CmdOrCtrl+Alt+2"),
+            )?,
             &sep()?,
             &item(
                 "m:prev_day",
-                l("Previous Day", "Vorheriger Tag"),
+                l("Previous Period", "Voriger Zeitraum"),
                 Some("CmdOrCtrl+["),
             )?,
             &item(
                 "m:next_day",
-                l("Next Day", "Nächster Tag"),
+                l("Next Period", "Nächster Zeitraum"),
                 Some("CmdOrCtrl+]"),
             )?,
-            &item("m:today", l("Today", "Heute"), Some("CmdOrCtrl+0"))?,
+            &item("m:today", l("Go to Today", "Zu heute"), Some("CmdOrCtrl+0"))?,
+            &sep()?,
+            &item(
+                "m:palette",
+                l("Commands…", "Befehle …"),
+                Some("CmdOrCtrl+K"),
+            )?,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, None)?,
         ],
@@ -833,6 +866,7 @@ fn main() {
             project_op,
             days,
             day_agents,
+            sessions,
             refresh,
             export_csv,
             export_everything,
