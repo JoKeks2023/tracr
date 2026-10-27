@@ -10,3 +10,8 @@ Design-review gate (12 questions): not completed; 2-11 need the unverified items
 
 Checked: fmt, clippy `-D warnings`, `cargo test -p tracr-app --test sessions --test derive`, `tsc --noEmit`, debug build.
 NOT verified: how Ablauf, Kontext and Werkzeuge look in the real window (no click into the running app), light mode, English, narrow window, keyboard use of the tabs, VoiceOver. The charts are SVG with a text label for assistive tech; their hover details are `<title>` tooltips only.
+
+## Prices, limits, projects (backend)
+
+Checked: clippy `-D warnings`, `cargo test` of tracr-app/core, the tap end to end with the real debug binary against a temp settings file (install, chained command output, spool line holds only the numbers, uninstall restores the file), `tracr limits show` against the demo ledger (Codex 5 h and weekly figures read from the real rollouts), prices visible in `tracr day` after the rebuild.
+NOT done: installing the tap into the real `~/.claude/settings.json` (it is an opt-in action for the user, not run in this session); no UI for limits or the projects page yet; the tap has not been seen with a live Claude Code session, so it is not verified that the fields arrive on this account (T-0010 caveat stands).
