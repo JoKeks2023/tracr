@@ -57,87 +57,143 @@ pub fn from_row(r: &CorrectionRow) -> Option<Correction> {
     })
 }
 
+/// A correction checked and ready to append.
+struct Prepared {
+    axis: &'static str,
+    range: Option<(i64, i64)>,
+    data: Option<serde_json::Value>,
+}
+
+/// The shortest range a correction may cover: a split part under a minute is a slip, not a decision.
+const MIN_RANGE_MS: i64 = 60_000;
+
+fn prepare(existing: &[CorrectionRow], req: &CorrectionRequest) -> Result<Prepared> {
+    let range = || -> Result<(i64, i64)> {
+        match (req.start, req.end) {
+            (Some(s), Some(e)) if e > s => Ok((s, e)),
+            _ => bail!("a correction needs a range with end after start"),
+        }
+    };
+    let (axis, range, data) = match req.op.as_str() {
+        "confirm_work" | "mark_non_work" => ("counting", Some(range()?), None),
+        "set_target" | "reject_target" => {
+            let key = req
+                .target
+                .as_deref()
+                .ok_or_else(|| anyhow!("{} needs a target", req.op))?;
+            let t = TargetRef::parse(key).ok_or_else(|| anyhow!("not a valid target: {key}"))?;
+            (
+                "attribution",
+                Some(range()?),
+                Some(serde_json::json!({ "target": t.key() })),
+            )
+        }
+        "revoke" => {
+            let id = req
+                .revokes
+                .as_deref()
+                .ok_or_else(|| anyhow!("revoke needs a correction ID"))?;
+            let target = existing
+                .iter()
+                .find(|c| c.id == id)
+                .ok_or_else(|| anyhow!("no correction {id}"))?;
+            // A revoke is recorded on the axis of what it undoes.
+            (
+                if target.axis == "attribution" {
+                    "attribution"
+                } else {
+                    "counting"
+                },
+                None,
+                Some(serde_json::json!({ "revokes": id })),
+            )
+        }
+        other => bail!("unknown correction {other}"),
+    };
+    Ok(Prepared { axis, range, data })
+}
+
 impl App {
     /// Records one correction. Returns its ID.
     pub fn correct(&mut self, req: &CorrectionRequest) -> Result<String> {
+        Ok(self.correct_batch(std::slice::from_ref(req))?.remove(0))
+    }
+
+    /// Records several corrections as one step: every request is checked first and all are appended in one
+    /// transaction, or none is. Within a batch, ranges of one axis must not overlap (a split is parts, not layers)
+    /// and none may be shorter than a minute. Returns the IDs in order.
+    pub fn correct_batch(&mut self, reqs: &[CorrectionRequest]) -> Result<Vec<String>> {
+        if reqs.is_empty() {
+            bail!("nothing to record");
+        }
         let existing = ledger::corrections(&self.conn)?;
-        let range = || -> Result<(i64, i64)> {
-            match (req.start, req.end) {
-                (Some(s), Some(e)) if e > s => Ok((s, e)),
-                _ => bail!("a correction needs a range with end after start"),
+        let prepared: Vec<Prepared> = reqs
+            .iter()
+            .map(|r| prepare(&existing, r))
+            .collect::<Result<_>>()?;
+        if reqs.len() > 1 {
+            // The decisions of one kind (count or not / put on a target) are layers of the same range: in a batch
+            // they must be disjoint parts, or the later one would silently hide the earlier.
+            let layer = |op: &str| match op {
+                "confirm_work" | "mark_non_work" => Some("count"),
+                "set_target" => Some("target"),
+                _ => None,
+            };
+            for (i, a) in prepared.iter().enumerate() {
+                let Some((s, e)) = a.range else { continue };
+                if layer(&reqs[i].op).is_some() && e - s < MIN_RANGE_MS {
+                    bail!("a part must be at least a minute long");
+                }
+                for (j, b) in prepared.iter().enumerate().skip(i + 1) {
+                    if let (Some(x), Some(y), Some((bs, be))) =
+                        (layer(&reqs[i].op), layer(&reqs[j].op), b.range)
+                        && x == y
+                        && s < be
+                        && bs < e
+                    {
+                        bail!("the parts of a split must not overlap");
+                    }
+                }
             }
-        };
-        let (axis, range, data) = match req.op.as_str() {
-            "confirm_work" | "mark_non_work" => ("counting", Some(range()?), None),
-            "set_target" | "reject_target" => {
-                let key = req
-                    .target
-                    .as_deref()
-                    .ok_or_else(|| anyhow!("{} needs a target", req.op))?;
-                let t =
-                    TargetRef::parse(key).ok_or_else(|| anyhow!("not a valid target: {key}"))?;
-                (
-                    "attribution",
-                    Some(range()?),
-                    Some(serde_json::json!({ "target": t.key() })),
-                )
-            }
-            "revoke" => {
-                let id = req
-                    .revokes
-                    .as_deref()
-                    .ok_or_else(|| anyhow!("revoke needs a correction ID"))?;
-                let target = existing
-                    .iter()
-                    .find(|c| c.id == id)
-                    .ok_or_else(|| anyhow!("no correction {id}"))?;
-                // A revoke is recorded on the axis of what it undoes.
-                (
-                    if target.axis == "attribution" {
-                        "attribution"
-                    } else {
-                        "counting"
-                    },
-                    None,
-                    Some(serde_json::json!({ "revokes": id })),
-                )
-            }
-            other => bail!("unknown correction {other}"),
-        };
+        }
         let env = IngestEnv {
             clock: &*self.clock,
             file_identity: &*self.fid,
         };
-        let id = new_uuid_v7(&env);
         let tx = self.conn.transaction()?;
-        let seq = ledger::append_user_action(
-            &tx,
-            &NewUserAction {
-                id: &new_uuid_v7(&env),
-                kind: &format!("correction.{}", req.op),
-                actor: "user",
-                at: self.clock.now(),
-                reason: req.reason.as_deref(),
-                client: self.client,
-            },
-        )?;
-        let data = data.map(|d| d.to_string());
-        ledger::append_correction(
-            &tx,
-            &NewCorrection {
-                id: &id,
-                action_seq: seq,
-                axis,
-                op: &req.op,
-                ui_op: req.ui_op.as_deref(),
-                subject_kind: "human_range",
-                range_start: range.map(|r| r.0),
-                range_end: range.map(|r| r.1),
-                data: data.as_deref(),
-                against: None,
-            },
-        )?;
+        let mut ids = Vec::with_capacity(reqs.len());
+        for (req, p) in reqs.iter().zip(&prepared) {
+            let id = new_uuid_v7(&env);
+            let seq = ledger::append_user_action(
+                &tx,
+                &NewUserAction {
+                    id: &new_uuid_v7(&env),
+                    kind: &format!("correction.{}", req.op),
+                    actor: "user",
+                    at: self.clock.now(),
+                    reason: req.reason.as_deref(),
+                    client: self.client,
+                },
+            )?;
+            let data = p.data.as_ref().map(ToString::to_string);
+            ledger::append_correction(
+                &tx,
+                &NewCorrection {
+                    id: &id,
+                    action_seq: seq,
+                    axis: p.axis,
+                    op: &req.op,
+                    ui_op: req.ui_op.as_deref(),
+                    subject_kind: "human_range",
+                    range_start: p.range.map(|r| r.0),
+                    range_end: p.range.map(|r| r.1),
+                    data: data.as_deref(),
+                    against: None,
+                },
+            )?;
+            ids.push(id);
+        }
         tx.commit()?;
-        Ok(id)
+        Ok(ids)
     }
 }

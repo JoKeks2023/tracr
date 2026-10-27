@@ -698,7 +698,25 @@ impl Reader {
         let shown = v.review.as_ref().map_or(&v.human.counted_by_target, |r| {
             &r.snapshot.counted_by_target
         });
-        v.counted_by_project = projects::project_totals(shown, &projects::read_config(&self.conn)?);
+        let config = projects::read_config(&self.conn)?;
+        v.counted_by_project = projects::project_totals(shown, &config);
+        // A time target on a project shows the project's current name.
+        for atom in &mut v.human.atoms {
+            if let Some(at) = &mut atom.attribution {
+                for (i, t) in at.targets.clone().iter().enumerate() {
+                    if let Some(id) = t.strip_prefix("project:") {
+                        let name = config
+                            .projects
+                            .iter()
+                            .find(|p| p.id == id)
+                            .map_or_else(|| "Deleted project".to_owned(), |p| p.name.clone());
+                        if let Some(l) = at.labels.get_mut(i) {
+                            *l = name;
+                        }
+                    }
+                }
+            }
+        }
         Ok(v)
     }
 
@@ -706,6 +724,13 @@ impl Reader {
     /// the fixed categories, and "Other…" labels used before.
     pub fn targets(&self) -> Result<Vec<day::TargetOption>> {
         let mut out = Vec::new();
+        for p in projects::read_config(&self.conn)?.projects {
+            out.push(day::TargetOption {
+                key: tracr_core::counting::TargetRef::Project(p.id).key(),
+                label: p.name,
+                group: "project".into(),
+            });
+        }
         if let Some(d) = tracr_store::derived::open_read_only(&self.data_dir)? {
             let mut stmt = d.prepare(
                 "SELECT DISTINCT repository_key FROM agent_session WHERE repository_key IS NOT NULL ORDER BY 1",

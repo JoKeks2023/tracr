@@ -203,7 +203,8 @@ pub fn project_totals(
     counted_by_target: &BTreeMap<String, i64>,
     config: &ProjectConfig,
 ) -> Vec<ProjectTotal> {
-    if config.projects.is_empty() {
+    let has_project_keys = counted_by_target.keys().any(|k| k.starts_with("project:"));
+    if config.projects.is_empty() && !has_project_keys {
         return Vec::new();
     }
     // label -> Some(project) when every repository with this label agrees.
@@ -222,7 +223,25 @@ pub fn project_totals(
     }
     let mut groups: BTreeMap<&str, ProjectTotal> = BTreeMap::new();
     let mut others: Vec<ProjectTotal> = Vec::new();
+    let mut deleted: i64 = 0;
     for (label, &ms) in counted_by_target {
+        // Time the user put on a project directly (a `project:<id>` target).
+        if let Some(id) = label.strip_prefix("project:") {
+            match config.projects.iter().find(|p| p.id == id) {
+                Some(p) => {
+                    let g = groups.entry(p.id.as_str()).or_insert_with(|| ProjectTotal {
+                        kind: "project",
+                        project_id: Some(p.id.clone()),
+                        label: p.name.clone(),
+                        ms: 0,
+                        parts: Vec::new(),
+                    });
+                    g.ms += ms;
+                }
+                None => deleted += ms, // the project was deleted: the minutes stay, under one line
+            }
+            continue;
+        }
         let project = by_label
             .get(label)
             .copied()
@@ -251,6 +270,15 @@ pub fn project_totals(
                 parts: Vec::new(),
             }),
         }
+    }
+    if deleted > 0 {
+        others.push(ProjectTotal {
+            kind: "other",
+            project_id: None,
+            label: "Deleted project".to_owned(),
+            ms: deleted,
+            parts: Vec::new(),
+        });
     }
     let mut out: Vec<ProjectTotal> = groups.into_values().collect();
     for g in &mut out {

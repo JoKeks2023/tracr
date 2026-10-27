@@ -578,6 +578,27 @@ async fn correct(
         .map_err(err)
 }
 
+/// Several corrections as one step: all are recorded or none (a split into parts, a whole-day assignment).
+#[tauri::command]
+async fn correct_batch(
+    ctx: tauri::State<'_, Ctx>,
+    reqs: Vec<tracr_app::correct::CorrectionRequest>,
+) -> Result<Vec<String>, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("corrections need the collector of this app; it is not running here".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || handle.correct_batch(reqs))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
 /// Timer and manual-entry operations through the collector.
 #[tauri::command]
 async fn manual(
@@ -1132,6 +1153,7 @@ fn main() {
             export_csv,
             export_everything,
             correct,
+            correct_batch,
             targets,
             manual,
             review,

@@ -369,7 +369,7 @@ pub struct CorrectionInfo {
 pub struct TargetOption {
     pub key: String,
     pub label: String,
-    /// `repository`, `category` or `other`.
+    /// `project`, `repository`, `category` or `other`.
     pub group: String,
 }
 
@@ -384,7 +384,8 @@ pub fn target_label(key: &str) -> String {
                 .unwrap_or_default()
         }
         Some(tracr_core::counting::TargetRef::Other(t)) => t,
-        None => key.to_owned(),
+        // The name is the project's, read when shown; the key keeps the time attached to the project.
+        Some(tracr_core::counting::TargetRef::Project(_)) | None => key.to_owned(),
     }
 }
 

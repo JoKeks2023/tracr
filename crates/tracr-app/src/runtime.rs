@@ -97,6 +97,10 @@ pub enum Job {
     /// Watcher error or overflow: events may have been lost.
     Overflow,
     Refresh(Sender<Result<Refreshed, String>>),
+    CorrectBatch(
+        Vec<crate::correct::CorrectionRequest>,
+        Sender<Result<Vec<String>, String>>,
+    ),
     /// A user correction: recorded, then the derived store is updated at once.
     Correct(
         crate::correct::CorrectionRequest,
@@ -123,6 +127,7 @@ impl Job {
             Self::Overflow => "overflow",
             Self::Refresh(_) => "refresh",
             Self::Correct(..) => "correct",
+            Self::CorrectBatch(..) => "correct_batch",
             Self::Manual(..) => "manual",
             Self::Review(..) => "review",
             Self::Dismiss(..) => "dismiss",
@@ -463,6 +468,17 @@ impl Collector {
         self.rebuild_if_due()
     }
 
+    /// Records several corrections as one step and updates the derived store once.
+    pub fn correct_batch(
+        &mut self,
+        reqs: &[crate::correct::CorrectionRequest],
+    ) -> Result<Vec<String>> {
+        let ids = self.app.correct_batch(reqs)?;
+        self.dirty = true;
+        self.rebuild()?;
+        Ok(ids)
+    }
+
     /// Records a user correction and updates the derived store at once.
     pub fn correct(&mut self, req: &crate::correct::CorrectionRequest) -> Result<String> {
         let id = self.app.correct(req)?;
@@ -526,6 +542,11 @@ impl Collector {
                         seconds: started.elapsed().as_secs_f64(),
                     })
                 })();
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
+            Job::CorrectBatch(reqs, reply) => {
+                let result = self.correct_batch(&reqs);
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
@@ -614,6 +635,20 @@ impl RuntimeHandle {
         let (tx, rx) = mpsc::channel();
         self.jobs
             .send(Job::Correct(req, tx))
+            .map_err(|_| anyhow!("collector stopped"))?;
+        rx.recv()
+            .map_err(|_| anyhow!("collector stopped"))?
+            .map_err(|e| anyhow!(e))
+    }
+
+    /// Records several corrections as one step through the collector: all or none.
+    pub fn correct_batch(
+        &self,
+        reqs: Vec<crate::correct::CorrectionRequest>,
+    ) -> Result<Vec<String>> {
+        let (tx, rx) = mpsc::channel();
+        self.jobs
+            .send(Job::CorrectBatch(reqs, tx))
             .map_err(|_| anyhow!("collector stopped"))?;
         rx.recv()
             .map_err(|_| anyhow!("collector stopped"))?
