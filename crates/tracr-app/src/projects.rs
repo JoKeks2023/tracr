@@ -450,3 +450,175 @@ mod tests {
         assert_eq!(t[0].kind, "other");
     }
 }
+
+/// A repository inside a project entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct RepoPart {
+    pub key: String,
+    pub label: String,
+    pub sessions: i64,
+    pub agent_ms: i64,
+}
+
+/// One row of the projects page: a project, a repository without a project,
+/// or the sessions that ran outside any repository.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectEntry {
+    /// Stable per entry: `project:<id>`, `repo:<key>` or `none`.
+    pub key: String,
+    /// `project`, `repository` or `none`.
+    pub kind: &'static str,
+    pub project_id: Option<String>,
+    pub label: String,
+    pub repositories: Vec<RepoPart>,
+    pub session_ids: Vec<String>,
+    pub sessions: i64,
+    /// Agent execution, never human time.
+    pub agent_ms: i64,
+    /// Estimated API cost of the identified usage in the range.
+    pub cost: crate::day::CostView,
+    pub first_at: Option<i64>,
+    pub last_at: Option<i64>,
+    pub branches: Vec<String>,
+    pub providers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectOverview {
+    pub from: String,
+    pub to: String,
+    pub timezone: String,
+    pub entries: Vec<ProjectEntry>,
+    pub pricing: crate::pricing::PricingInfo,
+}
+
+/// Groups the sessions of a range by project. Defined projects always appear
+/// (without activity they are empty); a repository that belongs to no project
+/// appears on its own; sessions without a repository are one `none` entry.
+pub fn overview(list: &crate::day::SessionList, config: &ProjectConfig) -> ProjectOverview {
+    let mut by: BTreeMap<String, ProjectEntry> = BTreeMap::new();
+    for p in &config.projects {
+        by.insert(
+            format!("project:{}", p.id),
+            blank_entry(
+                format!("project:{}", p.id),
+                "project",
+                Some(p.id.clone()),
+                p.name.clone(),
+            ),
+        );
+    }
+    for s in &list.sessions {
+        let (key, kind, pid, label) = match &s.repository {
+            Some(repo) => match config.repository_projects.get(repo) {
+                Some(id) if config.projects.iter().any(|p| &p.id == id) => {
+                    let name = config
+                        .projects
+                        .iter()
+                        .find(|p| &p.id == id)
+                        .map(|p| p.name.clone());
+                    (
+                        format!("project:{id}"),
+                        "project",
+                        Some(id.clone()),
+                        name.unwrap_or_default(),
+                    )
+                }
+                _ => (
+                    format!("repo:{repo}"),
+                    "repository",
+                    None,
+                    s.repository_label.clone().unwrap_or_else(|| repo.clone()),
+                ),
+            },
+            None => ("none".to_owned(), "none", None, String::new()),
+        };
+        let e = by
+            .entry(key.clone())
+            .or_insert_with(|| blank_entry(key, kind, pid, label));
+        let agent_ms: i64 = s.actors.iter().map(|a| a.execution_ms).sum();
+        e.sessions += 1;
+        e.agent_ms += agent_ms;
+        e.cost.absorb(&s.cost);
+        e.session_ids.push(s.session_id.clone());
+        e.first_at = min_opt(e.first_at, s.first_evidence_at);
+        e.last_at = max_opt(e.last_at, s.last_evidence_at);
+        if let Some(b) = &s.git_branch
+            && !e.branches.contains(b)
+        {
+            e.branches.push(b.clone());
+        }
+        if !e.providers.contains(&s.provider) {
+            e.providers.push(s.provider.clone());
+        }
+        if let Some(repo) = &s.repository {
+            let label = s.repository_label.clone().unwrap_or_else(|| repo.clone());
+            match e.repositories.iter_mut().find(|r| &r.key == repo) {
+                Some(r) => {
+                    r.sessions += 1;
+                    r.agent_ms += agent_ms;
+                }
+                None => e.repositories.push(RepoPart {
+                    key: repo.clone(),
+                    label,
+                    sessions: 1,
+                    agent_ms,
+                }),
+            }
+        }
+    }
+    let mut entries: Vec<ProjectEntry> = by.into_values().collect();
+    for e in &mut entries {
+        e.repositories
+            .sort_by_key(|r| std::cmp::Reverse(r.agent_ms));
+    }
+    entries.sort_by(|a, b| {
+        b.last_at
+            .cmp(&a.last_at)
+            .then_with(|| a.label.cmp(&b.label))
+    });
+    ProjectOverview {
+        from: list.from.clone(),
+        to: list.to.clone(),
+        timezone: list.timezone.clone(),
+        entries,
+        pricing: list.pricing.clone(),
+    }
+}
+
+fn blank_entry(
+    key: String,
+    kind: &'static str,
+    project_id: Option<String>,
+    label: String,
+) -> ProjectEntry {
+    ProjectEntry {
+        key,
+        kind,
+        project_id,
+        label,
+        repositories: Vec::new(),
+        session_ids: Vec::new(),
+        sessions: 0,
+        agent_ms: 0,
+        cost: crate::day::CostView::default(),
+        first_at: None,
+        last_at: None,
+        branches: Vec::new(),
+        providers: Vec::new(),
+    }
+}
+
+fn min_opt(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, None) | (None, x) => x,
+    }
+}
+
+fn max_opt(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (x, None) | (None, x) => x,
+    }
+}

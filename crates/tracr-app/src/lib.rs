@@ -648,6 +648,15 @@ impl Reader {
         Ok(limits::read(&self.data_dir, &roots, settings))
     }
 
+    /// Sessions of a range grouped by project (S3.1), with repositories, branches and cost.
+    pub fn project_overview(&self, from: &str, to: &str) -> Result<projects::ProjectOverview> {
+        let list = self.sessions(from, to)?;
+        Ok(projects::overview(
+            &list,
+            &projects::read_config(&self.conn)?,
+        ))
+    }
+
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
         let manual = ledger::manual_entries(&self.conn)?;

@@ -387,6 +387,17 @@ async fn limits_tap(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), Str
 }
 
 #[tauri::command]
+async fn project_overview(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<tracr_app::projects::ProjectOverview, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.project_overview(&from, &to))
+        .map_err(err)
+}
+
+#[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
     from: String,
@@ -910,6 +921,7 @@ fn main() {
             days,
             day_agents,
             sessions,
+            project_overview,
             limits,
             limits_tap,
             session_trace,
