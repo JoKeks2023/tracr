@@ -113,3 +113,37 @@ fn a_reversed_or_malformed_range_is_refused() {
     assert!(r.analytics(DAY, "2026-09-01").is_err());
     assert!(r.analytics("nope", DAY).is_err());
 }
+
+#[test]
+fn the_cost_alert_measures_read_the_figures_of_the_day_the_window_and_each_session() {
+    use tracr_app::costwatch::CostAlertPrefs;
+    use tracr_core::time::UtcMillis;
+    let dir = TempDir::new().unwrap();
+    let mut a = ClaudeSession::new(A);
+    let lines = vec![
+        a.prompt("09:00"),
+        usage(&a.assistant("09:01", "m1", 100), 10, 100, 1000, 100),
+        usage(&a.assistant("09:25", "m2", 100), 10, 100, 1000, 100),
+    ];
+    let data = import(&dir, lines);
+    let prefs = CostAlertPrefs {
+        enabled: true,
+        window_minutes: 10,
+        ..CostAlertPrefs::default()
+    };
+    let at = |hhmm: &str| {
+        UtcMillis::parse_rfc3339(&tracr_testkit::collector::at(hhmm))
+            .unwrap()
+            .0
+    };
+    let r = Reader::open(&data).unwrap();
+    let m = r.cost_measures(at("09:30"), &prefs).unwrap();
+    assert!(m.day > 0.0 && m.month >= m.day);
+    assert!(
+        m.window > 0.0 && m.window < m.day,
+        "only the 09:25 request is inside the last 10 minutes"
+    );
+    assert_eq!(m.sessions.len(), 1);
+    assert!((m.sessions[0].2 - m.day).abs() < 1e-9);
+    assert_eq!(r.day_of(at("09:30")).unwrap(), DAY);
+}

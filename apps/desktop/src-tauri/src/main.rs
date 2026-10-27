@@ -472,6 +472,21 @@ async fn analytics(
 }
 
 #[tauri::command]
+async fn get_cost_alerts(
+    ctx: tauri::State<'_, Ctx>,
+) -> Result<tracr_app::costwatch::CostAlertPrefs, String> {
+    Ok(tracr_app::costwatch::load(&ctx.dir()?))
+}
+
+#[tauri::command]
+async fn set_cost_alerts(
+    ctx: tauri::State<'_, Ctx>,
+    prefs: tracr_app::costwatch::CostAlertPrefs,
+) -> Result<(), String> {
+    tracr_app::costwatch::save(&ctx.dir()?, &prefs).map_err(err)
+}
+
+#[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
     from: String,
@@ -829,6 +844,61 @@ fn quota_tick(app: &tauri::AppHandle, watcher: Option<&mut quota::Watcher>) {
     refresh_tray(app);
 }
 
+/// Judges the spend (a session, a rolling window, the day, the month) and notifies when a threshold is crossed or doubled.
+fn cost_tick(app: &tauri::AppHandle, watcher: &mut tracr_app::costwatch::CostWatcher) {
+    use tracr_app::costwatch::{Kind, load};
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = load(&dir);
+    if !prefs.enabled {
+        return;
+    }
+    let now = now_ms();
+    let Ok(reader) = Reader::open(&dir) else {
+        return;
+    };
+    let (Ok(measures), Ok(day)) = (reader.cost_measures(now, &prefs), reader.day_of(now)) else {
+        return;
+    };
+    let de = german();
+    for a in watcher.changes(&measures, &prefs, &day) {
+        let (title, what) = match (&a.kind, de) {
+            (Kind::Session { label }, true) => (
+                "Sitzung wird teuer",
+                label.clone().unwrap_or_else(|| "Sitzung".to_owned()),
+            ),
+            (Kind::Session { label }, false) => (
+                "A session is getting expensive",
+                label.clone().unwrap_or_else(|| "Session".to_owned()),
+            ),
+            (Kind::Window { minutes }, true) => (
+                "Hohe Ausgaben in kurzer Zeit",
+                format!("letzte {minutes} Minuten"),
+            ),
+            (Kind::Window { minutes }, false) => (
+                "High spend in a short time",
+                format!("last {minutes} minutes"),
+            ),
+            (Kind::Day, true) => ("Tageskosten", "heute".to_owned()),
+            (Kind::Day, false) => ("Spend today", "today".to_owned()),
+            (Kind::Month, true) => ("Monatskosten", "dieser Monat".to_owned()),
+            (Kind::Month, false) => ("Spend this month", "this month".to_owned()),
+        };
+        let body = if de {
+            format!(
+                "{what}: ≈ ${:.2} (Grenze ${:.0}, Schätzung)",
+                a.amount, a.crossed
+            )
+        } else {
+            format!(
+                "{what}: ≈ ${:.2} (limit ${:.0}, estimate)",
+                a.amount, a.crossed
+            )
+        };
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
 /// Notifies for hook events that arrived since the last look (needs you, your turn).
 fn hook_tick(app: &tauri::AppHandle, last_seen: &mut i64) {
     let ctx = app.state::<Ctx>();
@@ -1152,6 +1222,8 @@ fn main() {
             days,
             day_agents,
             sessions,
+            get_cost_alerts,
+            set_cost_alerts,
             analytics,
             hooks_state,
             hooks_set,
@@ -1206,8 +1278,10 @@ fn main() {
             let quota_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut watcher = quota::Watcher::default();
+                let mut costs = tracr_app::costwatch::CostWatcher::default();
                 loop {
                     quota_tick(&quota_handle, Some(&mut watcher));
+                    cost_tick(&quota_handle, &mut costs);
                     std::thread::sleep(std::time::Duration::from_secs(30));
                 }
             });

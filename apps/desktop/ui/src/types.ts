@@ -511,3 +511,13 @@ export interface Analytics {
   cache: CacheStats;
   what_if: WhatIf | null;
 }
+
+/** Cost alert thresholds in whole currency units; 0 switches one off. */
+export interface CostAlertPrefs {
+  enabled: boolean;
+  session: number;
+  window: number;
+  window_minutes: number;
+  day: number;
+  month: number;
+}

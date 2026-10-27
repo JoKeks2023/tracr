@@ -3,7 +3,7 @@ import { api, errorText, type RootKind } from "../api";
 import { tildify } from "../format";
 import { t } from "../i18n";
 import { RootsPicker } from "../RootsPicker";
-import type { HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
+import type { CostAlertPrefs, HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel } from "./ui";
 
@@ -205,6 +205,56 @@ function ProjectsPane({ onChanged }: { onChanged: (text: string, error?: boolean
   );
 }
 
+const SESSION_STEPS = [0, 5, 10, 25, 50, 100, 250];
+const WINDOW_STEPS = [0, 5, 10, 15, 25, 50, 100];
+const WINDOW_MINUTES = [5, 15, 30, 60, 120, 240];
+const DAY_STEPS = [0, 10, 25, 50, 100, 250, 500];
+const MONTH_STEPS = [0, 100, 250, 500, 1000, 2500];
+
+/** Cost alerts: one dropdown per rule, thresholds as presets. An alert fires when a figure crosses its threshold and at each doubling. */
+function CostAlerts({ onChanged }: { onChanged: (text: string, error?: boolean) => void }) {
+  const [p, setP] = useState<CostAlertPrefs | null>(null);
+  useEffect(() => {
+    void api.getCostAlerts().then(setP).catch((e) => onChanged(errorText(e), true));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!p) return null;
+  const set = (patch: Partial<CostAlertPrefs>) => {
+    const next = { ...p, ...patch };
+    setP(next);
+    void api.setCostAlerts(next).catch((e) => onChanged(errorText(e), true));
+  };
+  const pick = (label: string, note: string | undefined, value: number, steps: number[], key: keyof CostAlertPrefs) => (
+    <Row label={label} note={note}>
+      <select className="ssel" value={value} disabled={!p.enabled} aria-label={label} onChange={(e) => set({ [key]: Number(e.target.value) } as Partial<CostAlertPrefs>)}>
+        {steps.map((v) => (
+          <option key={v} value={v}>{v === 0 ? t("off") : `$${v}`}</option>
+        ))}
+      </select>
+    </Row>
+  );
+  return (
+    <Panel title={t("costAlertsTitle")}>
+      <Row label={t("costAlertsOn")} note={t("costAlertsNote")}>
+        <div className="seg" role="group" aria-label={t("costAlertsOn")}>
+          <button aria-pressed={p.enabled} onClick={() => set({ enabled: true })}>{t("on")}</button>
+          <button aria-pressed={!p.enabled} onClick={() => set({ enabled: false })}>{t("off")}</button>
+        </div>
+      </Row>
+      {pick(t("costAlertSession"), t("costAlertSessionNote"), p.session, SESSION_STEPS, "session")}
+      {pick(t("costAlertWindow"), t("costAlertWindowNote"), p.window, WINDOW_STEPS, "window")}
+      <Row label={t("costAlertWindowLen")}>
+        <select className="ssel" value={p.window_minutes} disabled={!p.enabled} aria-label={t("costAlertWindowLen")} onChange={(e) => set({ window_minutes: Number(e.target.value) })}>
+          {WINDOW_MINUTES.map((m) => (
+            <option key={m} value={m}>{m < 60 ? `${m} min` : `${m / 60} h`}</option>
+          ))}
+        </select>
+      </Row>
+      {pick(t("costAlertDay"), undefined, p.day, DAY_STEPS, "day")}
+      {pick(t("costAlertMonth"), undefined, p.month, MONTH_STEPS, "month")}
+    </Panel>
+  );
+}
+
 /** Settings: what tracr may read, projects, time zone, the Claude quota switch, recording and data, about. */
 export function Settings({
   status,
@@ -392,6 +442,7 @@ export function Settings({
                 </div>
               </Row>
             </Panel>
+            <CostAlerts onChanged={onChanged} />
             <Panel title={t("quotaTitle")}>
               <Row label={t("quotaNotify")} note={t("quotaNotifyNote")}>
                 <div className="seg" role="group" aria-label={t("quotaNotify")}>

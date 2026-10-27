@@ -6,6 +6,7 @@
 
 pub mod analytics;
 pub mod correct;
+pub mod costwatch;
 pub mod day;
 pub mod derive;
 pub mod derive_human;
@@ -644,6 +645,30 @@ impl Reader {
             list.cost = cost;
         }
         Ok(list)
+    }
+
+    /// What has been spent right now (for the cost alerts).
+    pub fn cost_measures(
+        &self,
+        now: i64,
+        prefs: &costwatch::CostAlertPrefs,
+    ) -> Result<costwatch::Measures> {
+        costwatch::measure(
+            &self.derived()?,
+            &self.reporting_zone()?,
+            now,
+            prefs,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
+    }
+
+    /// The reporting day of an instant, `YYYY-MM-DD`.
+    pub fn day_of(&self, ms: i64) -> Result<String> {
+        Ok(self
+            .reporting_zone()?
+            .day_of(ms)
+            .map(|d| d.to_string())
+            .unwrap_or_default())
     }
 
     /// Cost per day and model, cache health and a what-if over a range of days (estimates).

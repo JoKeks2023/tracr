@@ -4,6 +4,16 @@
 const en = {
   // header and navigation
   daysTitle: "Days",
+  costAlertsTitle: "Cost alerts",
+  costAlertsOn: "Notify about spend",
+  costAlertsNote: "An alert fires when a figure crosses its limit and again at each doubling, not on a timer. All figures are API estimates, not spend.",
+  costAlertSession: "One session over",
+  costAlertSessionNote: "Spend of a single session in the last 24 hours.",
+  costAlertWindow: "Spend in a short time over",
+  costAlertWindowNote: "Also catches a runaway: a lot of spend inside the window below.",
+  costAlertWindowLen: "Length of that window",
+  costAlertDay: "Per day over",
+  costAlertMonth: "Per month over",
   costChartAria: "Cost per day over {days} days, highest {peak} on {day}",
   costPerDay: "Cost per day by model",
   cacheTitle: "Prompt cache",
@@ -537,6 +547,16 @@ export type Key = keyof typeof en;
 
 const de: Record<Key, string> = {
   daysTitle: "Tage",
+  costAlertsTitle: "Kostenalarme",
+  costAlertsOn: "Bei Ausgaben benachrichtigen",
+  costAlertsNote: "Ein Alarm kommt, wenn eine Zahl ihre Grenze erreicht und bei jeder Verdopplung, nicht nach einem Takt. Alle Werte sind API-Schätzungen, keine Ausgaben.",
+  costAlertSession: "Eine Sitzung über",
+  costAlertSessionNote: "Ausgaben einer einzelnen Sitzung in den letzten 24 Stunden.",
+  costAlertWindow: "Ausgaben in kurzer Zeit über",
+  costAlertWindowNote: "Fängt auch einen Ausreißer: viel Verbrauch innerhalb des Fensters unten.",
+  costAlertWindowLen: "Länge dieses Fensters",
+  costAlertDay: "Pro Tag über",
+  costAlertMonth: "Pro Monat über",
   costChartAria: "Kosten pro Tag über {days} Tage, höchster Wert {peak} am {day}",
   costPerDay: "Kosten je Tag nach Modell",
   cacheTitle: "Prompt-Cache",
