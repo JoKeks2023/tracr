@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 export type RootKind = "provider" | "repository";
 import type { ProjectOp, ProjectsView } from "./types";
-import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, Status, TargetOption } from "./types";
+import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, Analytics, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
 export const api = {
@@ -21,6 +21,8 @@ export const api = {
   hooksState: () => invoke<HooksView>("hooks_state"),
   /** Opt in or out of Claude Code's hooks (needs you, your turn); a copy of the settings is made first. */
   hooksSet: (install: boolean) => invoke<void>("hooks_set", { install }),
+  /** Cost per day and model, cache health and a what-if over a range of days (estimates). */
+  analytics: (from: string, to: string) => invoke<Analytics>("analytics", { from, to }),
   getQuotaPrefs: () => invoke<QuotaPrefs>("get_quota_prefs"),
   setQuotaPrefs: (prefs: QuotaPrefs) => invoke<void>("set_quota_prefs", { prefs }),
   refresh: () => invoke<Refreshed>("refresh"),

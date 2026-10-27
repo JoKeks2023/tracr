@@ -461,3 +461,53 @@ export interface HooksView {
   installed: boolean;
   live: LiveSession[];
 }
+
+export interface ModelCost {
+  model: string;
+  records: number;
+  tokens: number;
+  amount_nano: number | null;
+  partial: boolean;
+}
+export interface CostDay {
+  day: string;
+  models: ModelCost[];
+}
+export interface SessionCache {
+  session_id: string;
+  label: string | null;
+  tokens: number;
+  hit_ratio: number;
+}
+export interface CacheStats {
+  fresh_tokens: number;
+  read_tokens: number;
+  write_5m_tokens: number;
+  write_1h_tokens: number;
+  write_untiered_tokens: number;
+  hit_ratio: number | null;
+  saved_nano: number;
+  cold_requests: number;
+  cold_tokens: number;
+  cold_extra_nano: number;
+  worst_sessions: SessionCache[];
+}
+export interface WhatIf {
+  from_family: string;
+  to_model: string;
+  tokens: number;
+  current_nano: number;
+  repriced_nano: number;
+  saving_nano: number;
+  partial: boolean;
+}
+export interface Analytics {
+  timezone: string;
+  from: string;
+  to: string;
+  pricing: PricingInfo;
+  days: CostDay[];
+  models: ModelCost[];
+  cache: CacheStats;
+  what_if: WhatIf | null;
+}

@@ -4,6 +4,7 @@
 //! approving roots, importing, rebuilding the derived store, and reading
 //! statistics and day views.
 
+pub mod analytics;
 pub mod correct;
 pub mod day;
 pub mod derive;
@@ -643,6 +644,17 @@ impl Reader {
             list.cost = cost;
         }
         Ok(list)
+    }
+
+    /// Cost per day and model, cache health and a what-if over a range of days (estimates).
+    pub fn analytics(&self, from: &str, to: &str) -> Result<analytics::Analytics> {
+        analytics::analytics(
+            &self.derived()?,
+            &self.reporting_zone()?,
+            from,
+            to,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
     }
 
     /// One session laid out in time: actors, prompts, tool calls, request sizes.

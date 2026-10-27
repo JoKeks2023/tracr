@@ -461,6 +461,17 @@ async fn hooks_set(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), Stri
 }
 
 #[tauri::command]
+async fn analytics(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<tracr_app::analytics::Analytics, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.analytics(&from, &to))
+        .map_err(err)
+}
+
+#[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
     from: String,
@@ -1141,6 +1152,7 @@ fn main() {
             days,
             day_agents,
             sessions,
+            analytics,
             hooks_state,
             hooks_set,
             get_quota_prefs,
