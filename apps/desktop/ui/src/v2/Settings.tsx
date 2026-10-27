@@ -3,16 +3,17 @@ import { api, errorText, type RootKind } from "../api";
 import { tildify } from "../format";
 import { t } from "../i18n";
 import { RootsPicker } from "../RootsPicker";
-import type { Limits, ProjectOp, ProjectsView, Status } from "../types";
+import type { HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel } from "./ui";
 
-type Pane = "sources" | "projects" | "time" | "quota" | "recording" | "about";
-const PANES: { id: Pane; label: "stSources" | "projects" | "timeZone" | "quotaTitle" | "stRecording" | "about" }[] = [
+type Pane = "sources" | "projects" | "time" | "quota" | "notices" | "recording" | "about";
+const PANES: { id: Pane; label: "stSources" | "projects" | "timeZone" | "quotaTitle" | "stNotices" | "stRecording" | "about" }[] = [
   { id: "sources", label: "stSources" },
   { id: "projects", label: "projects" },
   { id: "time", label: "timeZone" },
   { id: "quota", label: "quotaTitle" },
+  { id: "notices", label: "stNotices" },
   { id: "recording", label: "stRecording" },
   { id: "about", label: "about" },
 ];
@@ -262,6 +263,10 @@ export function Settings({
     });
   const tap = limits?.claude_tap;
   const { prefs, set: setPrefs } = useQuotaPrefs();
+  const [hooks, setHooks] = useState<HooksView | null>(null);
+  useEffect(() => {
+    void api.hooksState().then(setHooks).catch(() => setHooks(null));
+  }, []);
 
   return (
     <div className="st">
@@ -344,22 +349,48 @@ export function Settings({
                 </div>
               </Row>
             </Panel>
-            <Panel title={t("quotaAlerts")}>
+            <Panel title={t("quotaMenuBar")}>
               <Row label={t("quotaMenuBar")} note={t("quotaMenuBarNote")}>
                 <div className="seg" role="group" aria-label={t("quotaMenuBar")}>
                   <button aria-pressed={prefs.menuBar} onClick={() => setPrefs({ menuBar: true })}>{t("on")}</button>
                   <button aria-pressed={!prefs.menuBar} onClick={() => setPrefs({ menuBar: false })}>{t("off")}</button>
                 </div>
               </Row>
+            </Panel>
+            <Panel title="Codex">
+              <p className="vnote">{t("codexQuotaNote")}</p>
+            </Panel>
+          </>
+        )}
+
+        {pane === "notices" && (
+          <>
+            <Panel title={t("hooksTitle")}>
+              <Row label={hooks?.installed ? t("hooksOn") : t("hooksOff")} note={t("hooksHint")}>
+                <button className="btn" disabled={!hooks || busy} onClick={() => run(async () => { await api.hooksSet(!hooks?.installed); setHooks(await api.hooksState()); return hooks?.installed ? t("hooksDoneOff") : t("hooksDoneOn"); })}>
+                  {hooks?.installed ? t("hooksTurnOff") : t("hooksTurnOn")}
+                </button>
+              </Row>
+              <Row label={t("notifyWaiting")}>
+                <div className="seg" role="group" aria-label={t("notifyWaiting")}>
+                  <button aria-pressed={prefs.notifyWaiting} onClick={() => setPrefs({ notifyWaiting: true })}>{t("on")}</button>
+                  <button aria-pressed={!prefs.notifyWaiting} onClick={() => setPrefs({ notifyWaiting: false })}>{t("off")}</button>
+                </div>
+              </Row>
+              <Row label={t("notifyFinished")}>
+                <div className="seg" role="group" aria-label={t("notifyFinished")}>
+                  <button aria-pressed={prefs.notifyFinished} onClick={() => setPrefs({ notifyFinished: true })}>{t("on")}</button>
+                  <button aria-pressed={!prefs.notifyFinished} onClick={() => setPrefs({ notifyFinished: false })}>{t("off")}</button>
+                </div>
+              </Row>
+            </Panel>
+            <Panel title={t("quotaTitle")}>
               <Row label={t("quotaNotify")} note={t("quotaNotifyNote")}>
                 <div className="seg" role="group" aria-label={t("quotaNotify")}>
                   <button aria-pressed={prefs.notify} onClick={() => setPrefs({ notify: true })}>{t("on")}</button>
                   <button aria-pressed={!prefs.notify} onClick={() => setPrefs({ notify: false })}>{t("off")}</button>
                 </div>
               </Row>
-            </Panel>
-            <Panel title="Codex">
-              <p className="vnote">{t("codexQuotaNote")}</p>
             </Panel>
           </>
         )}

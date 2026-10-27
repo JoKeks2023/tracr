@@ -443,4 +443,18 @@ export interface QuotaPrefs {
   menu_bar: boolean;
   notify: boolean;
   rings: boolean;
+  notify_waiting: boolean;
+  notify_finished: boolean;
+}
+
+export interface LiveSession {
+  /** Claude's own session id (`native_session_id` of a derived session). */
+  session: string;
+  state: "working" | "waiting" | "your_turn" | "started";
+  since: number;
+  kind: string | null;
+}
+export interface HooksView {
+  installed: boolean;
+  live: LiveSession[];
 }

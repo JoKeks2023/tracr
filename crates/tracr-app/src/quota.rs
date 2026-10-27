@@ -29,6 +29,10 @@ pub struct QuotaPrefs {
     pub notify: bool,
     /// Show each provider's tightest window as a ring instead of one bar per window.
     pub rings: bool,
+    /// Notify when Claude Code needs you (a permission, a plan, an idle prompt).
+    pub notify_waiting: bool,
+    /// Notify when Claude Code finishes and it is your turn.
+    pub notify_finished: bool,
 }
 
 impl Default for QuotaPrefs {
@@ -39,6 +43,8 @@ impl Default for QuotaPrefs {
             menu_bar: true,
             notify: true,
             rings: false,
+            notify_waiting: true,
+            notify_finished: true,
         }
     }
 }

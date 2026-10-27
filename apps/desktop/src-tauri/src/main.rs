@@ -426,6 +426,40 @@ async fn set_quota_prefs(
     Ok(())
 }
 
+/// Whether tracr's Claude Code hooks are registered, and which sessions are live (working, waiting for you, your turn).
+#[derive(Serialize)]
+struct HooksView {
+    installed: bool,
+    live: Vec<tracr_app::hooks::LiveSession>,
+}
+
+#[tauri::command]
+async fn hooks_state(ctx: tauri::State<'_, Ctx>) -> Result<HooksView, String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    Ok(HooksView {
+        installed: tracr_app::hooks::installed(&settings),
+        live: tracr_app::hooks::live(&dir, now_ms(), 24 * 3_600_000),
+    })
+}
+
+/// Opt in or out of the Claude Code hooks (a copy of the settings is made first).
+#[tauri::command]
+async fn hooks_set(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    if !install {
+        return tracr_app::hooks::uninstall(&settings).map_err(err);
+    }
+    let cli = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(|p| p.join("tracr"))
+        .filter(|p| p.exists())
+        .ok_or_else(|| "the tracr command line tool was not found next to the app".to_owned())?;
+    tracr_app::hooks::install(&dir, &settings, &cli, now_ms()).map_err(err)
+}
+
 #[tauri::command]
 async fn sessions(
     ctx: tauri::State<'_, Ctx>,
@@ -763,6 +797,37 @@ fn quota_tick(app: &tauri::AppHandle, watcher: Option<&mut quota::Watcher>) {
     refresh_tray(app);
 }
 
+/// Notifies for hook events that arrived since the last look (needs you, your turn).
+fn hook_tick(app: &tauri::AppHandle, last_seen: &mut i64) {
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = quota::load_prefs(&dir);
+    let events = tracr_app::hooks::events(&dir);
+    let newest = events.iter().map(|e| e.at).max().unwrap_or(*last_seen);
+    if *last_seen == 0 {
+        *last_seen = newest.max(now_ms() - 1); // events before this launch are history
+        return;
+    }
+    let reader = Reader::open(&dir).ok();
+    for e in events.iter().filter(|e| e.at > *last_seen) {
+        let (want, title) = match (e.event.as_str(), german()) {
+            ("Notification", true) => (prefs.notify_waiting, "Claude braucht dich"),
+            ("Notification", false) => (prefs.notify_waiting, "Claude needs you"),
+            ("Stop", true) => (prefs.notify_finished, "Du bist dran"),
+            ("Stop", false) => (prefs.notify_finished, "Your turn"),
+            _ => (false, ""),
+        };
+        if want {
+            let label = reader
+                .as_ref()
+                .and_then(|r| r.session_label(&e.session))
+                .unwrap_or_else(|| "Claude Code".to_owned());
+            let _ = app.notification().builder().title(title).body(label).show();
+        }
+    }
+    *last_seen = newest.max(*last_seen);
+}
+
 fn refresh_tray(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("tracr") else {
         return;
@@ -1055,6 +1120,8 @@ fn main() {
             days,
             day_agents,
             sessions,
+            hooks_state,
+            hooks_set,
             get_quota_prefs,
             set_quota_prefs,
             project_overview,
@@ -1108,6 +1175,15 @@ fn main() {
                 loop {
                     quota_tick(&quota_handle, Some(&mut watcher));
                     std::thread::sleep(std::time::Duration::from_secs(30));
+                }
+            });
+            // Claude Code hook events (needs you, your turn): look every few seconds.
+            let hook_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut last_hook = 0_i64;
+                loop {
+                    hook_tick(&hook_handle, &mut last_hook);
+                    std::thread::sleep(std::time::Duration::from_secs(3));
                 }
             });
             // Keep the elapsed time in the menu bar current.

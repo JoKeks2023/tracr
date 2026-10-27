@@ -9,6 +9,7 @@ pub mod day;
 pub mod derive;
 pub mod derive_human;
 pub mod export;
+pub mod hooks;
 pub mod limits;
 pub mod manual;
 pub mod pricing;
@@ -656,6 +657,18 @@ impl Reader {
             &list,
             &projects::read_config(&self.conn)?,
         ))
+    }
+
+    /// The folder name of a session by Claude's own session id (for hook notifications).
+    pub fn session_label(&self, native_session_id: &str) -> Option<String> {
+        self.derived()
+            .ok()?
+            .query_row(
+                "SELECT label FROM agent_session WHERE native_session_id = ?1 AND label IS NOT NULL LIMIT 1",
+                [native_session_id],
+                |r| r.get(0),
+            )
+            .ok()
     }
 
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {

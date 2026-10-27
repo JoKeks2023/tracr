@@ -423,6 +423,7 @@ export function App() {
             onOpenSession={(id) => showProject(id)}
             onOpenWorktime={() => (days.includes(today) && goTo(today), setArea("worktime"))}
             onOpenLimits={() => setArea("limits")}
+            onOpenSettings={() => setArea("settings")}
             onError={reportError}
           />
         )}

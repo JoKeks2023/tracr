@@ -3,7 +3,7 @@ import { api, errorText } from "../api";
 import { ago, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import { shiftAnchor } from "../nav";
-import type { DayAgents, Limits, SessionDay, SessionList } from "../types";
+import type { DayAgents, HooksView, Limits, LiveSession, SessionDay, SessionList } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, Stat, clockLabel, windowName } from "./ui";
 
@@ -64,7 +64,7 @@ function DayStrip({ view }: { view: DayAgents }) {
   );
 }
 
-function SessionCard({ s, view, now, onOpen }: { s: SessionDay; view: DayAgents; now: number; onOpen: () => void }) {
+function SessionCard({ s, view, now, live, onOpen }: { s: SessionDay; view: DayAgents; now: number; live?: LiveSession; onOpen: () => void }) {
   const models = [...new Set(s.usage.filter((u) => u.identified).map((u) => modelName(u.model)))];
   const subs = s.actors.filter((a) => a.actor_kind === "known").length;
   const run = s.actors.flatMap((a) => a.segments);
@@ -75,7 +75,7 @@ function SessionCard({ s, view, now, onOpen }: { s: SessionDay; view: DayAgents;
     <button className="card" onClick={onOpen}>
       <div className="t1">
         <b>{s.label ?? t("noWorkingDir")}</b>
-        <span className="mono vnote">{last ? ago(last, now) : ""}</span>
+        <span className="mono vnote">{live?.state === "waiting" ? t("liveWaiting", { time: ago(live.since, now) }) : live?.state === "your_turn" ? t("liveYourTurn", { time: ago(live.since, now) }) : last ? ago(last, now) : ""}</span>
       </div>
       <div className="chips">
         {s.git_branch && <span className="chip mono">{s.git_branch}</span>}
@@ -105,6 +105,7 @@ export function Home({
   onOpenSession,
   onOpenWorktime,
   onOpenLimits,
+  onOpenSettings,
   onError,
 }: {
   day: string;
@@ -114,12 +115,14 @@ export function Home({
   onOpenSession: (id: string) => void;
   onOpenWorktime: () => void;
   onOpenLimits: () => void;
+  onOpenSettings: () => void;
   onError: (text: string) => void;
 }) {
   const [view, setView] = useState<DayAgents | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [yesterday, setYesterday] = useState<SessionList | null>(null);
+  const [hooks, setHooks] = useState<HooksView | null>(null);
   const { prefs } = useQuotaPrefs();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -140,6 +143,14 @@ export function Home({
       live = false;
     };
   }, [day, hasData, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Who is working, who needs you: every few seconds once the hooks are on.
+  useEffect(() => {
+    const read = () => void api.hooksState().then(setHooks).catch(() => setHooks(null));
+    read();
+    const id = window.setInterval(read, 5_000);
+    return () => window.clearInterval(id);
+  }, [reloadKey]);
 
   useEffect(() => {
     let live = true;
@@ -194,8 +205,18 @@ export function Home({
   if (hasClaude && limits && !limits.claude_tap.installed) {
     needs.push({ key: "tap", color: "var(--info)", title: t("needTap"), note: t("needTapNote"), action: t("needOpen"), run: onOpenLimits });
   }
-  const active = sum.sessions.filter((s) => (s.last_evidence_at ?? 0) >= now - ACTIVE_MS);
-  const earlier = sum.sessions.filter((s) => (s.last_evidence_at ?? 0) < now - ACTIVE_MS).slice(0, 8);
+  if (hasClaude && hooks && !hooks.installed) {
+    needs.push({ key: "hooks", color: "var(--info)", title: t("needHooks"), note: t("needHooksNote"), action: t("needOpen"), run: onOpenSettings });
+  }
+  const liveBy = new Map<string, LiveSession>((hooks?.installed ? hooks.live : []).map((l) => [l.session, l]));
+  const liveOf = (s: SessionDay) => liveBy.get(s.native_session_id);
+  const waiting = sum.sessions.filter((s) => ["waiting", "your_turn"].includes(liveOf(s)?.state ?? ""));
+  const isWorking = (s: SessionDay) => {
+    const l = liveOf(s);
+    return l ? l.state === "working" || l.state === "started" : (s.last_evidence_at ?? 0) >= now - ACTIVE_MS;
+  };
+  const active = sum.sessions.filter((s) => !waiting.includes(s) && isWorking(s));
+  const earlier = sum.sessions.filter((s) => !waiting.includes(s) && !isWorking(s)).slice(0, 8);
   const cost = view.cost.identified;
 
   return (
@@ -241,9 +262,16 @@ export function Home({
       </div>
 
       <div className="board">
+        {hooks?.installed && (
+          <section className="col" aria-label={t("colWaiting")}>
+            <h2><i className="sdot" style={{ background: "var(--bad)" }} />{t("colWaiting")} <em>{waiting.length}</em></h2>
+            {waiting.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} live={liveOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
+            {waiting.length === 0 && <p className="vnote">{t("needNone")}</p>}
+          </section>
+        )}
         <section className="col" aria-label={t("colActive")}>
           <h2><i className="sdot collecting" />{t("colActive")} <em>{active.length}</em></h2>
-          {active.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} onOpen={() => onOpenSession(s.session_id)} />)}
+          {active.map((s) => <SessionCard key={s.session_id} s={s} view={view} now={now} live={liveOf(s)} onOpen={() => onOpenSession(s.session_id)} />)}
           {active.length === 0 && <p className="vnote">{t("boardNone")}</p>}
         </section>
         <section className="col" aria-label={t("colEarlier")}>

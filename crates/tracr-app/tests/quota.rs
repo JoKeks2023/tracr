@@ -137,6 +137,8 @@ fn prefs_round_trip_and_unknown_files_fall_back_to_defaults() {
         menu_bar: false,
         notify: false,
         rings: true,
+        notify_waiting: false,
+        notify_finished: false,
     };
     tracr_app::quota::save_prefs(dir.path(), &p).unwrap();
     assert_eq!(tracr_app::quota::load_prefs(dir.path()), p);

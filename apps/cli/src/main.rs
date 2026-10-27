@@ -63,6 +63,14 @@ enum Command {
         #[command(subcommand)]
         command: LimitsCommand,
     },
+    /// Claude Code session hooks: who needs you, who finished.
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommand,
+    },
+    /// Used by Claude Code for its hooks once `hooks install` ran. Keeps only the event, the session id and the time.
+    #[command(name = "hook", hide = true)]
+    Hook,
     /// Used by Claude Code as its `statusLine` command once `limits install` ran. Keeps only the limit figures.
     #[command(name = "statusline-tap", hide = true)]
     StatuslineTap,
@@ -95,6 +103,25 @@ enum LimitsCommand {
         settings: Option<PathBuf>,
     },
     /// Restore the statusLine that was there before.
+    Uninstall {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum HooksCommand {
+    /// Whether the hooks are registered, and the sessions that are live now.
+    Status {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Register tracr's hook beside yours. A copy of the settings is made first.
+    Install {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Remove tracr's hooks and leave yours.
     Uninstall {
         #[arg(long)]
         settings: Option<PathBuf>,
@@ -411,6 +438,60 @@ fn main() -> Result<()> {
     match &cli.command {
         Command::StatuslineTap => {
             statusline_tap(&dir);
+            return Ok(());
+        }
+        Command::Hook => {
+            use std::io::Read;
+            let mut input = String::new();
+            let _ = std::io::stdin().read_to_string(&mut input);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            let _ = tracr_app::hooks::record(&dir, &input, now);
+            return Ok(()); // no output, exit 0: a hook must never change what Claude Code does
+        }
+        Command::Hooks { command } => {
+            match command {
+                HooksCommand::Status { settings } => {
+                    let path = settings_path(settings)?;
+                    println!(
+                        "hooks: {}",
+                        if tracr_app::hooks::installed(&path) {
+                            "installed"
+                        } else {
+                            "not installed"
+                        }
+                    );
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    for s in tracr_app::hooks::live(&dir, now, 24 * 3_600_000) {
+                        println!(
+                            "  {} {:?} since {}",
+                            s.session,
+                            s.state,
+                            UtcMillis(s.since).to_rfc3339()
+                        );
+                    }
+                }
+                HooksCommand::Install { settings } => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    let path = settings_path(settings)?;
+                    tracr_app::hooks::install(&dir, &path, &std::env::current_exe()?, now)?;
+                    println!(
+                        "installed in {} (a copy was kept in {}/backups)",
+                        path.display(),
+                        dir.display()
+                    );
+                }
+                HooksCommand::Uninstall { settings } => {
+                    let path = settings_path(settings)?;
+                    tracr_app::hooks::uninstall(&path)?;
+                    println!("removed tracr's hooks from {}", path.display());
+                }
+            }
             return Ok(());
         }
         Command::Limits { command } => {
