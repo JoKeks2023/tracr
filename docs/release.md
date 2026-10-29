@@ -104,6 +104,8 @@ A pre-release is not what `releases/latest` points to, so links use the explicit
 
 **7. Homebrew.** The tap is its own repository, [`JoKeks2023/homebrew-tracr`](https://github.com/JoKeks2023/homebrew-tracr). In `Casks/tracr.rb` set `version` and the DMG checksum, in `Formula/tracr-cli.rb` set `version` and the tar.gz checksum (compare with `gh release download` first), commit and push there. The cask installs the app and links the embedded CLI via its `binary` stanza. The formula and the cask both provide `tracr`; Homebrew only warns and overwrites the link when both are installed, so install one of them.
 
+**7b. MacPorts.** `packaging/macports/sysutils/tracr/Portfile` installs the prebuilt command line tool from the release archive. Set `version` and replace `rmd160`, `sha256` and `size` of `tracr-<version>-universal-apple-darwin.tar.gz` (`openssl dgst -rmd160`, `shasum -a 256`, `stat -f%z`). It is not part of the official ports tree yet; see `packaging/macports/README.md`.
+
 **8. Website.** Three places carry release data:
 - `site/public/_redirects`: the stable links `/download/universal`, `/pkg`, `/apple-silicon`, `/intel`, `/cli` go to the files of the current release. Change the version in the five URLs.
 - `site/public/en/download/index.html` and `de/download/index.html`: version, file names, sizes and SHA-256 per file (take them from `shasum -a 256 dist/*` and `ls -l dist`). `/download` itself is a small page that sends visitors to the English or German page.

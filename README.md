@@ -106,7 +106,7 @@ Estimated API cost · API-equivalent estimate, not spend · catalog 2026-10-24.1
 
 ## Status
 
-tracr is **pre-release** (`0.9.2` is the current [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.9.2)) and built in the open, in vertical slices.
+tracr is **pre-release** (`0.10.0` is the current [pre-release](https://github.com/JoKeks2023/tracr/releases/tag/v0.10.0)) and built in the open, in vertical slices.
 
 | Slice | What | State |
 |---|---|---|
@@ -222,6 +222,12 @@ CI runs formatting, clippy and tests on Linux, builds and tests on macOS, and ch
 ## Privacy
 
 tracr never stores prompt text, assistant messages or tool output. It reads structure, timing, model names, token counts and tool names. Provider folders are read only after you approve them, the desktop window has no filesystem, shell or network capability, and nothing leaves your machine. Searching or re-reading message content is therefore deliberately impossible.
+
+Four sources are opt-in and each stores only numbers and names, never text:
+- **Rate limits.** Codex rollouts already carry the plan limits and credits; for Claude Code you can turn on a status line tap that copies the limit figures Claude Code reports into a local file. Turning it off restores your previous status line.
+- **Hooks.** If you switch them on, Claude Code tells tracr when a session starts, waits or stops (event, session id, kind and time only), so the app can show who is waiting for you.
+- **Running sessions.** If you approve your Claude folder, tracr reads the session registry in it (process, state, name, folder) to show running sessions. Key files in that folder are never opened.
+- **Notifications.** Warnings about limits, cost and waiting sessions are shown by the system; nothing is sent anywhere.
 
 ## License
 
