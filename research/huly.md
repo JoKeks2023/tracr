@@ -6,7 +6,7 @@ Research date: **2026-09-28**. This chapter uses the actual custom `mcp__huly_jo
 
 | Read | Result |
 |---|---|
-| list_workspaces | Jokeks2023 (`jokeks2023`) and separate AVMS workspace |
+| list_workspaces | two workspaces (the project's own and an unrelated one) |
 | list_projects in jokeks2023 | TRACR — tracr; TSK — Default |
 | get_project TRACR | Zero issues; Backlog, Todo, In Progress, Done, Canceled |
 | list_issues TRACR | Empty |

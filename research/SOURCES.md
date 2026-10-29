@@ -15,7 +15,7 @@ Evidence labels used throughout: **D** official documentation; **C** inspected s
 
 Live `mcp__huly_joris` tool catalog and calls on September 28:
 
-- `list_workspaces({})`: Jokeks2023, slug `jokeks2023`, ID `0d76d854-aab5-4187-b352-fef164c8961a`; also a separate AVMS workspace.
+- `list_workspaces({})`: two workspaces (the project's own and an unrelated one).
 - `list_projects({workspace:"jokeks2023"})`: TRACR and TSK.
 - `get_project({workspace:"jokeks2023",identifier:"TRACR"})`: tracr, zero issues; Backlog, Todo, In Progress, Done, Canceled.
 - `list_issues({workspace:"jokeks2023",projectIdentifier:"TRACR",limit:100})`: no issues.
