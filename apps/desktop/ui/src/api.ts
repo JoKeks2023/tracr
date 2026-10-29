@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 export type RootKind = "provider" | "repository";
+import type { ProjectOp, ProjectsView } from "./types";
 import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
@@ -18,6 +19,9 @@ export const api = {
   chooseRoot: (kind: RootKind) => invoke<string | null>("choose_root", { kind }),
   /** Chooses the reporting time zone (null: follow the system) and rebuilds. Refused once a day is reviewed. */
   setTimezone: (name: string | null) => invoke<void>("set_timezone", { name }),
+  projects: () => invoke<ProjectsView>("projects"),
+  /** Creates, renames or deletes a project, or maps a repository; resolves to the project id. */
+  projectOp: (op: ProjectOp) => invoke<string>("project_op", { op }),
   /** Stops reading a root; what was imported stays in the ledger. */
   removeRoot: (kind: RootKind, path: string) => invoke<void>("remove_root", { kind, path }),
   /** Resolves to the written path, or null if the save panel was cancelled. */

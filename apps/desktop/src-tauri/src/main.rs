@@ -235,6 +235,47 @@ fn root_kind(kind: &str) -> Result<RootKind, String> {
     }
 }
 
+#[derive(Serialize)]
+struct ProjectsView {
+    projects: Vec<tracr_app::projects::Project>,
+    repository_projects: std::collections::BTreeMap<String, String>,
+    repositories: Vec<tracr_app::projects::KnownRepository>,
+}
+
+/// The user's projects, their repository mappings, and the repositories seen so far (S3.1).
+#[tauri::command]
+async fn projects(ctx: tauri::State<'_, Ctx>) -> Result<ProjectsView, String> {
+    let reader = Reader::open(&ctx.dir()?).map_err(err)?;
+    let config = reader.project_config().map_err(err)?;
+    Ok(ProjectsView {
+        projects: config.projects,
+        repository_projects: config.repository_projects,
+        repositories: reader.known_repositories().map_err(err)?,
+    })
+}
+
+/// Creates, renames or deletes a project, or maps a repository to one, through
+/// the collector (it holds the writer lock). A view: no minute moves.
+#[tauri::command]
+async fn project_op(
+    ctx: tauri::State<'_, Ctx>,
+    op: tracr_app::projects::ProjectOp,
+) -> Result<String, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("projects need the collector of this app; it is not running here".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || handle.project(op))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
 /// Chooses the reporting time zone (AD-14), or `None` for the system zone, and
 /// rebuilds the derived store because day boundaries move. Refused once a day
 /// has been reviewed.
@@ -622,6 +663,8 @@ fn main() {
             choose_root,
             remove_root,
             set_timezone,
+            projects,
+            project_op,
             days,
             day_agents,
             refresh,

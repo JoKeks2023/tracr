@@ -11,6 +11,7 @@ pub mod derive_human;
 pub mod export;
 pub mod manual;
 pub mod pricing;
+pub mod projects;
 pub mod report;
 pub mod review;
 pub mod runtime;
@@ -296,6 +297,18 @@ impl App {
     }
 
     fn write_roots(&mut self, kind: RootKind, action: &str, roots: &[String]) -> Result<()> {
+        self.write_settings(
+            &format!("setting.{}.{action}", kind.key()),
+            &[(kind.key(), serde_json::json!(roots))],
+        )
+    }
+
+    /// Appends one user action and the settings it changes, in one transaction.
+    fn write_settings(
+        &mut self,
+        action_kind: &str,
+        entries: &[(&str, serde_json::Value)],
+    ) -> Result<()> {
         let env = IngestEnv {
             clock: &*self.clock,
             file_identity: &*self.fid,
@@ -305,16 +318,43 @@ impl App {
             &tx,
             &NewUserAction {
                 id: &new_uuid_v7(&env),
-                kind: &format!("setting.{}.{action}", kind.key()),
+                kind: action_kind,
                 actor: "user",
                 at: self.clock.now(),
                 reason: None,
                 client: self.client,
             },
         )?;
-        ledger::append_setting(&tx, kind.key(), &serde_json::json!(roots), seq)?;
+        for (key, value) in entries {
+            ledger::append_setting(&tx, key, value, seq)?;
+        }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Creates, renames, deletes projects and maps repositories to them (S3.1).
+    /// Returns the project id the operation concerns. A view only: no minutes
+    /// move, so nothing needs rebuilding.
+    pub fn project_op(&mut self, op: &projects::ProjectOp) -> Result<String> {
+        let mut config = projects::read_config(&self.conn)?;
+        let id = {
+            let env = IngestEnv {
+                clock: &*self.clock,
+                file_identity: &*self.fid,
+            };
+            projects::apply(&mut config, op, || format!("prj_{}", new_uuid_v7(&env)))?
+        };
+        self.write_settings(
+            &format!("setting.projects.{}", op.action()),
+            &[
+                (projects::PROJECTS_KEY, serde_json::json!(config.projects)),
+                (
+                    projects::REPOSITORY_PROJECTS_KEY,
+                    serde_json::json!(config.repository_projects),
+                ),
+            ],
+        )?;
+        Ok(id)
     }
 
     /// Backfill (§4.5): discovery over approved provider roots, then one
@@ -598,6 +638,12 @@ impl Reader {
         )?;
         review::attach(&self.conn, &mut v)?;
         v.ledger_counts = self.ledger_counts(&v)?;
+        // Grouped by project from the numbers the day shows: the reviewed
+        // snapshot for a reviewed day, the live ones otherwise.
+        let shown = v.review.as_ref().map_or(&v.human.counted_by_target, |r| {
+            &r.snapshot.counted_by_target
+        });
+        v.counted_by_project = projects::project_totals(shown, &projects::read_config(&self.conn)?);
         Ok(v)
     }
 
@@ -667,6 +713,31 @@ impl Reader {
     /// Days that carry a reviewed revision. They fix the reporting zone (AD-14).
     pub fn reviewed_day_count(&self) -> Result<i64> {
         Ok(ledger::reviewed_day_count(&self.conn)?)
+    }
+
+    /// The user's projects and repository mappings (S3.1).
+    pub fn project_config(&self) -> Result<projects::ProjectConfig> {
+        projects::read_config(&self.conn)
+    }
+
+    /// Repositories seen in agent sessions, for mapping them to projects.
+    pub fn known_repositories(&self) -> Result<Vec<projects::KnownRepository>> {
+        let Some(d) = tracr_store::derived::open_read_only(&self.data_dir)? else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = d.prepare(
+            "SELECT DISTINCT repository_key FROM agent_session WHERE repository_key IS NOT NULL ORDER BY 1",
+        )?;
+        let keys: Vec<String> = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(keys
+            .into_iter()
+            .map(|key| projects::KnownRepository {
+                label: tracr_git::repository_label(&key),
+                key,
+            })
+            .collect())
     }
 
     /// Approved repository roots, under which git is probed read-only.
