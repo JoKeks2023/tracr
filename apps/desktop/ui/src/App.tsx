@@ -1,59 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "./api";
 import { dayLabel, duration, tildify } from "./format";
-import { t } from "./i18n";
+import { listen } from "@tauri-apps/api/event";
+import { lang, t } from "./i18n";
 import { ExportSheet } from "./ExportSheet";
 import { EntrySheet } from "./EntrySheet";
 import { IntervalSheet } from "./IntervalSheet";
-import { Menu, MenuItem } from "./Menu";
 import { Attention, Bars, BigNumber, CostLine } from "./Overview";
+import { Palette, type Command } from "./Palette";
+import { DayTools } from "./v2/DayTools";
+import { Bar } from "./v2/Bar";
+import { Home } from "./v2/Home";
+import { LimitsPage } from "./v2/LimitsPage";
+import { Projects } from "./v2/Projects";
+import { Rail } from "./v2/Rail";
+import { useQuotaPrefs } from "./v2/quota";
+import { mergeCost } from "./format";
+import "./v2/theme.css";
+import { isoToday, periodLabel, rangeOf, shiftAnchor, type Area, type Scope } from "./nav";
 import { TimerControl } from "./TimerControl";
 import { ReviewDaySheet } from "./ReviewDaySheet";
 import { ReviewList } from "./ReviewList";
 import { RootsPicker } from "./RootsPicker";
 import { SessionSheet } from "./SessionSheet";
-import { SettingsSheet } from "./SettingsSheet";
+import { Settings } from "./v2/Settings";
 import { Timeline } from "./Timeline";
 import { Toast } from "./Toast";
 import { compact } from "./format";
-import type { DayAgents, DayList, HumanAtom, ManualEntryInfo, Status, TargetOption } from "./types";
+import type { DayAgents, DayList, HumanAtom, Limits, ManualEntryInfo, Status, TargetOption } from "./types";
 
 type Load =
   | { state: "loading" }
   | { state: "setup" }
   | { state: "no-derived"; message: string }
   | { state: "ready"; days: DayList };
-
-function collectorLabel(c: Status["collector"]): string {
-  return {
-    collecting: t("collecting"),
-    stalled: t("collectorStalled"),
-    elsewhere: t("collectorElsewhere"),
-    stopped: t("collectorStopped"),
-    not_configured: t("collectorNone"),
-  }[c];
-}
-
-/** A dot with the details in its tooltip; the words appear only when something is wrong. */
-function CollectorStatus({ status }: { status: Status }) {
-  const rt = status.runtime;
-  const sensorOff = rt && rt.keys.os_sensor && rt.keys.os_sensor !== "collecting";
-  const title = [
-    collectorLabel(status.collector),
-    status.collector_detail,
-    rt?.last_error && `Last error: ${rt.last_error}`,
-    rt && `Sensor: ${rt.sensor}${sensorOff ? " (unavailable)" : ""}`,
-    status.data_dir && `Data: ${tildify(status.data_dir, status.home)}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return (
-    <span className="collector" title={title}>
-      <span className={`dot ${status.collector}`} aria-hidden />
-      {status.collector !== "collecting" && collectorLabel(status.collector)}
-    </span>
-  );
-}
 
 function Setup({
   status,
@@ -95,13 +75,26 @@ export function App() {
   const [hideRoots, setHideRoots] = useState(false);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [day, setDay] = useState<string | null>(null);
-  const [view, setView] = useState<DayAgents | null>(null);
+  const { prefs } = useQuotaPrefs();
+  const [rawView, setView] = useState<DayAgents | null>(null);
+  // Automated sessions (e.g. Codex's auto-review) are left out of lists and cost unless asked for; time tracking is untouched.
+  const view = useMemo<DayAgents | null>(() => {
+    if (!rawView || prefs.showAutomated) return rawView;
+    const sessions = rawView.sessions.filter((s) => !s.automated);
+    return { ...rawView, sessions, cost: { ...rawView.cost, identified: mergeCost(sessions.map((s) => s.cost)) } };
+  }, [rawView, prefs.showAutomated]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [area, setArea] = useState<Area>("today");
+  const [scope, setScope] = useState<Scope>("week");
+  const [anchor, setAnchor] = useState<string>(isoToday());
+  const [focusSession, setFocusSession] = useState<string | null>(null);
+  const [limits, setLimits] = useState<Limits | null>(null);
+  const [pendingEntry, setPendingEntry] = useState(false);
+  const [palette, setPalette] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [approving, setApproving] = useState(false);
-  const [settings, setSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [atom, setAtom] = useState<HumanAtom | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -163,6 +156,15 @@ export function App() {
     return () => window.clearInterval(t);
   }, [loadDays]);
 
+  // Provider-reported limit figures: on every rebuild and once a minute (they change on their own).
+  useEffect(() => {
+    if (load.state !== "ready") return;
+    const read = () => void api.limits().then(setLimits).catch(() => setLimits(null));
+    read();
+    const id = window.setInterval(read, 60_000);
+    return () => window.clearInterval(id);
+  }, [load]);
+
   const approve = async (paths: string[]) => {
     setApproving(true);
     try {
@@ -185,18 +187,6 @@ export function App() {
       setApproving(false);
     }
   };
-
-  // ⌘, opens the settings, as in any Mac app.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === ",") {
-        e.preventDefault();
-        setSettings(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   useEffect(() => {
     if (!day) return;
@@ -257,131 +247,251 @@ export function App() {
     setDay(d);
   };
   const [page, setPage] = useState<"day" | "history">("day");
+  const today = isoToday();
+  const oldest = days[days.length - 1];
+  const [from, to] = rangeOf(scope, anchor);
+  const showProject = (id: string | null) => {
+    setScope("week");
+    setAnchor(today);
+    setFocusSession(id);
+    setArea("projects");
+  };
+  const shiftPeriod = (dir: -1 | 1) => {
+    if (area === "worktime") {
+      const target = dir < 0 ? olderDay : newerDay;
+      if (target) goTo(target);
+    } else if (area === "projects" || area === "limits") {
+      setAnchor(shiftAnchor(scope, anchor, dir));
+      setFocusSession(null);
+    }
+  };
+  const goToday = () => {
+    if (area === "worktime") return days[0] ? goTo(days[0]) : undefined;
+    setAnchor(today);
+    setFocusSession(null);
+  };
+  // "Add time" from the start page: bring today forward, then open the sheet once its day is loaded.
+  const addTimeToday = () => {
+    setArea("worktime");
+    if (days.includes(today) && day !== today) goTo(today);
+    setPendingEntry(true);
+  };
+  useEffect(() => {
+    if (pendingEntry && view && (!days.includes(today) || view.day === today)) {
+      setPendingEntry(false);
+      loadTargets();
+      setEntry("new");
+    }
+  }); // eslint-disable-line react-hooks/exhaustive-deps
   const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
 
+  // The menu bar (native, see main.rs) drives the window through "menu" events.
+  const act = useRef<(action: string) => void>(() => {});
+  act.current = (action) => {
+    const canEdit = status?.collector === "collecting";
+    switch (action) {
+      case "settings": return setArea("settings");
+      case "area_today": return setArea("today");
+      case "area_projects": return setArea("projects");
+      case "area_limits": return setArea("limits");
+      case "area_worktime": return setArea("worktime");
+      case "palette": return setPalette(true);
+      case "overview": return (setArea("worktime"), setPage("day"));
+      case "history": return (setArea("worktime"), setPage("history"));
+      case "prev_day": return shiftPeriod(-1);
+      case "next_day": return shiftPeriod(1);
+      case "today": return goToday();
+      case "export": return days.length > 0 ? setExporting(true) : undefined;
+      case "refresh": return busy || !canEdit ? undefined : void refresh();
+      // Work-time commands act on the work-time day: bring it forward first.
+      case "new_entry": return view && canEdit ? (setArea("worktime"), loadTargets(), setEntry("new")) : undefined;
+      case "review_day": return canReview ? (setArea("worktime"), setReviewDay(true)) : undefined;
+      case "resolve": return unknownWindows > 0 ? (setArea("worktime"), setReviewing(true)) : undefined;
+    }
+  };
+  useEffect(() => {
+    void api.setMenuLanguage(lang === "de").catch(() => {});
+    const off = listen<string>("menu", (e) => act.current(e.payload));
+    return () => void off.then((f) => f());
+  }, []);
+
+  const canEditNow = status?.collector === "collecting";
+  const commands: Command[] = [
+    { id: "today", label: t("cmdGoToday"), hint: "⌘1", run: () => setArea("today") },
+    { id: "projects", label: t("cmdGoProjects"), hint: "⌘2", run: () => setArea("projects") },
+    { id: "worktime", label: t("cmdGoWorktime"), hint: "⌘3", run: () => setArea("worktime") },
+    { id: "limits", label: t("cmdGoLimits"), hint: "⌘4", run: () => setArea("limits") },
+    { id: "settings", label: t("settings"), hint: "⌘,", run: () => setArea("settings") },
+    ...(days.length > 0 ? [{ id: "export", label: t("exportCsv"), hint: "⌘E", run: () => setExporting(true) }] : []),
+    ...(canEditNow ? [{ id: "refresh", label: t("refresh"), hint: "⌘R", run: () => void refresh() }] : []),
+    ...(canEditNow && view ? [{ id: "add", label: t("addTime"), hint: "⌘N", run: () => (setArea("worktime"), loadTargets(), setEntry("new")) }] : []),
+    ...(canReview ? [{ id: "review", label: t("reviewDayShort"), hint: "⇧⌘R", run: () => (setArea("worktime"), setReviewDay(true)) }] : []),
+    ...(unknownWindows > 0 ? [{ id: "resolve", label: t("resolve"), hint: "⌥⌘K", run: () => (setArea("worktime"), setReviewing(true)) }] : []),
+  ];
+
+  const tapNow = async (install: boolean) => {
+    try {
+      await api.limitsTap(install);
+      setLimits(await api.limits());
+      setNotice({ text: install ? t("tapOnDone") : t("tapOffDone") });
+    } catch (e) {
+      setNotice({ text: errorText(e), error: true });
+    }
+  };
+  const reportError = (text: string) => setNotice({ text, error: true });
+  const limitAlert = limits?.windows.some((w) => !w.expired && w.used_percent >= 100) ? "limits" : null;
+  const bar = (
+    <>
+      {status && status.collector === "collecting" && (
+        <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
+      )}
+    </>
+  );
+
   return (
-    <div className="app">
-      <div className="titlebar" data-tauri-drag-region />
-      <div className="page">
-      <header className="day-header">
-        <div>
-          <div className="nav">
-            <button className="button ghost icon" aria-label={t("prevDay")} disabled={!olderDay} onClick={() => olderDay && goTo(olderDay)}>
-              ‹
-            </button>
-            <h1>{day ? dayLabel(day) : "tracr"}</h1>
-            <button className="button ghost icon" aria-label={t("nextDay")} disabled={!newerDay} onClick={() => newerDay && goTo(newerDay)}>
-              ›
-            </button>
-          </div>
-          <div className="status-line">
-            {status && load.state !== "setup" && <CollectorStatus status={status} />}
-            {view && (
-              <span title={view.quality.provisional_reasons.join("\n")}>
-                {view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}
-                {view.discrepancy && ` · ${t("newEvidenceDiffers")}`}
+    <div className="v2">
+      <Rail area={area} alert={limitAlert} onArea={setArea} onSettings={() => setArea("settings")} />
+      <div className="main">
+        {area === "today" && (
+          <Bar title={t("today")} sub={dayLabel(today)}>
+            {status && (
+              <span className="live">
+                <i className={`sdot ${status.collector}`} />
+                {status.collector === "collecting" ? t("collecting") : status.collector === "stalled" ? t("collectorStalled") : status.collector === "elsewhere" ? t("collectorElsewhere") : status.collector === "stopped" ? t("collectorStopped") : t("collectorNone")}
               </span>
             )}
+            {canEditNow && (
+              <button className="btn" onClick={addTimeToday}>
+                {t("addTime")}
+              </button>
+            )}
+            {bar}
+          </Bar>
+        )}
+        {area === "worktime" && (
+          <Bar title={t("areaWorktime")} period={day ? { label: dayLabel(day), canPrev: !!olderDay, canNext: !!newerDay, onShift: shiftPeriod } : undefined}>
+            {view && load.state === "ready" && (
+              <div className="seg" role="group" aria-label={t("overview") + " / " + t("history")}>
+                <button aria-pressed={page === "day"} onClick={() => setPage("day")}>{t("overview")}</button>
+                <button aria-pressed={page === "history"} onClick={() => setPage("history")}>{t("history")}</button>
+              </div>
+            )}
+            {canEditNow && view && (
+              <button className="btn" onClick={() => (loadTargets(), setEntry("new"))}>
+                {t("addTime")}
+              </button>
+            )}
+            {bar}
+          </Bar>
+        )}
+        {area === "limits" && (
+          <Bar
+            title={t("limitsTitle")}
+            period={{ label: periodLabel(scope, anchor), scope, onScope: setScope, canPrev: !oldest || from > oldest, canNext: to < today, onShift: shiftPeriod }}
+          />
+        )}
+
+        {area === "settings" && status && (
+          <Settings
+            status={status}
+            limits={limits}
+            onTap={tapNow}
+            onChanged={(text, error) => {
+              setNotice({ text, error });
+              if (!error) {
+                void loadDays(day);
+                void api.status().then(setStatus);
+              }
+            }}
+          />
+        )}
+        {area !== "settings" && load.state === "setup" && status && (
+          <div className="body">
+            <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />
           </div>
-        </div>
-        <div className="spacer" />
-        <div className="header-actions">
-          {status && status.collector === "collecting" && (
-            <TimerControl running={status.running_timer} loadTargets={loadTargets} targets={targets} onChanged={corrected} />
-          )}
-          {view && status?.collector === "collecting" && (
-            <button
-              className="button ghost"
-              onClick={() => {
-                loadTargets();
-                setEntry("new");
-              }}
-            >
-              {t("addTime")}
-            </button>
-          )}
-          {load.state === "ready" && (
-            <Menu label={t("more")}>
-              {(close) => (
-                <>
-                  {days.length > 1 && (
-                    <label className="menu-field">
-                      {t("chooseDay")}
-                      <select className="select" value={day ?? ""} onChange={(e) => (goTo(e.target.value), close())}>
-                        {days.map((d) => (
-                          <option key={d} value={d}>
-                            {dayLabel(d)} · {d}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {days.length > 0 && (
-                    <MenuItem onClick={() => (close(), setExporting(true))}>{t("exportCsv")}</MenuItem>
-                  )}
-                  <MenuItem disabled={busy || status?.collector !== "collecting"} onClick={() => (close(), void refresh())}>
-                    {t("refresh")}
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
-          )}
-          {status && (
-            <button className="button ghost icon" onClick={() => setSettings(true)} title={t("settingsHint")} aria-label={t("settings")}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </header>
+        )}
+        {area !== "settings" && load.state === "no-derived" && (
+          <div className="body">
+            <div className="empty">
+              <h2>{t("nothingDerived")}</h2>
+              <p>{t("nothingDerivedHint")}</p>
+              <p>{load.message}</p>
+            </div>
+          </div>
+        )}
 
-      {load.state === "setup" && status && <Setup status={status} onApprove={approve} onChoose={chooseFolder} busy={approving} />}
-      {load.state === "no-derived" && (
-        <div className="empty">
-          <h2>{t("nothingDerived")}</h2>
-          <p>{t("nothingDerivedHint")}</p>
-          <p className="muted">{load.message}</p>
-        </div>
-      )}
+        {load.state === "ready" && area === "today" && (
+          <Home
+            day={today}
+            hasData={days.includes(today)}
+            reloadKey={load}
+            limits={limits}
+            onOpenSession={(id) => showProject(id)}
+            onOpenWorktime={() => (days.includes(today) && goTo(today), setArea("worktime"))}
+            onOpenLimits={() => setArea("limits")}
+            onOpenSettings={() => setArea("settings")}
+            onError={reportError}
+          />
+        )}
+        {load.state === "ready" && area === "projects" && (
+          <Projects
+            from={from}
+            to={to}
+            scope={scope}
+            anchor={anchor}
+            canPrev={!oldest || from > oldest}
+            canNext={to < today}
+            reloadKey={load}
+            focusSession={focusSession}
+            onScope={(sc) => (setScope(sc), setFocusSession(null))}
+            onShift={shiftPeriod}
+            onError={reportError}
+          />
+        )}
+        {load.state === "ready" && area === "limits" && (
+          <LimitsPage from={from} to={to} limits={limits} reloadKey={load} onTap={tapNow} onError={reportError} />
+        )}
 
-      {view && totals && load.state === "ready" && page === "history" && (
-        <div className="history">
-          <button className="back-link" onClick={() => setPage("day")}>
-            <span aria-hidden>‹</span> {t("back")}
-          </button>
-          <h2 className="history-title">{t("historyTitle", { day: dayLabel(view.day) })}</h2>
-          <dl className="facts">
-            <div>
-              <dd>{totals.sessions}</dd>
-              <dt>{t("factSessions")}</dt>
+        {area === "worktime" && view && totals && load.state === "ready" && page === "history" && (
+          <div className="body">
+            <div className="history">
+              <CostLine cost={view.cost} />
+              <dl className="facts">
+                <div>
+                  <dd>{totals.sessions}</dd>
+                  <dt>{t("factSessions")}</dt>
+                </div>
+                <div>
+                  <dd>{duration(totals.mainExec + totals.subExec)}</dd>
+                  <dt>{t("factAgentTime")}</dt>
+                </div>
+                <div>
+                  <dd>{totals.prompts}</dd>
+                  <dt>{t("factPrompts")}</dt>
+                </div>
+                <div>
+                  <dd>{compact(totals.output)}</dd>
+                  <dt>{t("factTokens")}</dt>
+                </div>
+              </dl>
+              <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
             </div>
-            <div>
-              <dd>{duration(totals.mainExec + totals.subExec)}</dd>
-              <dt>{t("factAgentTime")}</dt>
-            </div>
-            <div>
-              <dd>{totals.prompts}</dd>
-              <dt>{t("factPrompts")}</dt>
-            </div>
-            <div>
-              <dd>{compact(totals.output)}</dd>
-              <dt>{t("factTokens")}</dt>
-            </div>
-          </dl>
-          <Timeline day={view} selected={selected} onSelect={setSelected} onAtom={openAtom} />
-        </div>
-      )}
-      {view && totals && load.state === "ready" && page === "day" && (
-        <>
+          </div>
+        )}
+      {area === "worktime" && view && totals && load.state === "ready" && page === "day" && (
+        <div className="body">
           <div className="main-card">
-            <BigNumber human={totals.human} canReview={canReview} onReview={() => setReviewDay(true)} />
-            <Bars view={view} human={totals.human} />
+            <BigNumber
+              human={totals.human}
+              canReview={canReview}
+              onReview={() => setReviewDay(true)}
+              state={`${view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}${view.discrepancy ? ` · ${t("newEvidenceDiffers")}` : ""}`}
+            />
             <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
-            <CostLine cost={view.cost} />
+            {canEditNow && <DayTools view={view} targets={targets} loadTargets={loadTargets} onChanged={corrected} />}
+            <Bars view={view} human={totals.human} />
             {rootsOpen && status && (
               <div className="banner" role="status" title={status.proposed_roots.filter((r) => !r.approved).map((r) => tildify(r.path, status.home)).join("\n")}>
                 <span>{t("rootsFound")}</span>
@@ -422,28 +532,12 @@ export function App() {
                 </button>
               </div>
             )}
-            <button className="history-link" onClick={() => setPage("history")}>
-              {t("history")} <span aria-hidden>›</span>
-            </button>
           </div>
-        </>
+        </div>
       )}
 
       </div>
 
-      {settings && status && (
-        <SettingsSheet
-          status={status}
-          onClose={() => setSettings(false)}
-          onChanged={(text, error) => {
-            setNotice({ text, error });
-            if (!error) {
-              void loadDays(day);
-              void api.status().then(setStatus);
-            }
-          }}
-        />
-      )}
       {exporting && load.state === "ready" && (
         <ExportSheet
           days={load.days.days}
@@ -456,6 +550,7 @@ export function App() {
       {reviewing && view && (
         <ReviewList
           day={view}
+          targets={targets}
           onOpen={(a) => {
             setReviewing(false);
             openAtom(a);
@@ -488,6 +583,7 @@ export function App() {
         />
       )}
       {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} onClose={() => setSelected(null)} />}
+      {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
       {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
   );

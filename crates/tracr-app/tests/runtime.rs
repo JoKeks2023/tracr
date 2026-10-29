@@ -38,8 +38,22 @@ fn setup() -> (TempDir, PathBuf, PathBuf, ClaudeSession) {
     (dir, data, root, a)
 }
 
+/// Opens the writer again right after `setup` dropped its own. The lock is an
+/// flock, and a process another test spawns at that moment can briefly inherit
+/// the descriptor (fork before exec), so the first attempt may still see it held
+/// (issue #9). Wait up to two seconds instead of failing the test.
 fn collector(data: &Path) -> Collector {
-    let app = App::open_writer(data, Box::new(SystemClock)).unwrap();
+    let mut tries = 0;
+    let app = loop {
+        match App::open_writer(data, Box::new(SystemClock)) {
+            Ok(app) => break app,
+            Err(e) if tries < 40 && e.to_string().contains("another tracr process holds") => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => panic!("open_writer: {e:#}"),
+        }
+    };
     Collector::begin(app, "test", true).unwrap()
 }
 

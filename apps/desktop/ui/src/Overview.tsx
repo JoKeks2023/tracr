@@ -1,23 +1,33 @@
 import { useState } from "react";
-import { duration, estimate, reasonText } from "./format";
+import { duration, estimate, intervals, reasonText } from "./format";
 import { t } from "./i18n";
 import type { DayAgents, DayCost, HumanDay, ProjectTotal } from "./types";
 
 /** The one number of the day, with the review action beside it. */
-export function BigNumber({ human, canReview, onReview }: { human: { counted_ms: number }; canReview: boolean; onReview: () => void }) {
+export function BigNumber({ human, canReview, onReview, state }: { human: { counted_ms: number }; canReview: boolean; onReview: () => void; state: string }) {
   return (
     <section className="big-number">
       <div>
         <div className="big-value">{duration(human.counted_ms)}</div>
         <div className="big-label">{t("countedTime")}</div>
       </div>
-      {canReview && (
-        <button className="button secondary" onClick={onReview}>
-          {t("reviewDay")}
-        </button>
-      )}
+      <div className="review-state">
+        <span className="muted">{state}</span>
+        {canReview && (
+          <button className="button secondary" onClick={onReview}>
+            {t("reviewDay")}
+          </button>
+        )}
+      </div>
     </section>
   );
+}
+
+/** The ledger's attribution states, in words. */
+function targetLabel(label: string): string {
+  const known: Record<string, "unattributed" | "conflicting" | "ambiguous"> = { unattributed: "unattributed", conflicting: "conflicting", ambiguous: "ambiguous" };
+  const k = known[label];
+  return k ? t(k === "unattributed" ? "tUnattributed" : k === "conflicting" ? "tConflicting" : "tAmbiguous") : label;
 }
 
 type Row = { key: string; label: string; ms: number; muted: boolean; parts: { label: string; ms: number }[] };
@@ -30,7 +40,7 @@ export function Bars({ view, human }: { view: DayAgents; human: HumanDay | { cou
     ? view.counted_by_project.map((p) => ({ key: p.project_id ?? p.label, label: p.label, ms: p.ms, muted: p.kind === "other", parts: p.parts }))
     : Object.entries(human.counted_by_target)
         .sort((a, b) => b[1] - a[1])
-        .map(([label, ms]) => ({ key: label, label, ms, muted: ["unattributed", "conflicting", "ambiguous"].includes(label), parts: [] }));
+        .map(([label, ms]) => ({ key: label, label: targetLabel(label), ms, muted: ["unattributed", "conflicting", "ambiguous"].includes(label), parts: [] }));
   if (rows.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.ms), 1);
   return (
@@ -68,12 +78,18 @@ export function Attention({ human, windows, onResolve }: { human: { unknown_ms: 
   if (human.unknown_ms <= 0) return null;
   const why = Object.entries(human.unknown_by_reason)
     .map(([r, ms]) => `${reasonText(r)}: ${duration(ms)}`)
-    .join("\n");
+    .join(" · ");
   return (
-    <section className="attention" title={why}>
+    <section className="attention">
       <div>
         <div className="attention-title">{t("unclearTitle", { time: duration(human.unknown_ms) })}</div>
-        <div className="muted">{t("unclearHint", { n: windows })}</div>
+        <div className="muted">{intervals(windows)}</div>
+        {why && (
+          <details className="why">
+            <summary>{t("why")}</summary>
+            <p>{why}</p>
+          </details>
+        )}
       </div>
       <button className="button secondary" onClick={onResolve}>
         {t("resolve")}

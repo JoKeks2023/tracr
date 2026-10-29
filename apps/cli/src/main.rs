@@ -58,6 +58,22 @@ enum Command {
     },
     /// Days with derived agent activity (reporting timezone).
     Days,
+    /// Usage limits as the providers report them (percent of a window).
+    Limits {
+        #[command(subcommand)]
+        command: LimitsCommand,
+    },
+    /// Claude Code session hooks: who needs you, who finished.
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommand,
+    },
+    /// Used by Claude Code for its hooks once `hooks install` ran. Keeps only the event, the session id and the time.
+    #[command(name = "hook", hide = true)]
+    Hook,
+    /// Used by Claude Code as its `statusLine` command once `limits install` ran. Keeps only the limit figures.
+    #[command(name = "statusline-tap", hide = true)]
+    StatuslineTap,
     /// The day report: human time, agent activity, cost, quality footer.
     Day {
         /// Reporting day, YYYY-MM-DD (default: the latest day with data).
@@ -70,6 +86,45 @@ enum Command {
         day: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum LimitsCommand {
+    /// The newest figures (Codex from its rollouts, Claude Code from the tap).
+    Show {
+        /// Claude Code settings file (default: ~/.claude/settings.json).
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Route Claude Code's statusLine through tracr, keeping the existing command. A copy of the settings is made first.
+    Install {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Restore the statusLine that was there before.
+    Uninstall {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum HooksCommand {
+    /// Whether the hooks are registered, and the sessions that are live now.
+    Status {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Register tracr's hook beside yours. A copy of the settings is made first.
+    Install {
+        #[arg(long)]
+        settings: Option<PathBuf>,
+    },
+    /// Remove tracr's hooks and leave yours.
+    Uninstall {
+        #[arg(long)]
+        settings: Option<PathBuf>,
     },
 }
 
@@ -339,10 +394,156 @@ fn print_day(v: &tracr_app::day::DayAgents) {
     }
 }
 
+/// The statusLine command: store the limit figures, then show what the previous command shows.
+/// Never fails and never prints an error: a status line must not break.
+fn statusline_tap(dir: &std::path::Path) {
+    use std::io::{Read, Write};
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    let _ = tracr_app::limits::tap(dir, &input, now);
+    let Some(cmd) = tracr_app::limits::chained_command(dir) else {
+        return;
+    };
+    let Ok(mut child) = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    if let Ok(out) = child.wait_with_output() {
+        let _ = std::io::stdout().write_all(&out.stdout);
+    }
+}
+
+fn settings_path(given: &Option<PathBuf>) -> Result<PathBuf> {
+    given
+        .clone()
+        .or_else(tracr_app::limits::default_claude_settings)
+        .ok_or_else(|| anyhow!("no home directory; pass --settings"))
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let dir = data_dir(&cli)?;
     match &cli.command {
+        Command::StatuslineTap => {
+            statusline_tap(&dir);
+            return Ok(());
+        }
+        Command::Hook => {
+            use std::io::Read;
+            let mut input = String::new();
+            let _ = std::io::stdin().read_to_string(&mut input);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            let _ = tracr_app::hooks::record(&dir, &input, now);
+            return Ok(()); // no output, exit 0: a hook must never change what Claude Code does
+        }
+        Command::Hooks { command } => {
+            match command {
+                HooksCommand::Status { settings } => {
+                    let path = settings_path(settings)?;
+                    println!(
+                        "hooks: {}",
+                        if tracr_app::hooks::installed(&path) {
+                            "installed"
+                        } else {
+                            "not installed"
+                        }
+                    );
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    for s in tracr_app::hooks::live(&dir, now, 24 * 3_600_000) {
+                        println!(
+                            "  {} {:?} since {}",
+                            s.session,
+                            s.state,
+                            UtcMillis(s.since).to_rfc3339()
+                        );
+                    }
+                }
+                HooksCommand::Install { settings } => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    let path = settings_path(settings)?;
+                    tracr_app::hooks::install(&dir, &path, &std::env::current_exe()?, now)?;
+                    println!(
+                        "installed in {} (a copy was kept in {}/backups)",
+                        path.display(),
+                        dir.display()
+                    );
+                }
+                HooksCommand::Uninstall { settings } => {
+                    let path = settings_path(settings)?;
+                    tracr_app::hooks::uninstall(&path)?;
+                    println!("removed tracr's hooks from {}", path.display());
+                }
+            }
+            return Ok(());
+        }
+        Command::Limits { command } => {
+            match command {
+                LimitsCommand::Show { settings } => {
+                    let l = Reader::open(&dir)?.limits(&settings_path(settings)?)?;
+                    for w in &l.windows {
+                        println!(
+                            "{:<12} {:<10} {:>5.1} %  stated {}{}",
+                            w.provider,
+                            w.window,
+                            w.used_percent,
+                            UtcMillis(w.observed_at).to_rfc3339(),
+                            if w.expired {
+                                "  (window has reset since)"
+                            } else {
+                                ""
+                            }
+                        );
+                    }
+                    if l.windows.is_empty() {
+                        println!("(no figures yet)");
+                    }
+                    println!(
+                        "claude statusLine tap: {}",
+                        if l.claude_tap.installed {
+                            "installed"
+                        } else {
+                            "not installed"
+                        }
+                    );
+                }
+                LimitsCommand::Install { settings } => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis() as i64);
+                    let path = settings_path(settings)?;
+                    tracr_app::limits::install_tap(&dir, &path, &std::env::current_exe()?, now)?;
+                    println!(
+                        "installed in {} (a copy was kept in {}/backups)",
+                        path.display(),
+                        dir.display()
+                    );
+                }
+                LimitsCommand::Uninstall { settings } => {
+                    let path = settings_path(settings)?;
+                    tracr_app::limits::uninstall_tap(&dir, &path)?;
+                    println!("restored {}", path.display());
+                }
+            }
+            return Ok(());
+        }
         Command::Roots {
             command: RootsCommand::Remove(remove),
         } => {

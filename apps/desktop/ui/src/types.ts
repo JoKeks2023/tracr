@@ -91,6 +91,8 @@ export interface DayCost {
 }
 
 export interface SessionDay {
+  /** Work the provider runs by itself (e.g. Codex's auto-review). */
+  automated: boolean;
   session_id: string;
   provider: string;
   native_session_id: string;
@@ -178,7 +180,7 @@ export interface CorrectionInfo {
 export interface TargetOption {
   key: string;
   label: string;
-  group: "repository" | "category" | "other";
+  group: "project" | "repository" | "category" | "other";
 }
 
 export interface CorrectionRequest {
@@ -285,6 +287,8 @@ export interface Status {
   ledger_present: boolean;
   approved_roots: string[];
   approved_repository_roots: string[];
+  approved_config_roots: string[];
+  proposed_config_root: string | null;
   proposed_roots: { path: string; approved: boolean }[];
   home: string | null;
   app_version: string;
@@ -329,3 +333,226 @@ export type ProjectOp =
   | { op: "rename"; id: string; name: string }
   | { op: "delete"; id: string }
   | { op: "map"; repository: string; project: string | null };
+
+export interface SessionList {
+  timezone: string;
+  from: string;
+  to: string;
+  sessions: SessionDay[];
+  cost: CostView;
+  pricing: PricingInfo;
+}
+
+export interface TraceActor {
+  actor_id: string;
+  actor_kind: string;
+  native_agent_id: string | null;
+  segments: [number, number][];
+}
+export interface TraceTool {
+  actor_id: string | null;
+  name: string;
+  kind: string;
+  at: number;
+  finished_at: number | null;
+}
+export interface ToolSummary {
+  name: string;
+  kind: string;
+  calls: number;
+}
+export interface TracePoint {
+  at: number;
+  actor_id: string | null;
+  model: string | null;
+  context: number | null;
+  cache_read: number | null;
+  output: number | null;
+}
+export interface SessionTrace {
+  session_id: string;
+  timezone: string;
+  start: number;
+  end: number;
+  actors: TraceActor[];
+  prompts: number[];
+  tools: TraceTool[];
+  tool_summary: ToolSummary[];
+  points: TracePoint[];
+}
+
+export interface LimitWindow {
+  provider: "codex" | "claude_code" | string;
+  /** `five_hour`, `weekly` or `minutes:<n>`. */
+  window: string;
+  window_minutes: number | null;
+  used_percent: number;
+  resets_at: number | null;
+  observed_at: number;
+  plan: string | null;
+  /** The reset time has passed since the figure was stated. */
+  expired: boolean;
+}
+export interface TapState {
+  installed: boolean;
+  chained: boolean;
+  settings_path: string;
+}
+export interface Credits {
+  provider: string;
+  has_credits: boolean;
+  unlimited: boolean;
+  balance: string | null;
+  observed_at: number;
+}
+export interface Limits {
+  windows: LimitWindow[];
+  credits: Credits[];
+  claude_tap: TapState;
+}
+
+export interface RepoPart {
+  key: string;
+  label: string;
+  sessions: number;
+  agent_ms: number;
+}
+export interface ProjectEntry {
+  key: string;
+  kind: "project" | "repository" | "folder" | "none";
+  project_id: string | null;
+  label: string;
+  repositories: RepoPart[];
+  session_ids: string[];
+  sessions: number;
+  agent_ms: number;
+  cost: CostView;
+  first_at: number | null;
+  last_at: number | null;
+  branches: string[];
+  providers: string[];
+}
+export interface ProjectOverview {
+  from: string;
+  to: string;
+  timezone: string;
+  entries: ProjectEntry[];
+  pricing: PricingInfo;
+}
+
+/** Stored beside the data: read by the window and by the menu bar alike. */
+export interface QuotaPrefs {
+  remaining: boolean;
+  pace_aware: boolean;
+  menu_bar: boolean;
+  notify: boolean;
+  rings: boolean;
+  notify_waiting: boolean;
+  notify_finished: boolean;
+  show_automated: boolean;
+}
+
+export interface LiveSession {
+  /** Claude's own session id (`native_session_id` of a derived session). */
+  session: string;
+  state: "working" | "waiting" | "your_turn" | "started";
+  since: number;
+  kind: string | null;
+}
+export interface ResponseTimes {
+  count: number;
+  mean_ms: number;
+  max_ms: number;
+}
+export interface HooksView {
+  installed: boolean;
+  live: LiveSession[];
+  response: ResponseTimes;
+}
+
+export interface ModelCost {
+  model: string;
+  records: number;
+  tokens: number;
+  amount_nano: number | null;
+  partial: boolean;
+}
+export interface CostDay {
+  day: string;
+  models: ModelCost[];
+}
+export interface SessionCache {
+  session_id: string;
+  label: string | null;
+  tokens: number;
+  hit_ratio: number;
+}
+export interface CacheStats {
+  fresh_tokens: number;
+  read_tokens: number;
+  write_5m_tokens: number;
+  write_1h_tokens: number;
+  write_untiered_tokens: number;
+  hit_ratio: number | null;
+  saved_nano: number;
+  cold_requests: number;
+  cold_tokens: number;
+  cold_extra_nano: number;
+  worst_sessions: SessionCache[];
+}
+export interface WhatIf {
+  from_family: string;
+  to_model: string;
+  tokens: number;
+  current_nano: number;
+  repriced_nano: number;
+  saving_nano: number;
+  partial: boolean;
+}
+export interface Analytics {
+  timezone: string;
+  from: string;
+  to: string;
+  pricing: PricingInfo;
+  days: CostDay[];
+  models: ModelCost[];
+  cache: CacheStats;
+  what_if: WhatIf | null;
+}
+
+/** Cost alert thresholds in whole currency units; 0 switches one off. */
+export interface CostAlertPrefs {
+  enabled: boolean;
+  session: number;
+  window: number;
+  window_minutes: number;
+  day: number;
+  month: number;
+}
+
+export interface RegistryEntry {
+  native_session_id: string;
+  pid: number | null;
+  alive: boolean;
+  status: string | null;
+  status_since: number | null;
+  started_at: number | null;
+  name: string | null;
+  cwd: string | null;
+  version: string | null;
+  kind: string | null;
+}
+export interface SessionStat {
+  native_session_id: string;
+  session_id: string;
+  cost_last_hour_nano: number | null;
+  last_request_at: number;
+  context_tokens: number | null;
+  cache_hit: number | null;
+  cache_ttl_left_ms: number;
+}
+export interface Fleet {
+  registry_available: boolean;
+  entries: RegistryEntry[];
+  stats: SessionStat[];
+}

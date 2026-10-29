@@ -57,7 +57,7 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
   return (
     <span className="timer">
       <button
-        className="button ghost"
+        className="btn p"
         onClick={() => {
           loadTargets();
           setOpen(!open);
@@ -72,7 +72,7 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
             <TargetSelect targets={targets} value={target} onChange={setTarget} other={other} onOther={setOther} allowNone />
           </div>
           <div className="actions">
-            <button className="button ghost" onClick={() => setOpen(false)}>
+            <button className="btn p" onClick={() => setOpen(false)}>
               {t("cancel")}
             </button>
             <button className="button primary" disabled={busy} onClick={() => call("start_timer")}>

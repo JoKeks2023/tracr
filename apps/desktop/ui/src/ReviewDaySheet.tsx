@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration } from "./format";
@@ -10,6 +11,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
   onClose: () => void;
   onChanged: (message: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const next = (day.review?.rev ?? 0) + 1;
   const [reason, setReason] = useState(day.discrepancy ? t("acceptedNew") : "");
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label={t("reviewDay")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet export-sheet" role="dialog" aria-label={t("reviewDay")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{next === 1 ? t("reviewDay") : t("acceptRevision", { rev: next })}</h2>

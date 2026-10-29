@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
+import { SplitEditor, requestsFor } from "./v2/SplitEditor";
 import type { CorrectionInfo, CorrectionRequest, DayAgents, HumanAtom, ManualEntryInfo, TargetOption } from "./types";
 
 function whyUnknown(reason: string | null): string {
@@ -50,10 +52,9 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
   onChanged: (message: string, error?: boolean) => void;
   onEditEntry: (e: ManualEntryInfo) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const tz = day.timezone;
   const [busy, setBusy] = useState(false);
-  const [choice, setChoice] = useState("");
-  const [other, setOther] = useState("");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -83,23 +84,30 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
       setBusy(false);
     }
   };
-
-  const setTarget = () => {
-    const key = choice === "__other" ? `other:${other.trim()}` : choice;
-    if (!key || key === "other:") return;
-    void run({ op: "set_target", target: key }, t("targetSet"));
+  // Several parts, or counting and putting on a target, are one step: all recorded or none.
+  const runBatch = async (reqs: CorrectionRequest[], message: string) => {
+    setBusy(true);
+    try {
+      await api.correctBatch(reqs);
+      onChanged(message);
+      onClose();
+    } catch (e) {
+      onChanged(errorText(e), true);
+    } finally {
+      setBusy(false);
+    }
   };
-
-  const groups: [TargetOption["group"], string][] = [
-    ["repository", t("targetRepos")],
-    ["category", t("targetCategories")],
-    ["other", t("targetUsed")],
-  ];
+  // What tracr suggests (inferred or ambiguous), as the targets the user can confirm or reject.
+  const at = atom.attribution;
+  const suggestions =
+    at && at.level === "repository" && at.state !== "confirmed"
+      ? at.targets.map((k, i) => ({ key: `repository:${k}`, label: at.labels[i] ?? k }))
+      : [];
 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet interval-sheet" role="dialog" aria-label={t("interval")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet interval-sheet" role="dialog" aria-label={t("interval")}>
         <header>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>
@@ -138,82 +146,41 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
               ) : null;
             })()}
 
-          <section>
-            <h3>{t("doesItCount")}</h3>
-            <div className="choices">
-              <button
-                className="button secondary"
-                disabled={busy || (atom.status === "work" && atom.duration_basis !== "inferred_continuity")}
-                onClick={() => run({ op: "confirm_work" }, t("countedAsWork"))}
-              >
-                {t("countAsWork")}
-              </button>
-              <button
-                className="button secondary"
-                disabled={busy || atom.status === "non_work"}
-                onClick={() => run({ op: "mark_non_work" }, t("markedBreak"))}
-              >
-                {t("markAsBreak")}
-              </button>
-              {atom.decided_by && (
-                <button
-                  className="button ghost"
-                  disabled={busy}
-                  onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, t("undone"))}
-                >
-                  {t("undo")}
-                </button>
-              )}
-            </div>
-            <p className="note">
-              {t("unclearNote")}
-            </p>
-          </section>
+          {suggestions.length > 0 && (
+            <section>
+              <h3>{t("suggestionLabel")}</h3>
+              <ul className="split-parts">
+                {suggestions.map((sg) => (
+                  <li key={sg.key}>
+                    <span>{sg.label}</span>
+                    <span className="acts">
+                      <button className="btn s" disabled={busy} onClick={() => runBatch(requestsFor(atom, atom.start, atom.end, sg.key, "", "suggestion"), t("targetSet"))}>
+                        {t("suggestionConfirm")}
+                      </button>
+                      <button className="btn s" disabled={busy} onClick={() => run({ op: "reject_target", target: sg.key }, t("targetRemoved"))}>
+                        {t("suggestionReject")}
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
-          <section>
-            <h3>{t("whatFor")}</h3>
-            <p className="current">{targetText(atom)}</p>
-            <div className="target-row">
-              <select className="select" value={choice} onChange={(e) => setChoice(e.target.value)} aria-label={t("target")}>
-                <option value="">{t("chooseTarget")}</option>
-                {groups.map(([g, label]) => {
-                  const items = targets.filter((o) => o.group === g);
-                  return items.length === 0 ? null : (
-                    <optgroup key={g} label={label}>
-                      {items.map((o) => (
-                        <option key={o.key} value={o.key}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-                <option value="__other">{t("otherEllipsis")}</option>
-              </select>
-              {choice === "__other" && (
-                <input
-                  className="input"
-                  placeholder={t("shortLabel")}
-                  maxLength={80}
-                  value={other}
-                  onChange={(e) => setOther(e.target.value)}
-                />
-              )}
-              <button className="button primary" disabled={busy || !choice} onClick={setTarget}>
-                {t("set")}
+          {atom.status === "work" && <p className="current">{targetText(atom)}</p>}
+          <SplitEditor atom={atom} day={day} targets={targets} busy={busy} onApply={runBatch} />
+          <div className="choices">
+            {atom.decided_by && (
+              <button className="button ghost" disabled={busy} onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, t("undone"))}>
+                {t("undo")}
               </button>
-            </div>
+            )}
             {explicit && (
-              <button
-                className="button ghost"
-                disabled={busy}
-                onClick={() => run({ op: "reject_target", target: explicit }, t("targetRemoved"))}
-              >
+              <button className="button ghost" disabled={busy} onClick={() => run({ op: "reject_target", target: explicit }, t("targetRemoved"))}>
                 {t("removeTarget")}
               </button>
             )}
-            <p className="note">{t("targetNote")}</p>
-          </section>
+          </div>
 
           {history.length > 0 && (
             <section>

@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
+import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
 import { statusText } from "./IntervalSheet";
-import type { DayAgents, HumanAtom } from "./types";
+import { TargetSelect } from "./TargetSelect";
+import { requestsFor } from "./v2/SplitEditor";
+import type { DayAgents, HumanAtom, TargetOption } from "./types";
 
 /** The day's human time to review: unknown windows first, then counted time. */
-export function ReviewList({ day, onOpen, onClose, onChanged }: {
+export function ReviewList({ day, targets, onOpen, onClose, onChanged }: {
   day: DayAgents;
+  targets: TargetOption[];
   onOpen: (a: HumanAtom) => void;
   onClose: () => void;
   onChanged: (message: string, error?: boolean) => void;
 }) {
+  const sheetRef = useSheet<HTMLElement>();
   const tz = day.timezone;
   const [busy, setBusy] = useState<number | null>(null);
   useEffect(() => {
@@ -22,6 +27,19 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
 
   const order = { unknown: 0, work: 1, non_work: 2 } as const;
   const atoms = [...day.human.atoms].sort((a, b) => order[a.status] - order[b.status] || a.start - b.start);
+  // Count it and put it on a target in one step.
+  const assign = async (a: HumanAtom, key: string) => {
+    if (!key) return;
+    setBusy(a.start);
+    try {
+      await api.correctBatch(requestsFor(a, a.start, a.end, key, "", "review_list"));
+      onChanged(t("targetSet"));
+    } catch (e) {
+      onChanged(errorText(e), true);
+    } finally {
+      setBusy(null);
+    }
+  };
   const quick = async (a: HumanAtom, op: "confirm_work" | "mark_non_work") => {
     setBusy(a.start);
     try {
@@ -37,7 +55,7 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet" role="dialog" aria-label={t("reviewTheDay")}>
+      <aside ref={sheetRef} aria-modal="true" className="sheet" role="dialog" aria-label={t("reviewTheDay")}>
         <header>
           <div style={{ flex: 1 }}>
             <h2>{t("reviewTheDay")}</h2>
@@ -69,6 +87,9 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
                     <button className="button secondary small" disabled={busy !== null} onClick={() => quick(a, "mark_non_work")}>
                       {t("breakWord")}
                     </button>
+                    <span className="review-assign">
+                      <TargetSelect targets={targets} value="" onChange={(v) => void assign(a, v)} other="" onOther={() => {}} extras={[{ value: "", label: t("reviewAssign") }]} />
+                    </span>
                   </span>
                 )}
               </li>

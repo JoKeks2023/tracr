@@ -1,0 +1,41 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+
+name                tracr
+version             0.9.2
+revision            0
+categories          sysutils
+license             AGPL-3+
+platforms           {darwin >= 21}
+supported_archs     arm64 x86_64
+maintainers         nomaintainer
+description         local-first time tracking from AI coding sessions (command line tool)
+long_description    tracr reads the local session files of AI coding tools and keeps a \
+                    private ledger of the time spent. This port installs the prebuilt, \
+                    universal command line tool from the official release; nothing is \
+                    compiled on your machine. The desktop app is not part of this port.
+homepage            https://tracr.jorisconrad.com
+
+# Prebuilt binary from the GitHub release. The archive holds one directory with
+# the universal (arm64 + x86_64) `tracr` executable.
+master_sites        https://github.com/JoKeks2023/tracr/releases/download/v${version}/
+distname            ${name}-${version}-universal-apple-darwin
+use_configure       no
+universal_variant   no
+
+checksums           rmd160  fc5be44d5f43a526f0b913399750865cdd5db369 \
+                    sha256  4569a08c7eed452021e0e700679d73c4e9251df9016de8bcba99030c080d344f \
+                    size    5984238
+
+extract.suffix      .tar.gz
+
+build {}
+
+destroot {
+    xinstall -m 755 ${worksrcpath}/tracr ${destroot}${prefix}/bin/tracr
+}
+
+livecheck.type      regex
+livecheck.url       https://github.com/JoKeks2023/tracr/releases
+livecheck.regex     /releases/tag/v(\[0-9.\]+)

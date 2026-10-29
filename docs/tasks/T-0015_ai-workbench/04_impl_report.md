@@ -1,0 +1,79 @@
+# T-0015 step 1 implementation report
+
+Backend: `crates/tracr-app/src/day.rs` — the per-session loop of `day_agents` is now `session_days(conn, start, end, revision)`;
+new `SessionList` and `sessions(conn, zone, from, to)`; `Reader::sessions` in `lib.rs`; Tauri command `sessions` in `apps/desktop/src-tauri/src/main.rs`.
+Menu: Darstellung = Heute ⌘1, Sitzungen ⌘2, Arbeitszeit ⌘3, Tagesübersicht ⌥⌘1, Agenten-Zeitleiste ⌥⌘2, Voriger/Nächster Zeitraum ⌘[ ⌘], Zu heute ⌘0, Befehle ⌘K. "Offene Zeit klären" moved to ⌥⌘K.
+UI (`apps/desktop/ui/src`): `nav.ts` (areas, scope, period math), `Toolbar.tsx`, `Sidebar.tsx` (destinations), `Sessions.tsx`, `SessionRow.tsx`, `SessionDetail.tsx` (extracted from `SessionSheet.tsx`, which keeps the modal for the agent timeline), `Today.tsx`, `Palette.tsx`, `App.tsx` (area routing), CSS and i18n DE/EN.
+
+Deviations from the plan (named):
+- The period is not one global control: Sitzungen has day/week/month with its own anchor; Arbeitszeit keeps its own day (reviewing is per day). Today ignores both.
+- Work-time commands (add time, review, resolve) switch to Arbeitszeit first, because they act on its day.
+- Narrow window (<720 px): the sidebar becomes a top strip instead of disappearing.
+- `App.tsx` is still large; the `useNav` hook from the plan was not extracted (state stays in `App.tsx`).
+
+## Step 2: session views (Ablauf, Kontext, Werkzeuge)
+
+Backend: `tracr-store/src/derived.rs` (`tool_call_times_of`, `usage_points_of`, `all_instants_of`), `tracr-app/src/trace.rs` (`SessionTrace`, `session_trace`), `Reader::session_trace`, Tauri command `session_trace`. Names, times and token counts only; no content is read.
+UI: tabs in the Sitzungen detail (`Sessions.tsx`); `SessionInsights.tsx` has `TraceView` (lanes per actor, your prompts, tool ticks by kind, pauses over 5 min shortened), `ContextView` (request input size over the main chain, peak/latest/requests/cache share, drops marked as inferred), `ToolsView` (counts per tool).
+Choices: no context percentage (the model's limit is not known to tracr); a size drop of more than half is marked "possible compaction, inferred", because compaction markers are extracted but not stored in the derived store; tool failure is not shown (not recorded). The main chain has actor kind `unknown` with no agent id; every non-`known` actor is shown as the main chain.
+Test: `tests/sessions.rs::trace_lays_out_prompts_tools_and_request_sizes_without_content`.
+
+## Start page (Heute)
+
+Reworked `Today.tsx` after a screenshot showed "0m tracked" as the hero while 4 h were unresolved, identical session titles, and a three-lane sensor timeline on the start page.
+Order: facts strip (Erfasst, Ungeklärt, Agenten, Geschätzte Kosten; same weight, unresolved in warning colour), "Braucht dich" row with the action, "Dein Tag" strip (you: tracked/unresolved; agents: when they ran), sessions today with provider, run span and repo·branch, projects only when time is tracked, cost line. The full timeline with device and coverage lanes stays under Arbeitszeit → Agenten-Zeitleiste.
+Also: no "no activity" flash while loading; "1 Abschnitt" singular; unpriced shows "—" instead of "ohne Preis" in every row; a session's span is its run time in the shown period (date added when it crosses midnight); provider names as words.
+
+## Rust parts before the UI shell decision (prices, limits, projects)
+
+- **Prices** (`pricing/catalog.toml`, catalog 2026-10-27.1): `claude-sonnet-5-5` (2 / 2.50 / 4 / 0.10 / 10 USD per MTok), `claude-haiku-5-5` (up to 100K prompt only: 0.10 / 0.125 / 0.20 / 0.01 / 0.50), `gpt-6.1-sol` (standard short context: 2 / 0.10 / 10), from the official pages fetched 2026-10-27. Not modeled: Haiku 5.5 above 100K, gpt-6.1-sol above 272K, fast/batch. `codex-auto-review` is not on the OpenAI page and stays unpriced. Effect on the demo ledger after the automatic rebuild: unpriced cost estimates fell from about 3,700 to 569; the day's Claude Code sessions now show an estimate, Codex stays a floor (cache writes are only a marker).
+- **Limits** (`crates/tracr-app/src/limits.rs`): provider-reported snapshots, a separate kind from money, never attributed to a session. Codex: the last `rate_limits` of the newest rollout under the approved provider roots, read on demand (percent, window minutes, reset, plan only). Claude Code: opt-in `statusLine` tap (`tracr statusline-tap`, hidden) that stores only the percentages and reset times in `<data>/limits/claude_statusline.jsonl`, writes a line only when a figure changed, and runs the previous statusLine command so the user sees no difference. Install copies `settings.json` to `<data>/backups/` first, keeps key order and other keys, is idempotent, and `uninstall` restores the previous statusLine. CLI: `tracr limits show|install|uninstall`; Tauri: `limits`, `limits_tap`.
+- **Projects** (`projects::overview`, `Reader::project_overview`, Tauri `project_overview`): sessions of a range grouped by project, else by repository, else `none`; defined projects always appear; with branches, providers, agent time, estimated cost.
+- Tests: `tests/limits.rs` (5), `tests/projects.rs::overview_*`, `tests/sessions.rs`; cost tests updated to the new catalog version.
+
+## design/v2: the new interface (Tauri + React, dense workbench)
+
+Decided with the product owner on 2026-10-27: Tauri + React again, new design from zero, dense like Claudoscope, Heute as the "A" board. Mock-ups (invented data) were reviewed first; the chosen ones are the source of this build.
+Built on branch `design/v2`:
+- Shell: icon rail (Heute, Projekte, Zeit, Limits, Einstellungen), top bar per area, theme in `ui/src/v2/theme.css` scoped under `.v2` (legacy sheets and the work-time pieces keep working; their gray tokens are remapped). New class names avoid the legacy ones.
+- **Heute** (`v2/Home.tsx`): stats strip, quota panel (provider-reported), "Braucht dich" (unresolved time, reached limits, Claude tap not set up), board of sessions (Aktiv = evidence in the last 15 min; Früher heute), day strip.
+- **Projekte** (`v2/Projects.tsx`): list of projects, else repositories, else working folders; the project's sessions as a table; a session opens as a full page with Übersicht, Ablauf, Kontext, Werkzeuge. Sessions are no longer an area of their own.
+- **Limits** (`v2/LimitsPage.tsx`): quota cards, the opt-in switch for the Claude statusLine tap, cost per model (estimates).
+- **Zeit**: the former work-time view, unchanged in content, in the new shell.
+- Backend: `projects::overview` now groups sessions without a repository by working folder (`folder` entries) so the page is useful before any repository root is approved.
+Deviations from the mock-ups (named): no "Wartet auf dich" column and no "Verbrauch jetzt" (both need the live source, not built); no sparklines in the project list; the session detail is a full page instead of a side inspector (the trace needs width); no cost-per-day chart, cache panel, alarms or Opus→Sonnet what-if on the Limits page yet; project tabs Zeit, Kosten, Dateien are not there.
+
+## Quota and notices after ClaudeBar (github.com/tddworks/ClaudeBar, Apache-2.0; ideas only, no code taken)
+
+- **Judgement** (`crates/tracr-app/src/quota.rs`, mirrored in `ui/src/v2/quota.ts`): levels by what is left (healthy from 50 %, warning from 20 %, critical below, depleted at none), optional pace awareness (hot = more than 5 points ahead of the time gone; under 3 % of the window gone there is no pace), forecast ("lasts until it resets" / "runs out in X, Y before the reset", only for a window running hot). Tests reproduce the documented examples (52 % at half time = on track; 60 % = hot, out in 1h40m, 50m before the reset).
+- **Display:** pace tick on the bar, reset countdown, used/left, bars or rings per provider, tightest window first on Heute, Codex credits, yesterday's cost beside today's.
+- **Menu bar:** `tracr-desktop` sets the tray title to the tightest window ("62% · 1h38m", `!` when critical) and lists every window in the tray menu; refreshed every 30 s; preferences in `<data>/quota_prefs.json` (read by window and menu bar alike).
+- **Alerts:** the quota watcher notifies once when a window gets worse (first look is silent, recovery is silent) through `tauri-plugin-notification` (new dependency; no JS permission added, the window cannot notify).
+- **Claude Code hooks** (`crates/tracr-app/src/hooks.rs`, `tracr hook`, `tracr hooks status|install|uninstall`): opt-in registration beside existing hooks for Notification, Stop, UserPromptSubmit, SessionStart, SessionEnd, with a copy of the settings first. Stored: event, session id, notification type (identifier only), time; never a message, prompt, cwd or transcript path (test asserts it). Gives Heute the "Waiting for you" column and the notices "Claude needs you" / "Your turn".
+- Settings: panes Kontingent (display, menu bar, tap) and Hinweise (hooks, notices). Ledger-independent: the spools live in `<data>/limits` and `<data>/hooks`.
+- Not taken from ClaudeBar, with reasons: notch and Touch Bar (not possible from a Tauri window), leaderboard and Notify!/webhooks (network egress; tracr is local-first, ask before any), extensions that run scripts (security surface), the other 25 providers (tracr covers Claude Code and Codex), URL schemes and custom themes (low value now), multiple accounts per provider.
+
+## Automated sessions are left out
+
+`SessionDay.automated` is true when the identified usage of a session is only from models that run on the provider's own initiative (`codex-auto-review`, `<synthetic>`); a session without usage is not flagged. `Reader::sessions` (and so Projekte, Limits and every total built on it) drops them, and Heute and the work-time page filter them from sessions, cost and the agent timeline. The setting "Show automatic sessions" (Quellen, default off, `show_automated` in `quota_prefs.json`) brings them back. Human time is not touched: it is derived from your prompts and device activity, not from the sessions listed. The list of models is a code constant (`day::AUTOMATED_MODELS`); a new automatic model needs one more entry.
+
+## Einteilen (dividing time), plan A
+
+- **Backend:** `App::correct_batch` (and `Collector`/`RuntimeHandle::correct_batch`, Tauri `correct_batch`): every request is checked first, all are appended in one transaction or none; parts of one kind (count / target) must not overlap and none may be under a minute; one rebuild. `correct` is now a batch of one. New target kind `project:<id>` (`TargetRef::Project`): the name is read when shown (a rename shows at once); `project_totals` groups such time under the project; a deleted project keeps its minutes under one line ("Deleted project"); `Reader::targets()` offers projects first. No schema change, no new correction op.
+- **UI:** the interval sheet got `v2/SplitEditor.tsx` (a time bar, split at a time or in the middle, a destination per part: project, repository, category, break, count as work, leave as is; applied as one batch), suggestion chips for conflicting repository attribution (confirm = `set_target`, reject = `reject_target`), `v2/DayTools.tsx` on the work-time page (all counted time without a target to one target; count the unclear time as work only after an explicit question with count and duration), and a "Work on…" select beside Work/Break in the review list.
+- **Deviation from the plan:** there is no separate "confirm all suggestions" action. The attribution model has only `confirmed`, `conflicting`, `unattributed` (a single repository seen in the context is already counted on that repository); a suggestion therefore exists only where several repositories compete, and the choice among them cannot be made in bulk.
+- Tests: `crates/tracr-app/tests/split.rs` (3: split into parts with project/break in one step; a bad, overlapping or too-short part records nothing; moving counted time to a project and deleting the project) and the target round trip in `counting.rs`.
+- Not verified in the real window: applying a split (the sheet was shown, not operated), the day tools buttons, the review-list select, light mode and English.
+
+## B1 Analytics (first part)
+
+`crates/tracr-app/src/analytics.rs` + `Reader::analytics(from, to)` + Tauri `analytics`: cost per day and model (every day of the range present), per-model totals with a "floor" mark for partly priced usage, cache health (read share of the input, 5 min / 1 h writes, tokens saved against reading fresh at catalog prices, cold requests = a request after a gap longer than the cache lives that wrote at least half of its context again, with the extra cost over a warm cache, sessions with the lowest cache share), and a what-if that reprices Opus usage on Sonnet 5.5 with the same tokens (floor when partly priced). Automated models follow the "show automatic sessions" setting. UI: `v2/CostChart.tsx` (stacked by model family, drawn at the width it has), cache and model panels on the Limits page. Tests: `tests/analytics.rs` (3). Open in B1: cost alerts, attribution to skills / MCP tools / subagent types / plugins.
+
+## B2 Fleet (Heute board) and cost alerts
+
+- **Claude Code home** (`RootKind::Config`, `~/.claude`, approval in Settings → Quellen): new approval-gated source. `crates/tracr-app/src/fleet.rs` reads `sessions/<pid>.json` only (pid, session id, cwd, times, state, version, kind, Claude's own session name); `.key` files are never opened (test), the process-alive check is one `ps` per id (one invalid id makes `ps` refuse a whole list).
+- **Per session** (derived store): estimated spend of the last 60 minutes (subagents included), size of the last main-chain request, cache share, and the life of its prompt cache (5 min, 1 h when the 1 h tier was written). Heute board columns: Waiting for you (hooks), Running (hook working or registry busy), Ready (process alive, idle), Earlier today; card chips for cache life (red when it waits and expires in under 2 minutes), context, cache share, $/h, Claude's session name, "copy resume command" for finished sessions. Stats: "Spending now" (last 60 minutes) and "Your answer time" (Stop to next prompt, from the hooks).
+- Menu bar: "N waiting" next to the quota text.
+- **Cost alerts** (`costwatch.rs`, Settings → Hinweise): per session (last 24 h), rolling window (5 min to 4 h), day, month; fires at the threshold and each doubling, silent on the first look; presets as dropdowns; `cost_alerts.json` beside the data.
+- Tests: `fleet.rs` (2), `costwatch.rs` (3), hooks response times (1), `analytics.rs` measures (1).
+- Not verified: the Ready/Running columns with a live registry (the approval of `~/.claude` is the user's click), the copy button, notifications for cost alerts, the waiting counter in the menu bar (window-only screenshots).

@@ -4,17 +4,24 @@
 //! approving roots, importing, rebuilding the derived store, and reading
 //! statistics and day views.
 
+pub mod analytics;
 pub mod correct;
+pub mod costwatch;
 pub mod day;
 pub mod derive;
 pub mod derive_human;
 pub mod export;
+pub mod fleet;
+pub mod hooks;
+pub mod limits;
 pub mod manual;
 pub mod pricing;
 pub mod projects;
+pub mod quota;
 pub mod report;
 pub mod review;
 pub mod runtime;
+pub mod trace;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, TryLockError};
@@ -60,6 +67,8 @@ pub fn proposed_provider_roots() -> Vec<PathBuf> {
         .collect()
 }
 pub const REPOSITORY_ROOTS_KEY: &str = "approved_repository_roots";
+/// Folders tracr may read as Claude Code's own home (`~/.claude`): the session registry and, later, its configuration.
+pub const CONFIG_ROOTS_KEY: &str = "approved_config_roots";
 const CLIENT: &str = "tracr-cli";
 
 /// The adapters tracr ships (T-0004: Claude Code transcripts).
@@ -74,6 +83,8 @@ pub fn registry() -> Registry {
 pub enum RootKind {
     Provider,
     Repository,
+    /// Claude Code's home folder (`~/.claude`).
+    Config,
 }
 
 impl RootKind {
@@ -81,6 +92,7 @@ impl RootKind {
         match self {
             Self::Provider => PROVIDER_ROOTS_KEY,
             Self::Repository => REPOSITORY_ROOTS_KEY,
+            Self::Config => CONFIG_ROOTS_KEY,
         }
     }
 }
@@ -626,6 +638,107 @@ impl Reader {
         })
     }
 
+    /// Sessions active between two reporting days (inclusive), newest first.
+    pub fn sessions(&self, from: &str, to: &str) -> Result<day::SessionList> {
+        let mut list = day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)?;
+        if !quota::load_prefs(&self.data_dir).show_automated {
+            // Automated sessions (e.g. Codex's auto-review) are not work the user does: out of the list and its total.
+            list.sessions.retain(|s| !s.automated);
+            let mut cost = day::CostView::default();
+            for s in &list.sessions {
+                cost.absorb(&s.cost);
+            }
+            list.cost = cost;
+        }
+        Ok(list)
+    }
+
+    /// Running sessions (Claude Code's registry, from the approved home folder) with spend of the last hour and cache life.
+    pub fn fleet(&self, now: i64) -> Result<fleet::Fleet> {
+        let roots: Vec<PathBuf> = self
+            .config_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        fleet::fleet(
+            &self.derived()?,
+            &roots,
+            now,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
+    }
+
+    /// What has been spent right now (for the cost alerts).
+    pub fn cost_measures(
+        &self,
+        now: i64,
+        prefs: &costwatch::CostAlertPrefs,
+    ) -> Result<costwatch::Measures> {
+        costwatch::measure(
+            &self.derived()?,
+            &self.reporting_zone()?,
+            now,
+            prefs,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
+    }
+
+    /// The reporting day of an instant, `YYYY-MM-DD`.
+    pub fn day_of(&self, ms: i64) -> Result<String> {
+        Ok(self
+            .reporting_zone()?
+            .day_of(ms)
+            .map(|d| d.to_string())
+            .unwrap_or_default())
+    }
+
+    /// Cost per day and model, cache health and a what-if over a range of days (estimates).
+    pub fn analytics(&self, from: &str, to: &str) -> Result<analytics::Analytics> {
+        analytics::analytics(
+            &self.derived()?,
+            &self.reporting_zone()?,
+            from,
+            to,
+            quota::load_prefs(&self.data_dir).show_automated,
+        )
+    }
+
+    /// One session laid out in time: actors, prompts, tool calls, request sizes.
+    pub fn session_trace(&self, session_id: &str) -> Result<trace::SessionTrace> {
+        trace::session_trace(&self.derived()?, &self.reporting_zone()?, session_id)
+    }
+
+    /// Limit figures the providers reported (percent of a window), newest known.
+    pub fn limits(&self, settings: &Path) -> Result<limits::Limits> {
+        let roots: Vec<PathBuf> = self
+            .provider_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        Ok(limits::read(&self.data_dir, &roots, settings))
+    }
+
+    /// Sessions of a range grouped by project (S3.1), with repositories, branches and cost.
+    pub fn project_overview(&self, from: &str, to: &str) -> Result<projects::ProjectOverview> {
+        let list = self.sessions(from, to)?;
+        Ok(projects::overview(
+            &list,
+            &projects::read_config(&self.conn)?,
+        ))
+    }
+
+    /// The folder name of a session by Claude's own session id (for hook notifications).
+    pub fn session_label(&self, native_session_id: &str) -> Option<String> {
+        self.derived()
+            .ok()?
+            .query_row(
+                "SELECT label FROM agent_session WHERE native_session_id = ?1 AND label IS NOT NULL LIMIT 1",
+                [native_session_id],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
     pub fn day_agents(&self, day: &str) -> Result<day::DayAgents> {
         let corrections = ledger::corrections(&self.conn)?;
         let manual = ledger::manual_entries(&self.conn)?;
@@ -643,7 +756,25 @@ impl Reader {
         let shown = v.review.as_ref().map_or(&v.human.counted_by_target, |r| {
             &r.snapshot.counted_by_target
         });
-        v.counted_by_project = projects::project_totals(shown, &projects::read_config(&self.conn)?);
+        let config = projects::read_config(&self.conn)?;
+        v.counted_by_project = projects::project_totals(shown, &config);
+        // A time target on a project shows the project's current name.
+        for atom in &mut v.human.atoms {
+            if let Some(at) = &mut atom.attribution {
+                for (i, t) in at.targets.clone().iter().enumerate() {
+                    if let Some(id) = t.strip_prefix("project:") {
+                        let name = config
+                            .projects
+                            .iter()
+                            .find(|p| p.id == id)
+                            .map_or_else(|| "Deleted project".to_owned(), |p| p.name.clone());
+                        if let Some(l) = at.labels.get_mut(i) {
+                            *l = name;
+                        }
+                    }
+                }
+            }
+        }
         Ok(v)
     }
 
@@ -651,6 +782,13 @@ impl Reader {
     /// the fixed categories, and "Other…" labels used before.
     pub fn targets(&self) -> Result<Vec<day::TargetOption>> {
         let mut out = Vec::new();
+        for p in projects::read_config(&self.conn)?.projects {
+            out.push(day::TargetOption {
+                key: tracr_core::counting::TargetRef::Project(p.id).key(),
+                label: p.name,
+                group: "project".into(),
+            });
+        }
         if let Some(d) = tracr_store::derived::open_read_only(&self.data_dir)? {
             let mut stmt = d.prepare(
                 "SELECT DISTINCT repository_key FROM agent_session WHERE repository_key IS NOT NULL ORDER BY 1",
@@ -743,6 +881,11 @@ impl Reader {
     /// Approved repository roots, under which git is probed read-only.
     pub fn repository_roots(&self) -> Result<Vec<String>> {
         read_roots(&self.conn, RootKind::Repository)
+    }
+
+    /// Claude Code home folders the user approved (`~/.claude`).
+    pub fn config_roots(&self) -> Result<Vec<String>> {
+        read_roots(&self.conn, RootKind::Config)
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {

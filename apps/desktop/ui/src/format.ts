@@ -87,3 +87,87 @@ export function tildify(path: string, home: string | null): string {
   const h = home.replace(/\/+$/, "");
   return path === h ? "~" : path.startsWith(`${h}/`) ? `~${path.slice(h.length)}` : path;
 }
+
+/** A provider as a person names it. */
+export function providerName(p: string): string {
+  return ({ claude_code: "Claude Code", codex: "Codex" } as Record<string, string>)[p] ?? p.replaceAll("_", " ");
+}
+
+/** "1 interval" / "3 intervals" (the unclear windows of a day). */
+export function intervals(n: number): string {
+  return n === 1 ? t("intervalOne") : t("unclearHint", { n });
+}
+
+/** "09:12–10:40", or with the first day named when the session crossed midnight. */
+export function spanLabel(first: number, last: number, tz: string): string {
+  const day = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(ms);
+  const range = `${hhmm(first, tz)}–${hhmm(last, tz)}`;
+  if (day(first) === day(last)) return range;
+  const short = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: tz }).format(first);
+  return `${short} ${range}`;
+}
+
+/** "claude-opus-5-5" → "Opus 5.5"; other ids as they are. */
+export function modelName(id: string | null): string {
+  if (!id) return "?";
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/.exec(id);
+  if (!m) return id;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+}
+
+/** All four token categories of a session, summed (unknown is not counted as zero, see the marks elsewhere). */
+export function sessionTokens(usage: { input_fresh: { sum: number }; cache_creation: { sum: number }; cache_read: { sum: number }; output: { sum: number } }[]): number {
+  return usage.reduce((n, u) => n + u.input_fresh.sum + u.cache_creation.sum + u.cache_read.sum + u.output.sum, 0);
+}
+
+/** "5m ago" style, coarse. */
+export function ago(ms: number, now: number): string {
+  const m = Math.max(0, Math.round((now - ms) / 60_000));
+  if (m < 1) return t("agoNow");
+  if (m < 60) return t("agoMin", { n: m });
+  const h = Math.floor(m / 60);
+  return h < 24 ? t("agoHour", { n: h }) : t("agoDay", { n: Math.floor(h / 24) });
+}
+
+export const sessionsN = (n: number): string => (n === 1 ? t("sessionOne") : t("sessionCount", { n }));
+export const branchesN = (n: number): string => (n === 1 ? t("branchOne") : t("branchesN", { n }));
+export const subagentsN = (n: number): string => (n === 1 ? t("subagentOne") : t("subagentCount", { n }));
+
+/** Adds estimates of several sessions: unpriced parts stay unpriced, nothing becomes zero. */
+export function mergeCost(list: CostView[]): CostView {
+  const out: CostView = { amount_nano: null, priced_records: 0, partially_priced_records: 0, unpriced_records: 0, not_estimated_records: 0, priced_tokens: 0, unpriced_tokens: 0, reasons: [], assumptions: [] };
+  for (const c of list) {
+    if (c.amount_nano !== null) out.amount_nano = (out.amount_nano ?? 0) + c.amount_nano;
+    out.priced_records += c.priced_records;
+    out.partially_priced_records += c.partially_priced_records;
+    out.unpriced_records += c.unpriced_records;
+    out.not_estimated_records += c.not_estimated_records;
+    out.priced_tokens += c.priced_tokens;
+    out.unpriced_tokens += c.unpriced_tokens;
+    for (const r of c.reasons) if (!out.reasons.includes(r)) out.reasons.push(r);
+    for (const a of c.assumptions) if (!out.assumptions.includes(a)) out.assumptions.push(a);
+  }
+  return out;
+}
+
+/** "HH:MM" in `tz` on `day` → epoch ms. */
+export function toMs(day: string, time: string, tz: string): number | null {
+  const [h, m] = time.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  // Find the instant whose wall time in `tz` is day + time (two passes handle DST).
+  let guess = Date.parse(`${day}T${time}:00Z`);
+  for (let i = 0; i < 2; i++) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(guess);
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    const shown = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
+    guess += Date.parse(`${day}T${time}:00Z`) - shown;
+  }
+  return guess;
+}
+
+export function toTime(ms: number, tz: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(ms);
+}
+

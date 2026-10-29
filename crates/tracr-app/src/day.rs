@@ -235,8 +235,25 @@ pub struct DayCost {
     pub spanning: CostView,
 }
 
+/// Models that only ever run on the provider's own initiative. A session whose
+/// identified usage is nothing but these is automated; a session without usage is not.
+pub const AUTOMATED_MODELS: [&str; 2] = ["codex-auto-review", "<synthetic>"];
+
+pub fn is_automated<'a>(models: impl Iterator<Item = Option<&'a str>>) -> bool {
+    let mut any = false;
+    for m in models {
+        any = true;
+        if !m.is_some_and(|m| AUTOMATED_MODELS.contains(&m)) {
+            return false;
+        }
+    }
+    any
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionDay {
+    /// Work the provider runs by itself (e.g. Codex's auto-review): not a session the user works in.
+    pub automated: bool,
     pub session_id: String,
     pub provider: String,
     pub native_session_id: String,
@@ -352,7 +369,7 @@ pub struct CorrectionInfo {
 pub struct TargetOption {
     pub key: String,
     pub label: String,
-    /// `repository`, `category` or `other`.
+    /// `project`, `repository`, `category` or `other`.
     pub group: String,
 }
 
@@ -367,7 +384,8 @@ pub fn target_label(key: &str) -> String {
                 .unwrap_or_default()
         }
         Some(tracr_core::counting::TargetRef::Other(t)) => t,
-        None => key.to_owned(),
+        // The name is the project's, read when shown; the key keeps the time attached to the project.
+        Some(tracr_core::counting::TargetRef::Project(_)) | None => key.to_owned(),
     }
 }
 
@@ -572,18 +590,57 @@ pub fn days(conn: &Connection, zone: &ReportingZone) -> Result<DayList> {
     })
 }
 
-pub fn day_agents(
+/// Sessions active in a range of reporting days, newest first. Numbers are
+/// clipped to the range; cost is the same estimate the day view shows.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionList {
+    pub timezone: String,
+    pub from: String,
+    pub to: String,
+    pub sessions: Vec<SessionDay>,
+    pub cost: CostView,
+    pub pricing: crate::pricing::PricingInfo,
+}
+
+/// Sessions with activity from the start of `from` to the end of `to`
+/// (both `YYYY-MM-DD`, inclusive), newest first.
+pub fn sessions(
     conn: &Connection,
     zone: &ReportingZone,
-    day: &str,
-    corrections: &[tracr_store::ledger::CorrectionRow],
-    manual: &[tracr_store::ledger::ManualRev],
-) -> Result<DayAgents> {
-    let date: Date = day
-        .parse()
-        .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))?;
-    let (start, end) = zone.bounds(date)?;
+    from: &str,
+    to: &str,
+) -> Result<SessionList> {
+    let parse = |d: &str| -> Result<Date> {
+        d.parse()
+            .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))
+    };
+    let (from_date, to_date) = (parse(from)?, parse(to)?);
+    if to_date < from_date {
+        return Err(anyhow!("range ends before it starts"));
+    }
+    let (start, _) = zone.bounds(from_date)?;
+    let (_, end) = zone.bounds(to_date)?;
     let pricing = crate::pricing::bundled();
+    let (mut sessions, cost, _) = session_days(conn, start, end, &pricing.revision)?;
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.last_evidence_at));
+    Ok(SessionList {
+        timezone: zone.name.clone(),
+        from: from_date.to_string(),
+        to: to_date.to_string(),
+        sessions,
+        cost,
+        pricing: pricing.info(),
+    })
+}
+
+/// Every session active in `[start, end)` with its actors, usage and cost
+/// clipped to that range, plus the range's identified and unidentified cost.
+fn session_days(
+    conn: &Connection,
+    start: i64,
+    end: i64,
+    pricing_revision: &str,
+) -> Result<(Vec<SessionDay>, CostView, CostView)> {
     let mut identified_cost = CostView::default();
     let mut unidentified_cost = CostView::default();
     let mut sessions = Vec::new();
@@ -623,7 +680,7 @@ pub fn day_agents(
             });
         }
         let usage: Vec<UsageLine> =
-            derived::usage_sums_in(conn, &s.id, start, end, &pricing.revision)?
+            derived::usage_sums_in(conn, &s.id, start, end, pricing_revision)?
                 .into_iter()
                 .map(|u| UsageLine {
                     cost: u.cost.into(),
@@ -661,6 +718,12 @@ pub fn day_agents(
             .collect();
         let (repository, repository_label) = derived::session_repository(conn, &s.id)?;
         sessions.push(SessionDay {
+            automated: is_automated(
+                usage
+                    .iter()
+                    .filter(|u| u.identified)
+                    .map(|u| u.model.as_deref()),
+            ),
             cost,
             reported,
             repository,
@@ -686,6 +749,23 @@ pub fn day_agents(
             usage,
         });
     }
+    Ok((sessions, identified_cost, unidentified_cost))
+}
+
+pub fn day_agents(
+    conn: &Connection,
+    zone: &ReportingZone,
+    day: &str,
+    corrections: &[tracr_store::ledger::CorrectionRow],
+    manual: &[tracr_store::ledger::ManualRev],
+) -> Result<DayAgents> {
+    let date: Date = day
+        .parse()
+        .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))?;
+    let (start, end) = zone.bounds(date)?;
+    let pricing = crate::pricing::bundled();
+    let (sessions, identified_cost, unidentified_cost) =
+        session_days(conn, start, end, &pricing.revision)?;
     let mut human = HumanDay::default();
     for (a, engaged, proposals) in derived::atoms_of_day(conn, &date.to_string())? {
         let len = a.end_at - a.start_at;

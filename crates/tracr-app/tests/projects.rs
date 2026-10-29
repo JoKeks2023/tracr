@@ -176,3 +176,53 @@ fn counted_time_groups_by_project_and_nothing_moves() {
         ]
     );
 }
+
+#[test]
+fn overview_groups_sessions_by_project_then_by_repository() {
+    let dir = TempDir::new().unwrap();
+    let data = setup(&dir);
+    let reader = Reader::open(&data).unwrap();
+
+    // No project yet: the repository stands on its own.
+    let o = reader.project_overview(DAY, DAY).unwrap();
+    assert_eq!(o.entries.len(), 1);
+    let e = &o.entries[0];
+    assert_eq!(
+        (e.kind, e.label.as_str(), e.sessions),
+        ("repository", "example/repo", 1)
+    );
+    assert_eq!(e.session_ids.len(), 1);
+    assert_eq!(e.repositories[0].key, "github.com/example/repo");
+
+    // A mapped project takes the repository; an empty project still appears.
+    let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+    let shop = app
+        .project_op(&ProjectOp::Create {
+            name: "Shop".into(),
+        })
+        .unwrap();
+    let _idle = app
+        .project_op(&ProjectOp::Create {
+            name: "Idle".into(),
+        })
+        .unwrap();
+    app.project_op(&ProjectOp::Map {
+        repository: "github.com/example/repo".into(),
+        project: Some(shop.clone()),
+    })
+    .unwrap();
+    let o = Reader::open(&data)
+        .unwrap()
+        .project_overview(DAY, DAY)
+        .unwrap();
+    assert_eq!(o.entries.len(), 2);
+    let shop_entry = o.entries.iter().find(|e| e.label == "Shop").unwrap();
+    assert_eq!((shop_entry.kind, shop_entry.sessions), ("project", 1));
+    assert_eq!(shop_entry.project_id.as_deref(), Some(shop.as_str()));
+    assert_eq!(shop_entry.repositories[0].label, "example/repo");
+    let idle = o.entries.iter().find(|e| e.label == "Idle").unwrap();
+    assert_eq!((idle.sessions, idle.agent_ms), (0, 0));
+    // The same numbers as the session list.
+    let list = Reader::open(&data).unwrap().sessions(DAY, DAY).unwrap();
+    assert_eq!(shop_entry.cost.amount_nano, list.cost.amount_nano);
+}

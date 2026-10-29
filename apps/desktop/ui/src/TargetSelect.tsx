@@ -2,15 +2,18 @@ import type { TargetOption } from "./types";
 import { t } from "./i18n";
 
 /** Target dropdown (UI-01): repositories, categories, used before, "Other…". */
-export function TargetSelect({ targets, value, onChange, other, onOther, allowNone }: {
+export function TargetSelect({ targets, value, onChange, other, onOther, allowNone, extras }: {
   targets: TargetOption[];
   value: string;
   onChange: (v: string) => void;
   other: string;
   onOther: (v: string) => void;
   allowNone?: boolean;
+  /** Extra choices before the targets (e.g. "Break"). */
+  extras?: { value: string; label: string }[];
 }) {
   const groups: [TargetOption["group"], string][] = [
+    ["project", t("targetProjects")],
     ["repository", t("targetRepos")],
     ["category", t("targetCategories")],
     ["other", t("targetUsed")],
@@ -19,6 +22,11 @@ export function TargetSelect({ targets, value, onChange, other, onOther, allowNo
     <>
       <select className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-label={t("target")}>
         <option value="">{allowNone ? t("noTarget") : t("chooseTarget")}</option>
+        {extras?.map((x) => (
+          <option key={x.value} value={x.value}>
+            {x.label}
+          </option>
+        ))}
         {groups.map(([g, label]) => {
           const items = targets.filter((o) => o.group === g);
           return items.length === 0 ? null : (

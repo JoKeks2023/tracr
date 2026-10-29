@@ -12,14 +12,29 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, RunEvent, WindowEvent};
-use tracr_app::day::{DayAgents, DayList};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent, Wry};
+use tauri_plugin_notification::NotificationExt;
+use tracr_app::day::{DayAgents, DayList, SessionList};
+use tracr_app::quota::{self, Level, QuotaPrefs};
 use tracr_app::runtime::{Refreshed, Runtime, RuntimeStatus};
 use tracr_app::{App, Reader, RootKind, SystemClock, default_data_dir, proposed_provider_roots};
 
 const CLIENT: &str = "tracr-desktop";
+
+/// The window tells the native side its language (menu, menu bar, notifications).
+static GERMAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the menu bar shows for the quota right now, written by the quota watcher.
+static QUOTA_TITLE: Mutex<Option<String>> = Mutex::new(None);
+static QUOTA_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// How many Claude Code sessions wait for you right now (from the hooks), for the menu bar.
+static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn german() -> bool {
+    GERMAN.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 struct Ctx {
     data_dir: Option<PathBuf>,
@@ -34,6 +49,14 @@ impl Ctx {
         self.data_dir
             .clone()
             .ok_or_else(|| "no data directory: set TRACR_DATA_DIR".to_owned())
+    }
+
+    fn config_roots(&self) -> Vec<String> {
+        self.data_dir
+            .as_ref()
+            .and_then(|d| Reader::open(d).ok())
+            .and_then(|r| r.config_roots().ok())
+            .unwrap_or_default()
     }
 
     fn repository_roots(&self) -> Vec<String> {
@@ -122,6 +145,10 @@ struct Status {
     ledger_present: bool,
     approved_roots: Vec<String>,
     approved_repository_roots: Vec<String>,
+    /// Claude Code's home folder(s) tracr may read (the session registry, later the configuration).
+    approved_config_roots: Vec<String>,
+    /// `~/.claude` when it exists and is not approved yet.
+    proposed_config_root: Option<String>,
     proposed_roots: Vec<ProposedRoot>,
     /// The user's home folder, so the window can show `~/…` instead of a user name.
     home: Option<String>,
@@ -186,6 +213,16 @@ async fn status(ctx: tauri::State<'_, Ctx>) -> Result<Status, String> {
             .collect(),
         approved_roots: approved,
         approved_repository_roots: ctx.repository_roots(),
+        approved_config_roots: ctx.config_roots(),
+        proposed_config_root: std::env::var_os("HOME")
+            .map(|h| PathBuf::from(h).join(".claude"))
+            .filter(|p| p.is_dir())
+            .map(|p| p.display().to_string())
+            .filter(|p| {
+                !ctx.config_roots().iter().any(|r| {
+                    r == p || std::fs::canonicalize(p).is_ok_and(|c| c.display().to_string() == *r)
+                })
+            }),
         home: std::env::var("HOME").ok(),
         app_version: env!("CARGO_PKG_VERSION"),
         timezone: zone.as_ref().map(|z| z.name.clone()),
@@ -227,10 +264,24 @@ async fn approve_roots(ctx: tauri::State<'_, Ctx>, paths: Vec<String>) -> Result
     })
 }
 
+/// Approves Claude Code's home folder (`~/.claude`) when it is the proposed one (an explicit user action).
+#[tauri::command]
+async fn approve_config_root(ctx: tauri::State<'_, Ctx>) -> Result<(), String> {
+    let proposed = std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".claude"))
+        .filter(|p| p.is_dir())
+        .ok_or_else(|| "no ~/.claude folder here".to_owned())?;
+    ctx.change_roots("config root approved; restarting", |app| {
+        app.add_root(RootKind::Config, &proposed)?;
+        Ok(())
+    })
+}
+
 fn root_kind(kind: &str) -> Result<RootKind, String> {
     match kind {
         "provider" => Ok(RootKind::Provider),
         "repository" => Ok(RootKind::Repository),
+        "config" => Ok(RootKind::Config),
         other => Err(format!("unknown root kind {other}")),
     }
 }
@@ -302,6 +353,7 @@ async fn choose_root(
     let title = match kind {
         RootKind::Provider => "Choose a folder with agent history tracr may read",
         RootKind::Repository => "Choose a folder that contains your git repositories",
+        RootKind::Config => "Choose Claude Code's home folder (usually ~/.claude)",
     };
     let Some(path) = app
         .dialog()
@@ -340,6 +392,160 @@ async fn days(ctx: tauri::State<'_, Ctx>) -> Result<DayList, String> {
 async fn day_agents(ctx: tauri::State<'_, Ctx>, day: String) -> Result<DayAgents, String> {
     Reader::open(&ctx.dir()?)
         .and_then(|r| r.day_agents(&day))
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn session_trace(
+    ctx: tauri::State<'_, Ctx>,
+    session_id: String,
+) -> Result<tracr_app::trace::SessionTrace, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.session_trace(&session_id))
+        .map_err(err)
+}
+
+fn claude_settings() -> Result<PathBuf, String> {
+    tracr_app::limits::default_claude_settings().ok_or_else(|| "no home directory".to_owned())
+}
+
+/// What the providers report about their usage limits (percent of a window).
+#[tauri::command]
+async fn limits(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::limits::Limits, String> {
+    let settings = claude_settings()?;
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.limits(&settings))
+        .map_err(err)
+}
+
+/// Opt in: route Claude Code's statusLine through tracr (a copy of the settings is made first).
+#[tauri::command]
+async fn limits_tap(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    if !install {
+        return tracr_app::limits::uninstall_tap(&dir, &settings).map_err(err);
+    }
+    let cli = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(|p| p.join("tracr"))
+        .filter(|p| p.exists())
+        .ok_or_else(|| "the tracr command line tool was not found next to the app".to_owned())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    tracr_app::limits::install_tap(&dir, &settings, &cli, now).map_err(err)
+}
+
+#[tauri::command]
+async fn project_overview(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<tracr_app::projects::ProjectOverview, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.project_overview(&from, &to))
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn get_quota_prefs(ctx: tauri::State<'_, Ctx>) -> Result<QuotaPrefs, String> {
+    Ok(quota::load_prefs(&ctx.dir()?))
+}
+
+#[tauri::command]
+async fn set_quota_prefs(
+    app: tauri::AppHandle,
+    ctx: tauri::State<'_, Ctx>,
+    prefs: QuotaPrefs,
+) -> Result<(), String> {
+    quota::save_prefs(&ctx.dir()?, &prefs).map_err(err)?;
+    quota_tick(&app, None); // show the change at once
+    Ok(())
+}
+
+/// Whether tracr's Claude Code hooks are registered, and which sessions are live (working, waiting for you, your turn).
+#[derive(Serialize)]
+struct HooksView {
+    installed: bool,
+    live: Vec<tracr_app::hooks::LiveSession>,
+    /// How long you took to answer in the last 24 hours.
+    response: tracr_app::hooks::ResponseTimes,
+}
+
+#[tauri::command]
+async fn hooks_state(ctx: tauri::State<'_, Ctx>) -> Result<HooksView, String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    Ok(HooksView {
+        installed: tracr_app::hooks::installed(&settings),
+        live: tracr_app::hooks::live(&dir, now_ms(), 24 * 3_600_000),
+        response: tracr_app::hooks::response_times(&dir, now_ms() - 24 * 3_600_000),
+    })
+}
+
+/// Opt in or out of the Claude Code hooks (a copy of the settings is made first).
+#[tauri::command]
+async fn hooks_set(ctx: tauri::State<'_, Ctx>, install: bool) -> Result<(), String> {
+    let dir = ctx.dir()?;
+    let settings = claude_settings()?;
+    if !install {
+        return tracr_app::hooks::uninstall(&settings).map_err(err);
+    }
+    let cli = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .map(|p| p.join("tracr"))
+        .filter(|p| p.exists())
+        .ok_or_else(|| "the tracr command line tool was not found next to the app".to_owned())?;
+    tracr_app::hooks::install(&dir, &settings, &cli, now_ms()).map_err(err)
+}
+
+#[tauri::command]
+async fn analytics(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<tracr_app::analytics::Analytics, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.analytics(&from, &to))
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn get_cost_alerts(
+    ctx: tauri::State<'_, Ctx>,
+) -> Result<tracr_app::costwatch::CostAlertPrefs, String> {
+    Ok(tracr_app::costwatch::load(&ctx.dir()?))
+}
+
+#[tauri::command]
+async fn set_cost_alerts(
+    ctx: tauri::State<'_, Ctx>,
+    prefs: tracr_app::costwatch::CostAlertPrefs,
+) -> Result<(), String> {
+    tracr_app::costwatch::save(&ctx.dir()?, &prefs).map_err(err)
+}
+
+/// Which Claude Code sessions run right now, with spend of the last hour and the life of their prompt cache.
+#[tauri::command]
+async fn fleet_state(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::fleet::Fleet, String> {
+    let dir = ctx.dir()?;
+    tauri::async_runtime::spawn_blocking(move || Reader::open(&dir).and_then(|r| r.fleet(now_ms())))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn sessions(
+    ctx: tauri::State<'_, Ctx>,
+    from: String,
+    to: String,
+) -> Result<SessionList, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.sessions(&from, &to))
         .map_err(err)
 }
 
@@ -445,6 +651,27 @@ async fn correct(
         return Err("corrections need the collector of this app; it is not running here".into());
     };
     tauri::async_runtime::spawn_blocking(move || handle.correct(req))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+/// Several corrections as one step: all are recorded or none (a split into parts, a whole-day assignment).
+#[tauri::command]
+async fn correct_batch(
+    ctx: tauri::State<'_, Ctx>,
+    reqs: Vec<tracr_app::correct::CorrectionRequest>,
+) -> Result<Vec<String>, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("corrections need the collector of this app; it is not running here".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || handle.correct_batch(reqs))
         .await
         .map_err(|e| e.to_string())?
         .map_err(err)
@@ -579,6 +806,190 @@ fn collector_line(app: &tauri::AppHandle) -> &'static str {
 
 /// The menu-bar item shows the running timer's elapsed time; its menu shows
 /// today's minutes and the collector state, and offers start or stop.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn window_name(w: &tracr_app::limits::LimitWindow) -> String {
+    let de = german();
+    let provider = match w.provider.as_str() {
+        "claude_code" => "Claude",
+        "codex" => "Codex",
+        other => other,
+    };
+    let span = match (w.window.as_str(), de) {
+        ("five_hour", true) => "5 Stunden".to_owned(),
+        ("five_hour", false) => "5 hours".to_owned(),
+        ("weekly", true) => "Woche".to_owned(),
+        ("weekly", false) => "Week".to_owned(),
+        (other, _) => other.replace("minutes:", "") + " min",
+    };
+    format!("{provider} · {span}")
+}
+
+/// Reads the provider-reported quota, updates the menu bar and (when a window got worse) notifies.
+fn quota_tick(app: &tauri::AppHandle, watcher: Option<&mut quota::Watcher>) {
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = quota::load_prefs(&dir);
+    let Some(settings) = tracr_app::limits::default_claude_settings() else {
+        return;
+    };
+    let limits = Reader::open(&dir).and_then(|r| r.limits(&settings));
+    let (title, lines) = match &limits {
+        Ok(l) if prefs.menu_bar => {
+            let now = now_ms();
+            let lines = l
+                .windows
+                .iter()
+                .filter(|w| !w.expired)
+                .map(|w| {
+                    let shown = if prefs.remaining {
+                        100.0 - w.used_percent
+                    } else {
+                        w.used_percent
+                    };
+                    format!("{}: {:.0} %", window_name(w), shown.clamp(0.0, 100.0))
+                })
+                .collect();
+            (quota::menu_bar_text(&l.windows, &prefs, now), lines)
+        }
+        _ => (None, Vec::new()),
+    };
+    if let Ok(mut t) = QUOTA_TITLE.lock() {
+        *t = title;
+    }
+    if let Ok(mut l) = QUOTA_LINES.lock() {
+        *l = lines;
+    }
+    if let (Some(watcher), Ok(l)) = (watcher, &limits) {
+        for a in watcher.changes(&l.windows, prefs.pace_aware) {
+            if !prefs.notify {
+                continue;
+            }
+            let de = german();
+            let name = l
+                .windows
+                .iter()
+                .find(|w| w.provider == a.provider && w.window == a.window)
+                .map(window_name)
+                .unwrap_or_default();
+            let (title, tail) = match (a.level, de) {
+                (Level::Warn, true) => ("Kontingent wird knapp", "verbraucht"),
+                (Level::Warn, false) => ("Quota is running low", "used"),
+                (Level::Crit, true) => ("Kontingent ist kritisch", "verbraucht"),
+                (Level::Crit, false) => ("Quota is critically low", "used"),
+                (_, true) => ("Kontingent ist aufgebraucht", "verbraucht"),
+                (_, false) => ("Quota is used up", "used"),
+            };
+            let _ = app
+                .notification()
+                .builder()
+                .title(title)
+                .body(format!("{name}: {:.0} % {tail}", a.used_percent))
+                .show();
+        }
+    }
+    refresh_tray(app);
+}
+
+/// Judges the spend (a session, a rolling window, the day, the month) and notifies when a threshold is crossed or doubled.
+fn cost_tick(app: &tauri::AppHandle, watcher: &mut tracr_app::costwatch::CostWatcher) {
+    use tracr_app::costwatch::{Kind, load};
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = load(&dir);
+    if !prefs.enabled {
+        return;
+    }
+    let now = now_ms();
+    let Ok(reader) = Reader::open(&dir) else {
+        return;
+    };
+    let (Ok(measures), Ok(day)) = (reader.cost_measures(now, &prefs), reader.day_of(now)) else {
+        return;
+    };
+    let de = german();
+    for a in watcher.changes(&measures, &prefs, &day) {
+        let (title, what) = match (&a.kind, de) {
+            (Kind::Session { label }, true) => (
+                "Sitzung wird teuer",
+                label.clone().unwrap_or_else(|| "Sitzung".to_owned()),
+            ),
+            (Kind::Session { label }, false) => (
+                "A session is getting expensive",
+                label.clone().unwrap_or_else(|| "Session".to_owned()),
+            ),
+            (Kind::Window { minutes }, true) => (
+                "Hohe Ausgaben in kurzer Zeit",
+                format!("letzte {minutes} Minuten"),
+            ),
+            (Kind::Window { minutes }, false) => (
+                "High spend in a short time",
+                format!("last {minutes} minutes"),
+            ),
+            (Kind::Day, true) => ("Tageskosten", "heute".to_owned()),
+            (Kind::Day, false) => ("Spend today", "today".to_owned()),
+            (Kind::Month, true) => ("Monatskosten", "dieser Monat".to_owned()),
+            (Kind::Month, false) => ("Spend this month", "this month".to_owned()),
+        };
+        let body = if de {
+            format!(
+                "{what}: ≈ ${:.2} (Grenze ${:.0}, Schätzung)",
+                a.amount, a.crossed
+            )
+        } else {
+            format!(
+                "{what}: ≈ ${:.2} (limit ${:.0}, estimate)",
+                a.amount, a.crossed
+            )
+        };
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
+/// Notifies for hook events that arrived since the last look (needs you, your turn).
+fn hook_tick(app: &tauri::AppHandle, last_seen: &mut i64) {
+    let ctx = app.state::<Ctx>();
+    let Ok(dir) = ctx.dir() else { return };
+    let prefs = quota::load_prefs(&dir);
+    let events = tracr_app::hooks::events(&dir);
+    let newest = events.iter().map(|e| e.at).max().unwrap_or(*last_seen);
+    if *last_seen == 0 {
+        *last_seen = newest.max(now_ms() - 1); // events before this launch are history
+        return;
+    }
+    let waiting = tracr_app::hooks::live(&dir, now_ms(), 24 * 3_600_000)
+        .iter()
+        .filter(|l| l.state == tracr_app::hooks::LiveState::Waiting)
+        .count();
+    let changed = WAITING.swap(waiting, std::sync::atomic::Ordering::Relaxed) != waiting;
+    if changed {
+        refresh_tray(app);
+    }
+    let reader = Reader::open(&dir).ok();
+    for e in events.iter().filter(|e| e.at > *last_seen) {
+        let (want, title) = match (e.event.as_str(), german()) {
+            ("Notification", true) => (prefs.notify_waiting, "Claude braucht dich"),
+            ("Notification", false) => (prefs.notify_waiting, "Claude needs you"),
+            ("Stop", true) => (prefs.notify_finished, "Du bist dran"),
+            ("Stop", false) => (prefs.notify_finished, "Your turn"),
+            _ => (false, ""),
+        };
+        if want {
+            let label = reader
+                .as_ref()
+                .and_then(|r| r.session_label(&e.session))
+                .unwrap_or_else(|| "Claude Code".to_owned());
+            let _ = app.notification().builder().title(title).body(label).show();
+        }
+    }
+    *last_seen = newest.max(*last_seen);
+}
+
 fn refresh_tray(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("tracr") else {
         return;
@@ -592,6 +1003,23 @@ fn refresh_tray(app: &tauri::AppHandle) {
         let mins = (now - t.start).max(0) / 60_000;
         format!("{}:{:02}", mins / 60, mins % 60)
     });
+    let quota_title = QUOTA_TITLE.lock().ok().and_then(|t| t.clone());
+    let waiting = WAITING.load(std::sync::atomic::Ordering::Relaxed);
+    let quota_title = match (waiting, quota_title) {
+        (0, q) => q,
+        (n, q) => {
+            let w = if german() {
+                format!("{n} wartet")
+            } else {
+                format!("{n} waiting")
+            };
+            Some(q.map_or(w.clone(), |q| format!("{w} · {q}")))
+        }
+    };
+    let title = match (title, quota_title) {
+        (Some(t), Some(q)) => Some(format!("{t}  {q}")),
+        (t, q) => t.or(q),
+    };
     let _ = tray.set_title(title.as_deref());
     let label = if running.is_some() {
         "Stop timer"
@@ -606,6 +1034,13 @@ fn refresh_tray(app: &tauri::AppHandle) {
         MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>),
     ) && let Ok(menu) = Menu::with_items(app, &[&today, &state, &open, &timer, &quit])
     {
+        let lines = QUOTA_LINES.lock().map(|l| l.clone()).unwrap_or_default();
+        for (i, line) in lines.iter().enumerate() {
+            if let Ok(item) = MenuItem::with_id(app, format!("quota{i}"), line, false, None::<&str>)
+            {
+                let _ = menu.insert(&item, 2 + i);
+            }
+        }
         let _ = tray.set_menu(Some(menu));
     }
 }
@@ -646,6 +1081,196 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// The Mac menu bar: tracr, File, Edit, View, Window, Help. Items carry an
+/// `m:` id; the window does the work (it owns the open day and the sheets),
+/// except Quit, Timer and Open, which need no window state.
+fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
+    let l = |en: &'static str, german: &'static str| if de { german } else { en };
+    let item =
+        |id: &str, text: &str, accel: Option<&str>| MenuItem::with_id(app, id, text, true, accel);
+    let sep = || PredefinedMenuItem::separator(app);
+
+    let tracr = Submenu::with_items(
+        app,
+        "tracr",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some(l("About tracr", "Über tracr")), None)?,
+            &sep()?,
+            &item(
+                "m:settings",
+                l("Settings…", "Einstellungen…"),
+                Some("CmdOrCtrl+,"),
+            )?,
+            &sep()?,
+            &PredefinedMenuItem::hide(app, Some(l("Hide tracr", "tracr ausblenden")))?,
+            &PredefinedMenuItem::hide_others(app, Some(l("Hide Others", "Andere ausblenden")))?,
+            &PredefinedMenuItem::show_all(app, Some(l("Show All", "Alle einblenden")))?,
+            &sep()?,
+            &item(
+                "m:quit",
+                l("Quit tracr", "tracr beenden"),
+                Some("CmdOrCtrl+Q"),
+            )?,
+        ],
+    )?;
+    let file = Submenu::with_items(
+        app,
+        l("File", "Ablage"),
+        true,
+        &[
+            &item(
+                "m:new_entry",
+                l("Add Time…", "Zeit hinzufügen…"),
+                Some("CmdOrCtrl+N"),
+            )?,
+            &item(
+                "m:timer",
+                l("Start or Stop Timer", "Timer starten oder stoppen"),
+                Some("CmdOrCtrl+T"),
+            )?,
+            &sep()?,
+            &item(
+                "m:review_day",
+                l("Review Day…", "Tag prüfen…"),
+                Some("CmdOrCtrl+Shift+R"),
+            )?,
+            &item(
+                "m:resolve",
+                l("Resolve Open Time…", "Offene Zeit klären…"),
+                Some("CmdOrCtrl+Alt+K"),
+            )?,
+            &sep()?,
+            &item(
+                "m:export",
+                l("Export CSV…", "CSV exportieren…"),
+                Some("CmdOrCtrl+E"),
+            )?,
+            &item(
+                "m:refresh",
+                l("Refresh", "Aktualisieren"),
+                Some("CmdOrCtrl+R"),
+            )?,
+            &sep()?,
+            &PredefinedMenuItem::close_window(app, Some(l("Close Window", "Fenster schließen")))?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        l("Edit", "Bearbeiten"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &sep()?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view = Submenu::with_items(
+        app,
+        l("View", "Darstellung"),
+        true,
+        &[
+            &item("m:area_today", l("Today", "Heute"), Some("CmdOrCtrl+1"))?,
+            &item(
+                "m:area_projects",
+                l("Projects", "Projekte"),
+                Some("CmdOrCtrl+2"),
+            )?,
+            &item(
+                "m:area_worktime",
+                l("Work Time", "Arbeitszeit"),
+                Some("CmdOrCtrl+3"),
+            )?,
+            &item("m:area_limits", l("Limits", "Limits"), Some("CmdOrCtrl+4"))?,
+            &sep()?,
+            &item(
+                "m:overview",
+                l("Day Overview", "Tagesübersicht"),
+                Some("CmdOrCtrl+Alt+1"),
+            )?,
+            &item(
+                "m:history",
+                l("Agent Timeline", "Agenten-Zeitleiste"),
+                Some("CmdOrCtrl+Alt+2"),
+            )?,
+            &sep()?,
+            &item(
+                "m:prev_day",
+                l("Previous Period", "Voriger Zeitraum"),
+                Some("CmdOrCtrl+["),
+            )?,
+            &item(
+                "m:next_day",
+                l("Next Period", "Nächster Zeitraum"),
+                Some("CmdOrCtrl+]"),
+            )?,
+            &item("m:today", l("Go to Today", "Zu heute"), Some("CmdOrCtrl+0"))?,
+            &sep()?,
+            &item(
+                "m:palette",
+                l("Commands…", "Befehle …"),
+                Some("CmdOrCtrl+K"),
+            )?,
+            &sep()?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        l("Window", "Fenster"),
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, Some(l("Zoom", "Zoomen")))?,
+            &sep()?,
+            &item("m:open", l("tracr", "tracr"), None)?,
+        ],
+    )?;
+    let help = Submenu::with_items(
+        app,
+        l("Help", "Hilfe"),
+        true,
+        &[&item(
+            "m:website",
+            l("tracr Website", "tracr Website"),
+            None,
+        )?],
+    )?;
+    Menu::with_items(app, &[&tracr, &file, &edit, &view, &window, &help])
+}
+
+/// The window tells the menu bar its language once it has loaded.
+#[tauri::command]
+fn set_menu_language(app: tauri::AppHandle, german: bool) -> Result<(), String> {
+    GERMAN.store(german, std::sync::atomic::Ordering::Relaxed);
+    let menu = app_menu(&app, german).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map(|_| ()).map_err(|e| e.to_string())
+}
+
+fn on_app_menu(app: &tauri::AppHandle, id: &str) {
+    let Some(action) = id.strip_prefix("m:") else {
+        return; // the tray menu has its own handler
+    };
+    match action {
+        "quit" => app.exit(0),
+        "timer" => toggle_timer(app),
+        "open" => show_main(app),
+        "website" => {
+            let _ = std::process::Command::new("open")
+                .arg("https://tracr.jorisconrad.com")
+                .spawn();
+        }
+        other => {
+            show_main(app);
+            let _ = app.emit("menu", other);
+        }
+    }
+}
+
 fn main() {
     let env_dir = std::env::var_os("TRACR_DATA_DIR").map(PathBuf::from);
     let ctx = Ctx {
@@ -657,27 +1282,46 @@ fn main() {
     let app = tauri::Builder::default()
         .manage(ctx)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             status,
             approve_roots,
             choose_root,
+            approve_config_root,
             remove_root,
             set_timezone,
             projects,
             project_op,
             days,
             day_agents,
+            sessions,
+            fleet_state,
+            get_cost_alerts,
+            set_cost_alerts,
+            analytics,
+            hooks_state,
+            hooks_set,
+            get_quota_prefs,
+            set_quota_prefs,
+            project_overview,
+            limits,
+            limits_tap,
+            session_trace,
             refresh,
             export_csv,
             export_everything,
             correct,
+            correct_batch,
             targets,
             manual,
             review,
-            dismiss
+            dismiss,
+            set_menu_language
         ])
+        .on_menu_event(|app, event| on_app_menu(app, event.id().as_ref()))
         .setup(|app| {
             app.state::<Ctx>().start_runtime();
+            app.set_menu(app_menu(app.handle(), false)?)?;
             let open = MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
@@ -696,6 +1340,34 @@ fn main() {
             }
             tray.build(app)?;
             refresh_tray(app.handle());
+            // macOS asks once whether tracr may notify (only when alerts are on).
+            if app
+                .state::<Ctx>()
+                .dir()
+                .is_ok_and(|d| quota::load_prefs(&d).notify)
+            {
+                let _ = app.notification().request_permission();
+            }
+            // Quota in the menu bar and alerts when a window gets worse: every 30 s.
+            let quota_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut watcher = quota::Watcher::default();
+                let mut costs = tracr_app::costwatch::CostWatcher::default();
+                loop {
+                    quota_tick(&quota_handle, Some(&mut watcher));
+                    cost_tick(&quota_handle, &mut costs);
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                }
+            });
+            // Claude Code hook events (needs you, your turn): look every few seconds.
+            let hook_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut last_hook = 0_i64;
+                loop {
+                    hook_tick(&hook_handle, &mut last_hook);
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+            });
             // Keep the elapsed time in the menu bar current.
             let handle = app.handle().clone();
             std::thread::spawn(move || {

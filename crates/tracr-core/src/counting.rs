@@ -43,6 +43,8 @@ pub enum TargetRef {
     Category(String),
     /// "Other…" with the user's own short label.
     Other(String),
+    /// A project the user defined (by its id; the name is read when shown, so a rename shows at once).
+    Project(String),
 }
 
 impl TargetRef {
@@ -52,6 +54,7 @@ impl TargetRef {
             Self::Repository(k) => format!("repository:{k}"),
             Self::Category(c) => format!("category:{c}"),
             Self::Other(t) => format!("other:{t}"),
+            Self::Project(id) => format!("project:{id}"),
         }
     }
 
@@ -65,6 +68,14 @@ impl TargetRef {
             "category" if CATEGORIES.contains(&rest) => Some(Self::Category(rest.to_owned())),
             "other" if rest.chars().count() <= 80 && !rest.chars().any(char::is_control) => {
                 Some(Self::Other(rest.to_owned()))
+            }
+            "project"
+                if rest.len() <= 64
+                    && rest
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') =>
+            {
+                Some(Self::Project(rest.to_owned()))
             }
             _ => None,
         }
@@ -593,10 +604,13 @@ mod tests {
             TargetRef::Repository("github.com/o/r".into()),
             TargetRef::Category("meeting".into()),
             TargetRef::Other("Kunde X".into()),
+            TargetRef::Project("prj_0192".into()),
         ] {
             assert_eq!(TargetRef::parse(&t.key()), Some(t));
         }
         assert_eq!(TargetRef::parse("category:gaming"), None);
         assert_eq!(TargetRef::parse("other:"), None);
+        assert_eq!(TargetRef::parse("project:"), None);
+        assert_eq!(TargetRef::parse("project:has space"), None);
     }
 }
