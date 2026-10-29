@@ -474,6 +474,40 @@ struct HooksView {
     response: tracr_app::hooks::ResponseTimes,
 }
 
+#[derive(Serialize)]
+struct AutostartView {
+    /// Whether tracr opens at login (a LaunchAgent in your own Library folder).
+    enabled: bool,
+    /// False when this copy does not run from an app bundle (a development build).
+    available: bool,
+}
+
+fn app_bundle() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|e| tracr_app::autostart::bundle_of(&e))
+}
+
+#[tauri::command]
+async fn autostart_state() -> Result<AutostartView, String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let bundle = app_bundle();
+    Ok(AutostartView {
+        enabled: matches!((&home, &bundle), (Some(h), Some(b)) if tracr_app::autostart::enabled(h, b)),
+        available: home.is_some() && bundle.is_some(),
+    })
+}
+
+/// Opt in or out of opening tracr at login.
+#[tauri::command]
+async fn autostart_set(on: bool) -> Result<(), String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or("no home folder")?;
+    let bundle = app_bundle().ok_or("launch at login needs the installed app")?;
+    tracr_app::autostart::set(&home, &bundle, on).map_err(err)
+}
+
 #[tauri::command]
 async fn hooks_state(ctx: tauri::State<'_, Ctx>) -> Result<HooksView, String> {
     let dir = ctx.dir()?;
@@ -1301,6 +1335,8 @@ fn main() {
             analytics,
             hooks_state,
             hooks_set,
+            autostart_state,
+            autostart_set,
             get_quota_prefs,
             set_quota_prefs,
             project_overview,
@@ -1321,6 +1357,12 @@ fn main() {
         .on_menu_event(|app, event| on_app_menu(app, event.id().as_ref()))
         .setup(|app| {
             app.state::<Ctx>().start_runtime();
+            // Opened at login: keep collecting, but leave the window closed.
+            if std::env::args().any(|a| a == "--background")
+                && let Some(w) = app.get_webview_window("main")
+            {
+                let _ = w.hide();
+            }
             app.set_menu(app_menu(app.handle(), false)?)?;
             let open = MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>)?;

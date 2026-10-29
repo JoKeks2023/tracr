@@ -229,6 +229,8 @@ Four sources are opt-in and each stores only numbers and names, never text:
 - **Running sessions.** If you approve your Claude folder, tracr reads the session registry in it (process, state, name, folder) to show running sessions. Key files in that folder are never opened.
 - **Notifications.** Warnings about limits, cost and waiting sessions are shown by the system; nothing is sent anywhere.
 
+One more switch writes a file, not data: **Open tracr at login** (Settings, off by default) puts one small plist in your own `~/Library/LaunchAgents` that opens the app in the background, so the sensor that notes when you are at the computer runs all day. Turning it off deletes that file.
+
 ## License
 
 tracr is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`). Anyone may use it, also commercially. If you distribute a modified version, or offer it as a network service, you must publish its source under the same license. See [CONTRIBUTING.md](CONTRIBUTING.md) for contributions.

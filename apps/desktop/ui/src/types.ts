@@ -464,6 +464,11 @@ export interface ResponseTimes {
   mean_ms: number;
   max_ms: number;
 }
+export interface AutostartView {
+  enabled: boolean;
+  available: boolean;
+}
+
 export interface HooksView {
   installed: boolean;
   live: LiveSession[];
