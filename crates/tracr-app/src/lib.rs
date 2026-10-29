@@ -5,6 +5,7 @@
 //! statistics and day views.
 
 pub mod analytics;
+pub mod autostart;
 pub mod correct;
 pub mod costwatch;
 pub mod day;

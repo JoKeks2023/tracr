@@ -3,7 +3,7 @@ import { api, errorText, type RootKind } from "../api";
 import { tildify } from "../format";
 import { t } from "../i18n";
 import { RootsPicker } from "../RootsPicker";
-import type { CostAlertPrefs, HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
+import type { AutostartView, CostAlertPrefs, HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel } from "./ui";
 
@@ -314,8 +314,10 @@ export function Settings({
   const tap = limits?.claude_tap;
   const { prefs, set: setPrefs } = useQuotaPrefs();
   const [hooks, setHooks] = useState<HooksView | null>(null);
+  const [autostart, setAutostart] = useState<AutostartView | null>(null);
   useEffect(() => {
     void api.hooksState().then(setHooks).catch(() => setHooks(null));
+    void api.autostartState().then(setAutostart).catch(() => setAutostart(null));
   }, []);
 
   return (
@@ -477,6 +479,12 @@ export function Settings({
               <Row label={t("state")}><span className="live"><i className={`sdot ${status.collector}`} />{collectorText(status.collector)}</span></Row>
               {status.collector_detail && <Row label={t("detail")}><span>{status.collector_detail}</span></Row>}
               {status.runtime && <Row label={t("deviceSensor")}><span>{status.runtime.sensor}</span></Row>}
+              <Row label={t("autostartLabel")} note={autostart && !autostart.available ? t("autostartDev") : t("autostartNote")}>
+                <div className="seg" role="group" aria-label={t("autostartLabel")}>
+                  <button aria-pressed={!!autostart?.enabled} disabled={!autostart?.available || busy} onClick={() => run(async () => { await api.autostartSet(true); setAutostart(await api.autostartState()); return t("autostartDoneOn"); })}>{t("on")}</button>
+                  <button aria-pressed={!autostart?.enabled} disabled={!autostart?.available || busy} onClick={() => run(async () => { await api.autostartSet(false); setAutostart(await api.autostartState()); return t("autostartDoneOff"); })}>{t("off")}</button>
+                </div>
+              </Row>
             </Panel>
             <Panel title={t("data")}>
               <Row label={t("location")}><span className="mono path">{status.data_dir ? tildify(status.data_dir, status.home) : "–"}</span></Row>

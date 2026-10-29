@@ -3,12 +3,15 @@ import { api, errorText } from "../api";
 import { ago, mergeCost, sessionsN, subagentsN, compact, dayLabel, duration, estimate, hhmm, intervals, modelName, providerName, sessionTokens, spanLabel } from "../format";
 import { t } from "../i18n";
 import { shiftAnchor } from "../nav";
-import type { DayAgents, Fleet, HooksView, Limits, LiveSession, RegistryEntry, SessionDay, SessionList, SessionStat } from "../types";
+import type { DayAgents, Fleet, AutostartView, HooksView, Limits, LiveSession, RegistryEntry, SessionDay, SessionList, SessionStat } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel, QuotaBar, QuotaRings, QuotaViewSwitch, Stat, clockLabel, windowName } from "./ui";
 
 const HOUR = 3_600_000;
 const ACTIVE_MS = 15 * 60_000;
+/** When the window opened: the first seconds are spent reading the day, which is not "no activity". */
+const OPENED_AT = Date.now();
+const WARMUP_MS = 20_000;
 
 /** Your day on one axis: what counted or is unresolved, and when agents ran. */
 function DayStrip({ view }: { view: DayAgents }) {
@@ -184,6 +187,14 @@ export function Home({
   const [hooks, setHooks] = useState<HooksView | null>(null);
   const [fleet, setFleet] = useState<Fleet | null>(null);
   const [fleetAt, setFleetAt] = useState(Date.now());
+  const [autostart, setAutostart] = useState<AutostartView | null>(null);
+  useEffect(() => {
+    void api.autostartState().then(setAutostart).catch(() => setAutostart(null));
+    const left = OPENED_AT + WARMUP_MS - Date.now();
+    if (left <= 0) return;
+    const id = window.setTimeout(() => setNow(Date.now()), left + 50);
+    return () => window.clearTimeout(id);
+  }, []);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(id);
@@ -243,6 +254,13 @@ export function Home({
 
   if (!loaded) return <div className="body" aria-busy="true" />;
   if (!view || !sum) {
+    if (!hasData && now - OPENED_AT < WARMUP_MS) {
+      return (
+        <div className="body" aria-busy="true">
+          <p className="vnote">{t("startingUp")}</p>
+        </div>
+      );
+    }
     return (
       <div className="body">
         <div className="vempty">
@@ -261,6 +279,9 @@ export function Home({
   const needs: { key: string; color: string; title: string; note: string; action: string; run: () => void }[] = [];
   if (sum.unknown > 0) {
     needs.push({ key: "unclear", color: "var(--warn)", title: t("unclearTitle", { time: duration(sum.unknown) }), note: intervals(sum.windows), action: t("needResolve"), run: onOpenWorktime });
+  }
+  if (sum.unknown > 0 && autostart?.available && !autostart.enabled) {
+    needs.push({ key: "autostart", color: "var(--info)", title: t("needAutostart"), note: t("needAutostartNote"), action: t("needOpen"), run: onOpenSettings });
   }
   for (const w of reached) {
     needs.push({ key: `lim-${w.provider}-${w.window}`, color: "var(--bad)", title: t("needLimit", { name: windowName(w) }), note: w.resets_at ? t("needLimitNote", { time: clockLabel(w.resets_at, tz) }) : "", action: t("needOpen"), run: onOpenLimits });

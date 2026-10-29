@@ -15,13 +15,13 @@ rusqlite = "0.40.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 toml = "1.1.6"
-tracr-core = { version = "0.10.0", path = "../tracr-core" }
-tracr-git = { version = "0.10.0", path = "../tracr-git" }
-tracr-ingest = { version = "0.10.0", path = "../tracr-ingest" }
-tracr-platform = { version = "0.10.0", path = "../tracr-platform" }
-tracr-provider-claude = { version = "0.10.0", path = "../tracr-provider-claude" }
-tracr-provider-codex = { version = "0.10.0", path = "../tracr-provider-codex" }
-tracr-store = { version = "0.10.0", path = "../tracr-store" }
+tracr-core = { version = "0.10.1", path = "../tracr-core" }
+tracr-git = { version = "0.10.1", path = "../tracr-git" }
+tracr-ingest = { version = "0.10.1", path = "../tracr-ingest" }
+tracr-platform = { version = "0.10.1", path = "../tracr-platform" }
+tracr-provider-claude = { version = "0.10.1", path = "../tracr-provider-claude" }
+tracr-provider-codex = { version = "0.10.1", path = "../tracr-provider-codex" }
+tracr-store = { version = "0.10.1", path = "../tracr-store" }
 uuid = { version = "1.26.1", features = ["v7"] }
 
 [dev-dependencies]

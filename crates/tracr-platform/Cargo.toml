@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-tracr-core = { version = "0.10.0", path = "../tracr-core" }
+tracr-core = { version = "0.10.1", path = "../tracr-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation-sys = "0.8"
