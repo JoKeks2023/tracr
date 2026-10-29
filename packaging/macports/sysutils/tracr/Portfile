@@ -24,9 +24,9 @@ distname            ${name}-${version}-universal-apple-darwin
 use_configure       no
 universal_variant   no
 
-checksums           rmd160  cd65f13e40a8041bbb0cc1b4404b494c47335361 \
-                    sha256  0c3d591e8dbfb2c711be0fec1db2e2cce741ab005898cb108d7d48401c227321 \
-                    size    6260627
+checksums           rmd160  29d5af2b8dff68b183aff11d9be113e4a986bc48 \
+                    sha256  d54aff2707ab9c5f7cf2a56bd5c7f2cd74465c4d563e0d64a200a1025e0712d0 \
+                    size    6260419
 
 extract.suffix      .tar.gz
 
