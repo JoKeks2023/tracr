@@ -75,7 +75,7 @@ This is spec-conformant but useless in a timesheet. It was raised with the user 
 - **Branch probe split.** `rev-parse --abbrev-ref HEAD` fails in a repository without commits and took down the whole probe. The branch now comes from `symbolic-ref --short -q HEAD` (no branch when HEAD is detached).
 - **Provisional.** Every day is provisional until review exists (S2). The meaningful state today is the ingestion state (complete, or still arriving) and is shown separately.
 - **Project level (repository → tracr Project mapping)** follows with mappings (S3). The report target stops at repository.
-- **Real data:** 21 repositories identified by remote. Agent worktrees and subfolders collapse onto their repository. A nested repository (`avmsdesk/libs/hbb_common`) resolves to its own remote. A renamed repository is shown by its remote name (`jukebox` → `jokeks2023/cabinet`).
+- **Real data:** 21 repositories identified by remote. Agent worktrees and subfolders collapse onto their repository. A nested repository (`example/libs/lib`) resolves to its own remote. A renamed repository is shown by its remote name (`old-name` → `owner/new-name`).
 
 ### Dogfooding incident: the collector died silently (2026-09-30 22:48)
 
