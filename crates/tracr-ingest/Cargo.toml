@@ -12,9 +12,9 @@ ruzstd = "0.9.1"
 serde_json = "1.0.151"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tracr-core = { version = "0.10.0", path = "../tracr-core" }
-tracr-platform = { version = "0.10.0", path = "../tracr-platform" }
-tracr-store = { version = "0.10.0", path = "../tracr-store" }
+tracr-core = { version = "0.10.1", path = "../tracr-core" }
+tracr-platform = { version = "0.10.1", path = "../tracr-platform" }
+tracr-store = { version = "0.10.1", path = "../tracr-store" }
 uuid = { version = "1.26.1", features = ["v7"] }
 
 [dev-dependencies]
