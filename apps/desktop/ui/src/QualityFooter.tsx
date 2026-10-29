@@ -1,4 +1,5 @@
 import { duration, reasonText } from "./format";
+import { locale, t } from "./i18n";
 import type { DayAgents } from "./types";
 
 const NOTICES: Record<string, string> = {
@@ -34,40 +35,40 @@ export function QualityFooter({ day }: { day: DayAgents }) {
   const gaps = q.stream_extents.filter((e) => e.state === "gap").length;
 
   const rows: [string, string][] = [
-    ["Coverage", coverage.length ? coverage.join(" · ") : "none recorded"],
+    [t("qCoverage"), coverage.length ? coverage.join(" · ") : t("qNoneRecorded")],
     [
-      "Ingestion",
+      t("qIngestion"),
       (q.ingestion_complete
-        ? "complete"
+        ? t("qComplete")
         : q.ingestion_verified_through
-          ? `verified through ${new Date(q.ingestion_verified_through).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz })}`
-          : "not verified") +
-        (q.recovered_records > 0 ? ` · ${q.recovered_records} records recovered late` : "") +
-        (gaps > 0 ? ` · ${gaps} stream gaps` : ""),
+          ? t("qVerifiedThrough", { time: new Date(q.ingestion_verified_through).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: tz }) })
+          : t("qNotVerified")) +
+        (q.recovered_records > 0 ? ` · ${t("qRecovered", { n: q.recovered_records })}` : "") +
+        (gaps > 0 ? ` · ${t("qGaps", { n: gaps })}` : ""),
     ],
-    ["Your records", `${day.corrections.length} corrections · ${day.manual_entries.length} manual entries`],
+    [t("qYourRecords"), t("qCorrections", { c: day.corrections.length, m: day.manual_entries.length })],
     [
-      "Records",
-      `${day.ledger_counts.quarantined} quarantined · ${day.ledger_counts.key_conflicts} key-content conflicts (recorded this day)`,
+      t("qRecords"),
+      t("qQuarantined", { q: day.ledger_counts.quarantined, k: day.ledger_counts.key_conflicts }),
     ],
     ...Object.entries(NOTICES)
       .filter(([k]) => diags[k])
-      .map(([k, text]): [string, string] => ["Notice", `${diags[k]} ${text}`]),
-    ["Usage", `${unknownActorRecords} records with actor unknown: the main agent is not documented, never assumed`],
+      .map(([k, text]): [string, string] => [t("qNotice"), `${diags[k]} ${text}`]),
+    [t("qUsage"), t("qUsageText", { n: unknownActorRecords })],
     [
-      "Cost",
-      `estimated API cost${reported ? ", provider-reported" : ""} · ${unpriced}% of tokens unpriced · catalog ${day.cost.pricing.catalog_version} as of ${day.cost.pricing.oldest_fetched_at ?? "unknown"}` +
-        (c.assumptions.length ? ` · assumed: ${c.assumptions.map(reasonText).join("; ")}` : ""),
+      t("qCost"),
+      t("qCostText", { rep: reported ? t("qProviderReported") : "", pct: unpriced, catalog: day.cost.pricing.catalog_version, asOf: day.cost.pricing.oldest_fetched_at ?? "?" }) +
+        (c.assumptions.length ? t("qAssumed", { list: c.assumptions.map(reasonText).join("; ") }) : ""),
     ],
     [
-      "Content",
-      "never stored: prompt, message and tool text never entered tracr. Search, prompt-based suggestions and re-extraction are unavailable.",
+      t("qContent"),
+      t("qContentText"),
     ],
   ];
 
   return (
-    <section className="quality" aria-label="Quality">
-      <h3>Quality</h3>
+    <section className="quality" aria-label={t("quality")}>
+      <h3>{t("quality")}</h3>
       <dl>
         {rows.map(([k, v], i) => (
           <div key={i} className="quality-row">

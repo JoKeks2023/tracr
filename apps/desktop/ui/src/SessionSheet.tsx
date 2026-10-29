@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { locale, t } from "./i18n";
 import { duration, estimate, hhmm, money, reasonText, shortId, tokens } from "./format";
 import type { PricingInfo, SessionDay, TokenCount, UsageLine } from "./types";
 
@@ -18,8 +19,8 @@ function Tok({ t }: { t: TokenCount }) {
 
 function actorName(s: SessionDay, actorId: string | null): string {
   const a = s.actors.find((x) => x.actor_id === actorId);
-  if (!a) return "unattributed actor";
-  return a.actor_kind === "known" && a.native_agent_id ? `agent ${shortId(a.native_agent_id, 10)}` : "main chain";
+  if (!a) return t("unattributedActor");
+  return a.actor_kind === "known" && a.native_agent_id ? t("agentPrefix", { id: shortId(a.native_agent_id, 10) }) : t("mainChain");
 }
 
 export function SessionSheet({ s, tz, pricing, onClose }: {
@@ -40,50 +41,50 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet" role="dialog" aria-label={`Session ${s.label ?? s.native_session_id}`}>
+      <aside className="sheet" role="dialog" aria-label={t("sessionAria", { name: s.label ?? s.native_session_id })}>
         <header>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2>{s.label ?? "No working directory"}</h2>
+            <h2>{s.label ?? t("noWorkingDir")}</h2>
             <div className="mono muted">{s.native_session_id}</div>
           </div>
           <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
-            Close
+            {t("close")}
           </button>
         </header>
         <div className="body">
           <dl className="kv">
-            <dt>Provider</dt>
+            <dt>{t("provider")}</dt>
             <dd>{s.provider}</dd>
-            <dt>Working dir</dt>
+            <dt>{t("workingDir")}</dt>
             <dd className="mono">{s.cwd ?? "—"}</dd>
-            <dt>Branch</dt>
+            <dt>{t("branch")}</dt>
             <dd className="mono">{s.git_branch ?? "—"}</dd>
-            <dt>Evidence span</dt>
+            <dt>{t("evidenceSpan")}</dt>
             <dd>
               {s.first_evidence_at && s.last_evidence_at
-                ? `${new Date(s.first_evidence_at).toLocaleString("en-GB", { timeZone: tz })} – ${new Date(
+                ? `${new Date(s.first_evidence_at).toLocaleString(locale, { timeZone: tz })} – ${new Date(
                     s.last_evidence_at,
-                  ).toLocaleString("en-GB", { timeZone: tz })}`
+                  ).toLocaleString(locale, { timeZone: tz })}`
                 : "—"}
             </dd>
-            <dt>Human prompts</dt>
+            <dt>{t("humanPrompts")}</dt>
             <dd>
               {s.engagement_instants.length === 0
-                ? "none this day"
+                ? t("noneThisDay")
                 : s.engagement_instants.map((t) => hhmm(t, tz)).join("  ")}
             </dd>
           </dl>
 
           <section>
-            <h3>Agents this day · execution is agent time, never human time</h3>
+            <h3>{t("agentsThisDay")}</h3>
             <table className="data">
               <thead>
                 <tr>
-                  <th>Actor</th>
-                  <th>Execution</th>
-                  <th>Segments</th>
-                  <th>Turns</th>
-                  <th>Tool calls</th>
+                  <th>{t("actor")}</th>
+                  <th>{t("execution")}</th>
+                  <th>{t("segments")}</th>
+                  <th>{t("turns")}</th>
+                  <th>{t("toolCalls")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -101,24 +102,24 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
           </section>
 
           <section>
-            <h3>Tokens this day · per actor and model, each request counted once</h3>
+            <h3>{t("tokensThisDay")}</h3>
             <table className="data">
               <thead>
                 <tr>
-                  <th>Actor · model</th>
-                  <th>Input</th>
-                  <th>Cache write</th>
-                  <th>Cache read</th>
-                  <th>Output</th>
-                  <th title={pricing.label}>Est. cost</th>
+                  <th>{t("actorModel")}</th>
+                  <th>{t("input")}</th>
+                  <th>{t("cacheWrite")}</th>
+                  <th>{t("cacheRead")}</th>
+                  <th>{t("output")}</th>
+                  <th title={pricing.label}>{t("estCost")}</th>
                 </tr>
               </thead>
               <tbody>
                 {usage.map((u, i) => (
                   <tr key={i}>
                     <td title={`${u.records} records${u.identified ? "" : ", unidentified"}`}>
-                      {actorName(s, u.actor_id)} · <span className="mono">{u.model ?? "model unknown"}</span>
-                      {!u.identified && <span className="muted"> · unidentified</span>}
+                      {actorName(s, u.actor_id)} · <span className="mono">{u.model ?? t("modelUnknown")}</span>
+                      {!u.identified && <span className="muted"> · {t("unidentified")}</span>}
                     </td>
                     <td>
                       <Tok t={u.input_fresh} />
@@ -143,22 +144,21 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
               </tbody>
             </table>
             <p className="note">
-              Est. cost is an API-equivalent estimate at list prices, not spend: catalog {pricing.catalog_version} as of{" "}
-              {pricing.oldest_fetched_at ?? "unknown"}. “≥” marks a partial estimate; “unpriced” is never zero.
-              {s.cost.reasons.length > 0 && ` Unpriced here: ${s.cost.reasons.map(reasonText).join("; ")}.`}
-              {s.cost.assumptions.length > 0 && ` Assumed: ${s.cost.assumptions.map(reasonText).join("; ")}.`}
+              {t("estCostNote", { catalog: pricing.catalog_version, asOf: pricing.oldest_fetched_at ?? "?" })}
+              {s.cost.reasons.length > 0 && t("unpricedHere", { list: s.cost.reasons.map(reasonText).join("; ") })}
+              {s.cost.assumptions.length > 0 && t("assumedHere", { list: s.cost.assumptions.map(reasonText).join("; ") })}
             </p>
           </section>
 
           {s.reported.length > 0 && (
             <section>
-              <h3>Reported by the provider · its own running total, not spend</h3>
+              <h3>{t("reportedByProvider")}</h3>
               <dl className="kv">
                 {s.reported.map((r) => (
                   <div key={r.source_field} style={{ display: "contents" }}>
                     <dt className="mono">{r.value_nano !== null ? money(r.value_nano, r.currency) : `${r.value_as_stated} ${r.currency}`}</dt>
                     <dd>
-                      {r.source_field} · last seen {new Date(r.recorded_at).toLocaleString("en-GB", { timeZone: tz })}
+                      {r.source_field} · {t("lastSeen")} {new Date(r.recorded_at).toLocaleString(locale, { timeZone: tz })}
                     </dd>
                   </div>
                 ))}
@@ -172,7 +172,7 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
 
           {diagnostics.length > 0 && (
             <section>
-              <h3>Quality</h3>
+              <h3>{t("quality")}</h3>
               <dl className="kv">
                 {diagnostics.map(([k, n]) => (
                   <div key={k} style={{ display: "contents" }}>

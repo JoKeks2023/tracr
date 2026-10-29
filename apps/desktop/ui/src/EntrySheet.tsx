@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { TargetSelect, targetKey } from "./TargetSelect";
 import type { ManualEntryInfo, TargetOption } from "./types";
@@ -51,7 +52,7 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
     const s = toMs(day, start, tz);
     const e = entry?.running ? undefined : toMs(day, end, tz);
     if (s === null || e === null || (e !== undefined && e <= s)) {
-      onChanged("The end must be after the start", true);
+      onChanged(t("endAfterStart"), true);
       return;
     }
     setBusy(true);
@@ -64,7 +65,7 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
         target: targetKey(target, other) || undefined,
         note: note.trim() || undefined,
       });
-      onChanged(entry ? "Entry updated" : "Time added");
+      onChanged(entry ? t("entryUpdated") : t("timeAdded"));
       onClose();
     } catch (err) {
       onChanged(errorText(err), true);
@@ -78,7 +79,7 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
     setBusy(true);
     try {
       await api.manual({ op: "delete", id: entry.id });
-      onChanged("Entry deleted");
+      onChanged(t("entryDeleted"));
       onClose();
     } catch (err) {
       onChanged(errorText(err), true);
@@ -90,21 +91,21 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet export-sheet" role="dialog" aria-label={entry ? "Edit entry" : "Add time"}>
+      <aside className="sheet export-sheet" role="dialog" aria-label={entry ? t("editEntry") : t("addTime")}>
         <header>
           <div style={{ flex: 1 }}>
-            <h2>{entry ? (entry.kind === "timer" ? "Edit timer" : "Edit entry") : "Add time"}</h2>
-            <div className="muted">{day} · counts as work you state; never changes agent data</div>
+            <h2>{entry ? (entry.kind === "timer" ? t("editTimer") : t("editEntry")) : t("addTime")}</h2>
+            <div className="muted">{t("entryNote", { day })}</div>
           </div>
         </header>
         <div className="body">
           <div className="fields">
             <label className="field">
-              <span>From</span>
+              <span>{t("from")}</span>
               <input className="input" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
             </label>
             <label className="field">
-              <span>To</span>
+              <span>{t("to")}</span>
               <input
                 className="input"
                 type="time"
@@ -115,26 +116,26 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
             </label>
           </div>
           <label className="field" style={{ marginTop: "var(--space-4)" }}>
-            <span>For</span>
+            <span>{t("for")}</span>
             <div className="target-row">
               <TargetSelect targets={targets} value={target} onChange={setTarget} other={other} onOther={setOther} allowNone />
             </div>
           </label>
           <label className="field">
-            <span>Note</span>
-            <input className="input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+            <span>{t("noteLabel")}</span>
+            <input className="input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("optional")} />
           </label>
           <div className="actions">
             {entry && (
               <button className="button ghost" disabled={busy} onClick={remove} style={{ marginRight: "auto" }}>
-                Delete
+                {t("delete")}
               </button>
             )}
             <button className="button ghost" onClick={onClose}>
-              Cancel
+              {t("cancel")}
             </button>
             <button className="button primary" disabled={busy} onClick={save}>
-              {busy ? <span className="spinner" /> : entry ? "Save" : "Add"}
+              {busy ? <span className="spinner" /> : entry ? t("save") : t("add")}
             </button>
           </div>
         </div>

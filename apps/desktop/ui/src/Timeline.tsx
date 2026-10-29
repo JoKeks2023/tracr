@@ -1,4 +1,5 @@
 import { QualityFooter } from "./QualityFooter";
+import { t } from "./i18n";
 import { useMemo, useState } from "react";
 import { duration, hhmm, shortId } from "./format";
 import type { ActorDay, DayAgents, HumanAtom, LaneInterval, Segment, SessionDay } from "./types";
@@ -128,7 +129,7 @@ function actorLabel(a: ActorDay) {
   }
   return (
     <span title="Main-chain activity. The transcripts do not document which agent this is, so tracr does not claim one (AD-21).">
-      main chain <span className="muted">· actor unknown</span>
+      {t("mainChain")} <span className="muted">· {t("actorUnknown")}</span>
     </span>
   );
 }
@@ -154,7 +155,7 @@ function SessionLane({ s, range, tz, marks, selected, onSelect }: {
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
         role="button"
         tabIndex={0}
-        aria-label={`Session ${s.label ?? s.native_session_id}, open details`}
+        aria-label={t("sessionOpen", { name: s.label ?? s.native_session_id })}
       >
         <div className="label">
           <span className="name" title={s.cwd ?? undefined}>
@@ -238,7 +239,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
       </div>
 
       <div className="row">
-        <div className="label secondary">{day.review ? "Human time · now" : "Human time"}</div>
+        <div className="label secondary">{day.review ? t("humanTimeNow") : t("humanTime")}</div>
         <div className="track">
           <Grid range={range} marks={marks} />
           {day.human.atoms.map((a, i) => (
@@ -267,7 +268,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
       </div>
       {day.review && (
         <div className="row">
-          <div className="label secondary">Reviewed r{day.review.rev}</div>
+          <div className="label secondary">{t("reviewedLane", { rev: day.review.rev })}</div>
           <div className="track">
             <Grid range={range} marks={marks} />
             {day.review.snapshot.intervals.map((a, i) => (
@@ -282,7 +283,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
         </div>
       )}
       <div className="row">
-        <div className="label secondary">Device</div>
+        <div className="label secondary">{t("device")}</div>
         <div className="track">
           <Grid range={range} marks={marks} />
           {day.device.map((d, i) => (
@@ -296,7 +297,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
         </div>
       </div>
       <div className="row">
-        <div className="label secondary">Coverage</div>
+        <div className="label secondary">{t("coverage")}</div>
         <div className="track">
           <Grid range={range} marks={marks} />
           {day.quality.stream_extents.map((e, i) => (
@@ -318,7 +319,7 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
         </div>
       </div>
 
-      <div className="group-title">Agent sessions · each listed on its own, overlapping freely</div>
+      <div className="group-title">{t("agentSessionsTitle")}</div>
       {sessions.map((s) => (
         <SessionLane
           key={s.session_id}
@@ -334,29 +335,29 @@ export function Timeline({ day, selected, onSelect, onAtom }: {
       <div className="legend">
         <span>
           <span className="swatch inst" />
-          Human prompt (an instant, no duration)
+          {t("legendPrompt")}
         </span>
         <span>
           <span className="swatch bar-sw" />
-          Agent execution, main chain
+          {t("legendMain")}
         </span>
         <span>
           <span className="swatch bar-sw sub" />
-          Agent execution, subagent
+          {t("legendSub")}
         </span>
         <span>
           <span className="swatch human-sw" />
-          Counted human time (inferred)
+          {t("legendCounted")}
         </span>
         <span>
           <span className="swatch unknown-sw" />
-          Unknown, not counted
+          {t("legendUnknown")}
         </span>
         <span>
           <span className="swatch nonwork-sw" />
-          Break (excluded by you)
+          {t("legendBreak")}
         </span>
-        <span>Blank: no evidence, or locked or asleep · click human time to correct it</span>
+        <span>{t("legendBlank")}</span>
       </div>
       <QualityFooter day={day} />
     </div>

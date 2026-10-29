@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { TargetSelect, targetKey } from "./TargetSelect";
 import type { ManualEntryInfo, TargetOption } from "./types";
@@ -32,7 +33,7 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
     setBusy(true);
     try {
       await api.manual({ op, target: op === "start_timer" ? targetKey(target, other) || undefined : undefined });
-      onChanged(op === "start_timer" ? "Timer started" : "Timer stopped");
+      onChanged(op === "start_timer" ? t("timerStarted") : t("timerStopped"));
       setOpen(false);
     } catch (e) {
       onChanged(errorText(e), true);
@@ -48,7 +49,7 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
         <span className="mono">{elapsed(running.start)}</span>
         {running.target_label && <span className="muted">· {running.target_label}</span>}
         <button className="button secondary small" disabled={busy} onClick={() => call("stop_timer")}>
-          Stop
+          {t("stopTimer")}
         </button>
       </span>
     );
@@ -63,19 +64,19 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
         }}
         aria-expanded={open}
       >
-        Start timer
+        {t("startTimer")}
       </button>
       {open && (
-        <div className="popover" role="dialog" aria-label="Start timer">
+        <div className="popover" role="dialog" aria-label={t("startTimerTitle")}>
           <div className="target-row">
             <TargetSelect targets={targets} value={target} onChange={setTarget} other={other} onOther={setOther} allowNone />
           </div>
           <div className="actions">
             <button className="button ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("cancel")}
             </button>
             <button className="button primary" disabled={busy} onClick={() => call("start_timer")}>
-              Start
+              {t("start")}
             </button>
           </div>
         </div>

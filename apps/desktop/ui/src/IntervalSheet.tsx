@@ -1,39 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
 import type { CorrectionInfo, CorrectionRequest, DayAgents, HumanAtom, ManualEntryInfo, TargetOption } from "./types";
 
-const REASON: Record<string, string> = {
-  coverage_gap: "tracr was not collecting everything needed",
-  conflicting_evidence: "prompts in several sessions interleave",
-  unresolved_window: "the gap could not be bridged",
-};
+function whyUnknown(reason: string | null): string {
+  const known: Record<string, string> = {
+    coverage_gap: t("whyCoverage"),
+    conflicting_evidence: t("whyConflict"),
+    unresolved_window: t("whyUnresolved"),
+  };
+  return known[reason ?? ""] ?? reason ?? "";
+}
 
-const OP_TEXT: Record<CorrectionInfo["op"], string> = {
-  confirm_work: "Counted as work",
-  mark_non_work: "Marked as break",
-  set_target: "Target set",
-  reject_target: "Target removed",
-  revoke: "Undone",
-};
+function opText(op: CorrectionInfo["op"]): string {
+  return {
+    confirm_work: t("countedAsWork"),
+    mark_non_work: t("markedBreak"),
+    set_target: t("targetSet"),
+    reject_target: t("targetRemoved"),
+    revoke: t("undone"),
+  }[op];
+}
 
 export function statusText(a: HumanAtom): string {
   if (a.status === "work") {
-    if (a.duration_basis === "inferred_continuity") return "Counted · inferred";
-    if (a.duration_basis === "timer_measured") return "Counted · your timer";
-    return a.manual_entry && !a.decided_by ? "Counted · your entry" : "Counted · confirmed by you";
+    if (a.duration_basis === "inferred_continuity") return t("statCountedInferred");
+    if (a.duration_basis === "timer_measured") return t("statCountedTimer");
+    return a.manual_entry && !a.decided_by ? t("statCountedEntry") : t("statCountedConfirmed");
   }
-  if (a.status === "non_work") return "Break · excluded by you";
-  return `Unknown · ${REASON[a.unknown_reason ?? ""] ?? a.unknown_reason}`;
+  if (a.status === "non_work") return t("statBreak");
+  return t("statUnknown", { why: whyUnknown(a.unknown_reason) });
 }
 
 function targetText(a: HumanAtom): string {
   const at = a.attribution;
   if (!at || a.status !== "work") return "—";
   if (at.state === "confirmed") {
-    return `${at.labels.join(", ")}${at.level === "explicit" ? "" : ` · from ${at.level} context`}`;
+    return `${at.labels.join(", ")}${at.level === "explicit" ? "" : ` · ${t("fromContext", { level: at.level })}`}`;
   }
-  return at.state === "conflicting" ? `conflicting: ${at.labels.join(", ")}` : "unattributed";
+  return at.state === "conflicting" ? t("conflictingLabels", { labels: at.labels.join(", ") }) : t("unattributed");
 }
 
 export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEntry }: {
@@ -81,19 +87,19 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
   const setTarget = () => {
     const key = choice === "__other" ? `other:${other.trim()}` : choice;
     if (!key || key === "other:") return;
-    void run({ op: "set_target", target: key }, "Target set");
+    void run({ op: "set_target", target: key }, t("targetSet"));
   };
 
   const groups: [TargetOption["group"], string][] = [
-    ["repository", "Repositories"],
-    ["category", "Categories"],
-    ["other", "Used before"],
+    ["repository", t("targetRepos")],
+    ["category", t("targetCategories")],
+    ["other", t("targetUsed")],
   ];
 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet interval-sheet" role="dialog" aria-label="Interval">
+      <aside className="sheet interval-sheet" role="dialog" aria-label={t("interval")}>
         <header>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>
@@ -102,15 +108,15 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
             <div className={`state-${atom.status}`}>{statusText(atom)}</div>
           </div>
           <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
-            Close
+            {t("close")}
           </button>
         </header>
         <div className="body">
           {atom.decided_by && (
             <p className="note">
-              Decided by your correction. Underneath, tracr derived:{" "}
-              {atom.candidate_status === "blank" ? "no evidence (blank)" : atom.candidate_status}
-              {atom.candidate_reason ? ` (${atom.candidate_reason.replaceAll("_", " ")})` : ""}.
+              {t("decidedBy", {
+                what: `${atom.candidate_status === "blank" ? t("noEvidenceBlank") : atom.candidate_status}${atom.candidate_reason ? ` (${whyUnknown(atom.candidate_reason)})` : ""}`,
+              })}
             </p>
           )}
 
@@ -119,107 +125,106 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
               const e = day.manual_entries.find((m) => m.id === atom.manual_entry);
               return e ? (
                 <section>
-                  <h3>{e.kind === "timer" ? "Your timer" : "Your entry"}</h3>
+                  <h3>{e.kind === "timer" ? t("yourTimer") : t("yourEntry")}</h3>
                   <p className="current">
-                    {hhmm(e.start, tz)}–{e.end ? hhmm(e.end, tz) : "running"}
+                    {hhmm(e.start, tz)}–{e.end ? hhmm(e.end, tz) : t("running")}
                     {e.target_label ? ` · ${e.target_label}` : ""}
                     {e.note ? ` · ${e.note}` : ""}
                   </p>
                   <button className="button secondary" onClick={() => onEditEntry(e)}>
-                    Edit or delete
+                    {t("editOrDelete")}
                   </button>
                 </section>
               ) : null;
             })()}
 
           <section>
-            <h3>Does this time count?</h3>
+            <h3>{t("doesItCount")}</h3>
             <div className="choices">
               <button
                 className="button secondary"
                 disabled={busy || (atom.status === "work" && atom.duration_basis !== "inferred_continuity")}
-                onClick={() => run({ op: "confirm_work" }, "Counted as work")}
+                onClick={() => run({ op: "confirm_work" }, t("countedAsWork"))}
               >
-                Count as work
+                {t("countAsWork")}
               </button>
               <button
                 className="button secondary"
                 disabled={busy || atom.status === "non_work"}
-                onClick={() => run({ op: "mark_non_work" }, "Marked as break")}
+                onClick={() => run({ op: "mark_non_work" }, t("markedBreak"))}
               >
-                Mark as break
+                {t("markAsBreak")}
               </button>
               {atom.decided_by && (
                 <button
                   className="button ghost"
                   disabled={busy}
-                  onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, "Undone")}
+                  onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, t("undone"))}
                 >
-                  Undo
+                  {t("undo")}
                 </button>
               )}
             </div>
             <p className="note">
-              Unknown time is never counted on its own. Counting it is your statement; tracr keeps the derivation
-              underneath and shows both.
+              {t("unclearNote")}
             </p>
           </section>
 
           <section>
-            <h3>What was it for?</h3>
+            <h3>{t("whatFor")}</h3>
             <p className="current">{targetText(atom)}</p>
             <div className="target-row">
-              <select className="select" value={choice} onChange={(e) => setChoice(e.target.value)} aria-label="Target">
-                <option value="">Choose a target…</option>
+              <select className="select" value={choice} onChange={(e) => setChoice(e.target.value)} aria-label={t("target")}>
+                <option value="">{t("chooseTarget")}</option>
                 {groups.map(([g, label]) => {
-                  const items = targets.filter((t) => t.group === g);
+                  const items = targets.filter((o) => o.group === g);
                   return items.length === 0 ? null : (
                     <optgroup key={g} label={label}>
-                      {items.map((t) => (
-                        <option key={t.key} value={t.key}>
-                          {t.label}
+                      {items.map((o) => (
+                        <option key={o.key} value={o.key}>
+                          {o.label}
                         </option>
                       ))}
                     </optgroup>
                   );
                 })}
-                <option value="__other">Other…</option>
+                <option value="__other">{t("otherEllipsis")}</option>
               </select>
               {choice === "__other" && (
                 <input
                   className="input"
-                  placeholder="Short label"
+                  placeholder={t("shortLabel")}
                   maxLength={80}
                   value={other}
                   onChange={(e) => setOther(e.target.value)}
                 />
               )}
               <button className="button primary" disabled={busy || !choice} onClick={setTarget}>
-                Set
+                {t("set")}
               </button>
             </div>
             {explicit && (
               <button
                 className="button ghost"
                 disabled={busy}
-                onClick={() => run({ op: "reject_target", target: explicit }, "Target removed")}
+                onClick={() => run({ op: "reject_target", target: explicit }, t("targetRemoved"))}
               >
-                Remove target
+                {t("removeTarget")}
               </button>
             )}
-            <p className="note">A target never changes the minutes, and never changes agent sessions or tokens.</p>
+            <p className="note">{t("targetNote")}</p>
           </section>
 
           {history.length > 0 && (
             <section>
-              <h3>Your corrections here</h3>
+              <h3>{t("yourCorrections")}</h3>
               <ul className="history">
                 {history.map((c) => (
                   <li key={c.id} className={c.status === "effective" ? undefined : "muted"}>
-                    {OP_TEXT[c.op]}
+                    {opText(c.op)}
                     {c.target_label ? ` · ${c.target_label}` : ""}
                     {c.start != null && c.end != null ? ` · ${hhmm(c.start, tz)}–${hhmm(c.end, tz)}` : ""}
-                    <span className="muted"> · {c.status}</span>
+                    <span className="muted"> · {c.status === "effective" ? t("effective") : c.status === "superseded" ? t("superseded") : c.status === "revoked" ? t("revoked") : c.status}</span>
                   </li>
                 ))}
               </ul>

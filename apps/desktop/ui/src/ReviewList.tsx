@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import { api, errorText } from "./api";
 import { duration, hhmm } from "./format";
 import { statusText } from "./IntervalSheet";
@@ -25,7 +26,7 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
     setBusy(a.start);
     try {
       await api.correct({ op, start: a.start, end: a.end, ui_op: "review_list" });
-      onChanged(op === "confirm_work" ? "Counted as work" : "Marked as break");
+      onChanged(op === "confirm_work" ? t("countedAsWork") : t("markedBreak"));
     } catch (e) {
       onChanged(errorText(e), true);
     } finally {
@@ -36,21 +37,20 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="sheet" role="dialog" aria-label="Review the day">
+      <aside className="sheet" role="dialog" aria-label={t("reviewTheDay")}>
         <header>
           <div style={{ flex: 1 }}>
-            <h2>Review the day</h2>
+            <h2>{t("reviewTheDay")}</h2>
             <div className="muted">
-              {atoms.filter((a) => a.status === "unknown").length} unknown windows ·{" "}
-              {duration(day.human.unknown_ms)} not counted
+              {t("unknownWindows", { n: atoms.filter((a) => a.status === "unknown").length, time: duration(day.human.unknown_ms) })}
             </div>
           </div>
           <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
-            Close
+            {t("close")}
           </button>
         </header>
         <div className="body">
-          {atoms.length === 0 && <p className="muted">No human time on this day.</p>}
+          {atoms.length === 0 && <p className="muted">{t("noHumanTime")}</p>}
           <ul className="review">
             {atoms.map((a) => (
               <li key={`${a.start}-${a.status}`} className={`review-row ${a.status}`}>
@@ -64,10 +64,10 @@ export function ReviewList({ day, onOpen, onClose, onChanged }: {
                 {a.status === "unknown" && (
                   <span className="review-actions">
                     <button className="button secondary small" disabled={busy !== null} onClick={() => quick(a, "confirm_work")}>
-                      Work
+                      {t("work")}
                     </button>
                     <button className="button secondary small" disabled={busy !== null} onClick={() => quick(a, "mark_non_work")}>
-                      Break
+                      {t("breakWord")}
                     </button>
                   </span>
                 )}
