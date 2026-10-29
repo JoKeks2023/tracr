@@ -50,7 +50,7 @@
         <h1>How long did you really work?</h1>
         <p class="lead">tracr is a time ledger for people who work with several coding agents at once. It shows what happened, how long you actually worked, what it cost, and what you can trust.</p>
         <p class="hero-meta">
-          <span>Pre-release 0.10.0</span>
+          <span>Pre-release 0.10.1</span>
           <span>macOS · Apple Silicon and Intel</span>
           <span>AGPL-3.0-or-later</span>
         </p>
@@ -199,7 +199,7 @@ tracr import
 tracr rebuild
 tracr day</pre>
         </div>
-        <p class="note" data-reveal>Prefer a file? <a class="green" href="https://tracr.jorisconrad.com/download/universal" rel="noopener">Download the universal .dmg</a>, open it and drag tracr to Applications. Prefer an installer? The <a class="green" href="https://tracr.jorisconrad.com/download/pkg" rel="noopener">.pkg</a> installs the app and also puts <code>tracr</code> on your PATH. You can also build from source (<code>cargo install --path apps/cli</code>); more files are on the <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.10.0" rel="noopener">release page</a>.</p>
+        <p class="note" data-reveal>Prefer a file? <a class="green" href="https://tracr.jorisconrad.com/download/universal" rel="noopener">Download the universal .dmg</a>, open it and drag tracr to Applications. Prefer an installer? The <a class="green" href="https://tracr.jorisconrad.com/download/pkg" rel="noopener">.pkg</a> installs the app and also puts <code>tracr</code> on your PATH. You can also build from source (<code>cargo install --path apps/cli</code>); more files are on the <a class="green" href="https://github.com/JoKeks2023/tracr/releases/tag/v0.10.1" rel="noopener">release page</a>.</p>
       </div>
     </section>
 
@@ -208,7 +208,7 @@ tracr day</pre>
         <div class="sec-head" data-reveal>
           <p class="eyebrow">Privacy</p>
           <h2>It cannot read what it never stored</h2>
-          <p>tracr never stores prompt text, assistant messages or tool output. It reads structure, timing, model names, token counts and tool names. The desktop window has no filesystem, shell or network capability, and nothing leaves your machine. Searching or re-reading message content is therefore deliberately impossible. A few sources are opt-in and store only numbers and names: the plan limits Claude Code reports, hook events (when a session starts, waits or stops), and the list of running sessions in your Claude folder. Notifications are shown by the system and go nowhere else.</p>
+          <p>tracr never stores prompt text, assistant messages or tool output. It reads structure, timing, model names, token counts and tool names. The desktop window has no filesystem, shell or network capability, and nothing leaves your machine. Searching or re-reading message content is therefore deliberately impossible. A few sources are opt-in and store only numbers and names: the plan limits Claude Code reports, hook events (when a session starts, waits or stops), and the list of running sessions in your Claude folder. Notifications are shown by the system and go nowhere else. An optional switch, off by default, opens tracr at login by placing one small file in your own LaunchAgents folder; turning it off deletes it.</p>
         </div>
       </div>
     </section>
