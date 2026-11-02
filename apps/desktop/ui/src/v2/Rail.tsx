@@ -2,11 +2,12 @@ import { t } from "../i18n";
 import type { Area } from "../nav";
 import { icons } from "./icons";
 
-const ITEMS: { area: Area; icon: keyof typeof icons; label: "today" | "areaProjects" | "railWorktime" | "railLimits" }[] = [
+const ITEMS: { area: Area; icon: keyof typeof icons; label: "today" | "areaProjects" | "railWorktime" | "railLimits" | "railEnvironment" }[] = [
   { area: "today", icon: "today", label: "today" },
   { area: "projects", icon: "projects", label: "areaProjects" },
   { area: "worktime", icon: "worktime", label: "railWorktime" },
   { area: "limits", icon: "limits", label: "railLimits" },
+  { area: "environment", icon: "environment", label: "railEnvironment" },
 ];
 
 /** The areas, as an icon rail: durable navigation, always the same places. */

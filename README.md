@@ -226,7 +226,7 @@ tracr never stores prompt text, assistant messages or tool output. It reads stru
 Four sources are opt-in and each stores only numbers and names, never text:
 - **Rate limits.** Codex rollouts already carry the plan limits and credits; for Claude Code you can turn on a status line tap that copies the limit figures Claude Code reports into a local file. Turning it off restores your previous status line.
 - **Hooks.** If you switch them on, Claude Code tells tracr when a session starts, waits or stops (event, session id, kind and time only), so the app can show who is waiting for you.
-- **Running sessions.** If you approve your Claude folder, tracr reads the session registry in it (process, state, name, folder) to show running sessions. Key files in that folder are never opened.
+- **Running sessions and setup.** If you approve your Claude folder, tracr reads the session registry in it (process, state, name, folder) to show running sessions, and shows your Claude Code setup under Setup: names, descriptions, sizes and dates of skills, commands, agents, plugins, hooks and memory files, read on demand and never stored. File contents, environment values, hook command lines and MCP arguments are never shown, and key files in that folder are never opened.
 - **Notifications.** Warnings about limits, cost and waiting sessions are shown by the system; nothing is sent anywhere.
 
 One more switch writes a file, not data: **Open tracr at login** (Settings, off by default) puts one small plist in your own `~/Library/LaunchAgents` that opens the app in the background, so the sensor that notes when you are at the computer runs all day. Turning it off deletes that file.

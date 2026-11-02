@@ -563,6 +563,16 @@ async fn set_cost_alerts(
 }
 
 /// Which Claude Code sessions run right now, with spend of the last hour and the life of their prompt cache.
+/// The Claude Code setup and its check, read on demand (T-0016).
+#[tauri::command]
+async fn environment(
+    ctx: tauri::State<'_, Ctx>,
+) -> Result<tracr_app::environment::Environment, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.environment())
+        .map_err(err)
+}
+
 #[tauri::command]
 async fn fleet_state(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::fleet::Fleet, String> {
     let dir = ctx.dir()?;
@@ -1220,6 +1230,11 @@ fn app_menu(app: &tauri::AppHandle, de: bool) -> tauri::Result<Menu<Wry>> {
                 Some("CmdOrCtrl+3"),
             )?,
             &item("m:area_limits", l("Limits", "Limits"), Some("CmdOrCtrl+4"))?,
+            &item(
+                "m:area_environment",
+                l("Setup", "Umgebung"),
+                Some("CmdOrCtrl+5"),
+            )?,
             &sep()?,
             &item(
                 "m:overview",
@@ -1330,6 +1345,7 @@ fn main() {
             day_agents,
             sessions,
             fleet_state,
+            environment,
             get_cost_alerts,
             set_cost_alerts,
             analytics,
