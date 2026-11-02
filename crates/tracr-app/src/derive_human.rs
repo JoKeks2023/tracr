@@ -414,6 +414,12 @@ pub fn derive(
     }
 
     // Human timeline over all sessions at once.
+    let mut agent_ends: Vec<(UtcMillis, String)> = agents
+        .segments
+        .iter()
+        .map(|(session, _, end)| (UtcMillis(*end), session.clone()))
+        .collect();
+    agent_ends.sort();
     let evidence = Evidence {
         device: &lane,
         coverage: coverage
@@ -421,6 +427,7 @@ pub fn derive(
             .map(|(k, v)| (k.clone(), v.as_slice()))
             .collect(),
         blocked: &blocked,
+        agent_ends: &agent_ends,
     };
     let candidates = human_timeline(&agents.instants, &evidence, &params);
     report.counted_minutes = counted(&candidates).0 as f64 / 60_000.0;

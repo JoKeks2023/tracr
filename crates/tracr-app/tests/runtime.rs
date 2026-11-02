@@ -149,7 +149,8 @@ fn only_one_runtime_can_collect() {
 }
 
 /// End to end: a collecting run with an active device, two prompts of one
-/// session 10 minutes apart, then a prompt in another session 5 minutes later.
+/// session 10 minutes apart, then a prompt in another session 7 minutes later,
+/// 6 minutes after the agent finished (outside the 5-minute reply window).
 /// The same-session gap is counted (inferred); the cross-session gap is unknown.
 #[test]
 fn a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown() {
@@ -179,7 +180,7 @@ fn a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown(
             a.assistant("09:11", "m2", 1),
         ],
     );
-    write_lines(&transcript(&root, B), &[b.prompt("09:15")]);
+    write_lines(&transcript(&root, B), &[b.prompt("09:17")]);
 
     // Collect 08:55–09:20: a sample every 15 s (always active), a heartbeat every minute.
     let mut t = at("08:55");
@@ -211,14 +212,18 @@ fn a_collected_day_counts_bridged_minutes_and_leaves_cross_session_gaps_unknown(
         10 * 60_000,
         "09:00–09:10, same session, device active"
     );
-    assert_eq!(h.unknown_ms, 5 * 60_000, "09:10–09:15 crosses sessions");
+    assert_eq!(
+        h.unknown_ms,
+        7 * 60_000,
+        "09:10–09:17 crosses sessions, reply 6 min after the agent"
+    );
     assert_eq!(
         h.unknown_by_reason.get("unresolved_window"),
-        Some(&(5 * 60_000))
+        Some(&(7 * 60_000))
     );
     assert_eq!(
         h.evidence_span.map(|(s, e)| e - s),
-        Some(15 * 60_000),
+        Some(17 * 60_000),
         "an upper bound only"
     );
     assert!(day.device.iter().any(|d| d.state == "active"));
