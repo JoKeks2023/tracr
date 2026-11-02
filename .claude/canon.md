@@ -63,3 +63,8 @@ Because: a missing price rendered as $0 would make the day's cost look complete 
 kind: choice | date: 2026-10-25 | status: canon
 The repository is licensed `AGPL-3.0-or-later`: free use, also commercial, but modified distributions and network services must publish their source. `CONTRIBUTING.md` has contributors license their work under the AGPL and also grant the owner the right to relicense it, which keeps dual-licensing (a separate commercial license) possible. All dependencies checked on 2026-10-25 are MIT/Apache/BSD/Zlib/Unicode/MPL-2.0, compatible with it.
 Because: the goal is use by anyone, including commercially, without anyone folding tracr into a closed product; GPL was the alternative, AGPL chosen to also close the hosted-service gap. Adding a dependency under a license incompatible with the AGPL needs a decision first.
+
+## Waiting on an agent you answer within 5 minutes is human time
+kind: choice | date: 2026-11-02 | status: canon
+When an agent segment of any session ends between two prompts and the next prompt comes at most 5 minutes later, the whole gap since the previous prompt is inferred human work (`human-timeline@3`, reason `agent_turn_reply`), across sessions and without the device sensor; locked or suspended time stays blank, degraded evidence falls back to the older rule, and agent minutes stay reported separately.
+Because: the person supervises the agent and answers it; the earlier rule (same session, no idle) left real days at 0 human minutes.

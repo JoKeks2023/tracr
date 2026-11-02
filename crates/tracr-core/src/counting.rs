@@ -356,6 +356,7 @@ mod tests {
                 device: &device,
                 coverage,
                 blocked: &[],
+                agent_ends: &[],
             },
             &p,
         )

@@ -773,7 +773,13 @@ The basis lives inside `Work`, so an inferred atom cannot carry a user-asserted 
 ### 7.3 Human timeline (candidate derivation)
 
 1. Sort the engagement instants of all sessions in the span globally. An instant's context is its session ([activity model §6](activity-model.md#6-quiet-thinking-idle-and-heartbeats)). Instants from subagent threads and copied context never exist (§5.2, §8.1).
-2. For each pair of consecutive instants (t_i, t_j), bridge `[t_i, t_j)` as `work`/inferred (`inferred_continuity`) only if **all** of these hold:
+2a. **Reply window** (`human-timeline@3`, user decision 2026-11-02, T-0017). Take the latest end of an agent execution segment of any session in `(t_i, t_j]`. If `t_j` comes at most `reply_window` (5 min) after it:
+   - `[t_i, t_j)` is `work`/inferred (`inferred_continuity`, reason `agent_turn_reply`): the person waited for the agent and answered it.
+   - No session, idle, coverage or continuation condition applies, so this holds across sessions and without the device sensor.
+   - Locked or suspended periods stay blank.
+   - A degraded or gap extent in the window falls back to rule 2, so removed evidence still never counts.
+   - The interval is attributed to the session that was waited for. Agent minutes stay separate and are never added.
+2. Otherwise, for each pair of consecutive instants (t_i, t_j), bridge `[t_i, t_j)` as `work`/inferred (`inferred_continuity`) only if **all** of these hold:
    - same session;
    - gap ≤ continuation maximum;
    - device lane `active` throughout: no idle ≥ the configured threshold, no lock, no suspend, no `unknown`;

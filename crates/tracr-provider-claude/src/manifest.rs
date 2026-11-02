@@ -24,7 +24,19 @@ pub const KNOWN_RECORD_TYPES: &[&str] = &[
 /// Record types that carry content or nothing tracr uses. They produce no
 /// observation (§4.4, §11): `ai-title`, `last-prompt`, `summary` and
 /// `attachment` are content; the others are UI or account state.
+///
+/// Since producer 2.1.267 (seen 2026-10-22): `api-request`,
+/// `api-request-blob` and `api-request-shape` log API requests and copies of
+/// messages that are already in the transcript (content); `frame-link`,
+/// `fork-context-ref` and `tools-used` are UI and side state. None is a
+/// prompt or an agent event, so ignoring them loses no evidence.
 pub const IGNORED_RECORD_TYPES: &[&str] = &[
+    "api-request",
+    "api-request-blob",
+    "api-request-shape",
+    "frame-link",
+    "fork-context-ref",
+    "tools-used",
     "attachment",
     "last-prompt",
     "ai-title",

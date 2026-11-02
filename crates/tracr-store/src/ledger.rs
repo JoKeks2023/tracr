@@ -791,13 +791,21 @@ pub fn collector_and_sensor_rows(conn: &Connection) -> Result<Vec<FactRow>> {
 
 /// Extents of streams around records that could not be extracted (§4.7
 /// `degraded`): from the previous to the next timed record of the same source.
-pub fn degraded_extents(conn: &Connection) -> Result<Vec<(String, UtcMillis, UtcMillis)>> {
+/// `ignored_types`: native record types now known to carry no evidence. A
+/// record quarantined before its type became known is not degraded evidence
+/// (the ledger keeps it as it was; it is only no longer counted here).
+pub fn degraded_extents(
+    conn: &Connection,
+    ignored_types: &[&str],
+) -> Result<Vec<(String, UtcMillis, UtcMillis)>> {
     let mut stmt = conn.prepare(
         "SELECT o.source_id, o.occurred_at,
            (SELECT p.occurred_at FROM observation p WHERE p.source_id = o.source_id AND p.seq < o.seq
               AND p.occurred_at IS NOT NULL ORDER BY p.seq DESC LIMIT 1),
            (SELECT n.occurred_at FROM observation n WHERE n.source_id = o.source_id AND n.seq > o.seq
               AND n.occurred_at IS NOT NULL ORDER BY n.seq ASC LIMIT 1)
+           , (SELECT json_extract(f.facts_json, '$.quarantine.native_type') FROM observation_facts f
+              WHERE f.observation_id = o.id AND f.kind = 'quarantined' LIMIT 1)
          FROM observation o WHERE o.channel = 'transcript' AND o.parse_status <> 'ok'",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -806,11 +814,18 @@ pub fn degraded_extents(conn: &Connection) -> Result<Vec<(String, UtcMillis, Utc
             r.get::<_, Option<i64>>(1)?,
             r.get::<_, Option<i64>>(2)?,
             r.get::<_, Option<i64>>(3)?,
+            r.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (source, own, prev, next) = row?;
+        let (source, own, prev, next, native_type) = row?;
+        if native_type
+            .as_deref()
+            .is_some_and(|t| ignored_types.contains(&t))
+        {
+            continue;
+        }
         let times: Vec<i64> = [own, prev, next].into_iter().flatten().collect();
         if let (Some(lo), Some(hi)) = (times.iter().min(), times.iter().max())
             && hi > lo

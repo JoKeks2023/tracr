@@ -250,7 +250,12 @@ pub fn derive(
             _ => {}
         }
     }
-    let degraded = ledger::degraded_extents(ledger)?;
+    let ignored: Vec<&str> = tracr_provider_claude::manifest::IGNORED_RECORD_TYPES
+        .iter()
+        .chain(tracr_provider_codex::manifest::IGNORED_RECORD_TYPES)
+        .copied()
+        .collect();
+    let degraded = ledger::degraded_extents(ledger, &ignored)?;
     for (_, lo, hi) in &degraded {
         blocked.push((*lo, *hi));
     }
@@ -409,6 +414,12 @@ pub fn derive(
     }
 
     // Human timeline over all sessions at once.
+    let mut agent_ends: Vec<(UtcMillis, String)> = agents
+        .segments
+        .iter()
+        .map(|(session, _, end)| (UtcMillis(*end), session.clone()))
+        .collect();
+    agent_ends.sort();
     let evidence = Evidence {
         device: &lane,
         coverage: coverage
@@ -416,6 +427,7 @@ pub fn derive(
             .map(|(k, v)| (k.clone(), v.as_slice()))
             .collect(),
         blocked: &blocked,
+        agent_ends: &agent_ends,
     };
     let candidates = human_timeline(&agents.instants, &evidence, &params);
     report.counted_minutes = counted(&candidates).0 as f64 / 60_000.0;

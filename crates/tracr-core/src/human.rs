@@ -1,8 +1,15 @@
 //! Human timeline and counting (architecture §7.2–§7.4, activity model §5–§6).
 //!
 //! 1. Engagement instants of **all** sessions are sorted into one timeline.
-//! 2. A gap `[t_i, t_j)` between consecutive instants is bridged as inferred
-//!    work only if all of these hold: same session; gap ≤ continuation
+//! 2. Reply window (first, user decision 2026-11-02): when an agent segment
+//!    of any session ends inside `(t_i, t_j]` and the next prompt `t_j` comes
+//!    at most `reply_window` after the latest such end, `[t_i, t_j)` is
+//!    inferred work: the person waited for the agent and answered it. No
+//!    session, idle, coverage or continuation condition applies; locked and
+//!    suspended periods stay blank, and a degraded or gap extent of any agent
+//!    stream falls back to the rule below (removed evidence never counts).
+//!    Otherwise a gap `[t_i, t_j)` between consecutive instants is bridged as
+//!    inferred work only if all of these hold: same session; gap ≤ continuation
 //!    maximum; the device lane is active throughout (no idle ≥ the idle
 //!    threshold, no lock, no suspend, no unknown); every required coverage
 //!    key is collecting throughout; no degraded or gap extent overlaps it.
@@ -26,7 +33,7 @@ use crate::coverage::{CoverageInterval, CoverageState};
 use crate::device::{DeviceInterval, LaneState};
 use crate::time::UtcMillis;
 
-pub const HUMAN_RULE: &str = "human-timeline@2";
+pub const HUMAN_RULE: &str = "human-timeline@3";
 
 /// Rule parameters (AD-13; provisional dogfooding values, OQ-P-02).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +42,9 @@ pub struct HumanParams {
     pub idle_threshold_ms: i64,
     /// Longer unbridged gaps are blank, not unknown.
     pub max_unknown_gap_ms: i64,
+    /// A prompt this soon after an agent finished keeps the person active
+    /// for the whole gap since the previous prompt.
+    pub reply_window_ms: i64,
 }
 
 impl Default for HumanParams {
@@ -43,6 +53,7 @@ impl Default for HumanParams {
             continuation_max_ms: 20 * 60_000,
             idle_threshold_ms: 5 * 60_000,
             max_unknown_gap_ms: 2 * 3_600_000,
+            reply_window_ms: 5 * 60_000,
         }
     }
 }
@@ -50,8 +61,11 @@ impl Default for HumanParams {
 impl HumanParams {
     pub fn rule_ref(&self) -> String {
         format!(
-            "{HUMAN_RULE}#continuation_max_ms={},idle_threshold_ms={},max_unknown_gap_ms={}",
-            self.continuation_max_ms, self.idle_threshold_ms, self.max_unknown_gap_ms
+            "{HUMAN_RULE}#continuation_max_ms={},idle_threshold_ms={},max_unknown_gap_ms={},reply_window_ms={}",
+            self.continuation_max_ms,
+            self.idle_threshold_ms,
+            self.max_unknown_gap_ms,
+            self.reply_window_ms
         )
     }
 }
@@ -146,6 +160,9 @@ pub struct Evidence<'a> {
     pub coverage: BTreeMap<String, &'a [CoverageInterval]>,
     /// Degraded extents and completeness gaps of any agent stream.
     pub blocked: &'a [(UtcMillis, UtcMillis)],
+    /// Ends of agent execution segments (any session, any actor) with their
+    /// session: "the agent finished here".
+    pub agent_ends: &'a [(UtcMillis, String)],
 }
 
 fn overlaps(a: i64, b: i64, s: i64, e: i64) -> bool {
@@ -156,6 +173,8 @@ struct Gap {
     a: i64,
     b: i64,
     session_b: String,
+    /// The session the person waited for and answered within the reply window.
+    reply: Option<String>,
     bridged: bool,
     coverage_failed: bool,
     reasons: Vec<&'static str>,
@@ -214,10 +233,22 @@ fn assess(a: &Instant, b: &Instant, ev: &Evidence<'_>, p: &HumanParams) -> Gap {
     if too_long {
         reasons.push("exceeds_continuation_max");
     }
+    let blocked = ev.blocked.iter().any(|(bs, be)| overlaps(s, e, bs.0, be.0));
+    let reply = (!blocked)
+        .then(|| {
+            ev.agent_ends
+                .iter()
+                .filter(|(t, _)| t.0 > s && t.0 <= e)
+                .max_by_key(|(t, _)| t.0)
+        })
+        .flatten()
+        .filter(|(t, _)| e - t.0 <= p.reply_window_ms)
+        .map(|(_, session)| session.clone());
     Gap {
         a: s,
         b: e,
         session_b: b.session.clone(),
+        reply,
         bridged: same && !too_long && !coverage_failed && !idle && !away,
         coverage_failed,
         reasons,
@@ -254,6 +285,41 @@ fn minus_away(
     pieces
 }
 
+/// Appends inferred work, extending the previous piece when it is work of the
+/// same session ending where this one starts.
+fn push_work(
+    out: &mut Vec<Candidate>,
+    s: i64,
+    e: i64,
+    session: &str,
+    reason: &'static str,
+    start_boundary: &'static str,
+    end_boundary: &'static str,
+) {
+    if let Some(last) = out.last_mut()
+        && last.end.0 == s
+        && last.engaged.as_deref() == Some(session)
+        && matches!(last.status, WorkStatus::Work(_))
+    {
+        last.end = UtcMillis(e);
+        last.end_boundary = end_boundary;
+        if !last.reasons.contains(&reason) {
+            last.reasons.push(reason);
+        }
+        return;
+    }
+    out.push(Candidate {
+        start: UtcMillis(s),
+        end: UtcMillis(e),
+        status: WorkStatus::Work(WorkBasis::InferredContinuity),
+        engaged: Some(session.to_owned()),
+        reasons: vec![reason],
+        start_boundary,
+        end_boundary,
+        proposals: Vec::new(),
+    });
+}
+
 pub fn human_timeline(instants: &[Instant], ev: &Evidence<'_>, p: &HumanParams) -> Vec<Candidate> {
     let mut sorted: Vec<&Instant> = instants.iter().collect();
     sorted.sort_by(|a, b| (a.at, &a.session).cmp(&(b.at, &b.session)));
@@ -269,27 +335,23 @@ pub fn human_timeline(instants: &[Instant], ev: &Evidence<'_>, p: &HumanParams) 
     let mut i = 0;
     while i < gaps.len() {
         let g = &gaps[i];
-        if g.bridged {
-            let session = g.session_b.clone();
-            match out.last_mut() {
-                Some(last)
-                    if last.end.0 == g.a
-                        && last.engaged.as_deref() == Some(session.as_str())
-                        && matches!(last.status, WorkStatus::Work(_)) =>
-                {
-                    last.end = UtcMillis(g.b)
-                }
-                _ => out.push(Candidate {
-                    start: UtcMillis(g.a),
-                    end: UtcMillis(g.b),
-                    status: WorkStatus::Work(WorkBasis::InferredContinuity),
-                    engaged: Some(session),
-                    reasons: vec!["bridged_same_session"],
-                    start_boundary: "observed",
-                    end_boundary: "observed",
-                    proposals: Vec::new(),
-                }),
+        if let Some(session) = &g.reply {
+            for (s, e, sb, eb) in minus_away(g.a, g.b, ev.device) {
+                push_work(&mut out, s, e, session, "agent_turn_reply", sb, eb);
             }
+            i += 1;
+            continue;
+        }
+        if g.bridged {
+            push_work(
+                &mut out,
+                g.a,
+                g.b,
+                &g.session_b,
+                "bridged_same_session",
+                "observed",
+                "observed",
+            );
             i += 1;
             continue;
         }
@@ -302,6 +364,7 @@ pub fn human_timeline(instants: &[Instant], ev: &Evidence<'_>, p: &HumanParams) 
         let mut j = i;
         while j + 1 < gaps.len()
             && !gaps[j + 1].bridged
+            && gaps[j + 1].reply.is_none()
             && !too_long(&gaps[j + 1])
             && gaps[j + 1].a == gaps[j].b
         {
@@ -407,9 +470,114 @@ mod tests {
                 device: &w.device,
                 coverage,
                 blocked: &[],
+                agent_ends: &[],
             },
             &p,
         )
+    }
+
+    /// Like `run`, with agent segment ends and optional coverage.
+    fn run_with(
+        instants: &[Instant],
+        w: &World,
+        ends: &[(i64, &str)],
+        covered: bool,
+        blocked: &[(UtcMillis, UtcMillis)],
+    ) -> Vec<Candidate> {
+        let ends: Vec<(UtcMillis, String)> = ends
+            .iter()
+            .map(|&(t, s)| (UtcMillis(t), s.to_owned()))
+            .collect();
+        let mut coverage = BTreeMap::new();
+        if covered {
+            coverage.insert("os_sensor".to_owned(), w.coverage.as_slice());
+        }
+        human_timeline(
+            instants,
+            &Evidence {
+                device: &w.device,
+                coverage,
+                blocked,
+                agent_ends: &ends,
+            },
+            &HumanParams::default(),
+        )
+    }
+
+    fn no_sensor() -> World {
+        World {
+            device: Vec::new(),
+            coverage: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_reply_within_five_minutes_of_the_agent_keeps_the_whole_gap_active() {
+        // Prompt 10:00, Claude works until 10:25 (no input: idle 15 min), reply 10:28.
+        let i = inst("A", &[(10, 0), (10, 28)]);
+        let w = world(vec![
+            (0, hm(10, 5), LaneState::Active),
+            (hm(10, 5), hm(10, 25), LaneState::Idle),
+            (hm(10, 25), hm(24, 0), LaneState::Active),
+        ]);
+        let c = run_with(&i, &w, &[(hm(10, 25), "A")], true, &[]);
+        assert_eq!(mins(&c), (28, 0));
+        assert_eq!(c[0].reasons, vec!["agent_turn_reply"]);
+        // The same without any device sensor or coverage.
+        let c = run_with(&i, &no_sensor(), &[(hm(10, 25), "A")], false, &[]);
+        assert_eq!(mins(&c), (28, 0));
+    }
+
+    #[test]
+    fn a_reply_after_more_than_five_minutes_stays_unknown() {
+        let i = inst("A", &[(10, 0), (10, 31)]);
+        let c = run_with(&i, &no_sensor(), &[(hm(10, 25), "A")], false, &[]);
+        assert_eq!(mins(&c), (0, 31));
+        // Exactly five minutes still counts.
+        let i = inst("A", &[(10, 0), (10, 30)]);
+        let c = run_with(&i, &no_sensor(), &[(hm(10, 25), "A")], false, &[]);
+        assert_eq!(mins(&c), (30, 0));
+    }
+
+    #[test]
+    fn a_reply_in_another_session_counts_once_for_the_awaited_session() {
+        // A works 10:00–10:20; the person answers in B at 10:22, B runs to 10:40, A again 10:43.
+        let mut i = inst("A", &[(10, 0), (10, 43)]);
+        i.extend(inst("B", &[(10, 22)]));
+        let ends = [(hm(10, 20), "A"), (hm(10, 40), "B")];
+        let c = run_with(&i, &no_sensor(), &ends, false, &[]);
+        assert_eq!(mins(&c), (43, 0));
+        let engaged: Vec<_> = c.iter().map(|x| x.engaged.clone().unwrap()).collect();
+        assert_eq!(engaged, ["A", "B"]);
+    }
+
+    #[test]
+    fn lock_and_sleep_inside_a_reply_gap_stay_blank() {
+        let i = inst("A", &[(10, 0), (10, 30)]);
+        let w = world(vec![
+            (0, hm(10, 10), LaneState::Active),
+            (hm(10, 10), hm(10, 20), LaneState::Locked),
+            (hm(10, 20), hm(24, 0), LaneState::Active),
+        ]);
+        let c = run_with(&i, &w, &[(hm(10, 27), "A")], true, &[]);
+        assert_eq!(mins(&c), (20, 0));
+        assert_eq!(c.len(), 2);
+    }
+
+    #[test]
+    fn removed_evidence_or_no_agent_run_falls_back_to_the_old_rule() {
+        let i = inst("A", &[(10, 0), (10, 28)]);
+        let blocked = [(UtcMillis(hm(10, 5)), UtcMillis(hm(10, 6)))];
+        let c = run_with(&i, &no_sensor(), &[(hm(10, 25), "A")], false, &blocked);
+        assert_eq!(mins(&c), (0, 28));
+        // No segment ends between the prompts: the old rule (no sensor = unknown).
+        let c = run_with(&i, &no_sensor(), &[(hm(9, 50), "A")], false, &[]);
+        assert_eq!(mins(&c), (0, 28));
+        // ...and with the sensor active the old same-session bridge still applies.
+        let i = inst("A", &[(10, 0), (10, 15)]);
+        let c = run_with(&i, &active_all_day(), &[], true, &[]);
+        assert_eq!(mins(&c), (15, 0));
+        assert_eq!(c[0].reasons, vec!["bridged_same_session"]);
     }
 
     fn mins(c: &[Candidate]) -> (i64, i64) {
