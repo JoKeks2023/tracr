@@ -250,7 +250,12 @@ pub fn derive(
             _ => {}
         }
     }
-    let degraded = ledger::degraded_extents(ledger)?;
+    let ignored: Vec<&str> = tracr_provider_claude::manifest::IGNORED_RECORD_TYPES
+        .iter()
+        .chain(tracr_provider_codex::manifest::IGNORED_RECORD_TYPES)
+        .copied()
+        .collect();
+    let degraded = ledger::degraded_extents(ledger, &ignored)?;
     for (_, lo, hi) in &degraded {
         blocked.push((*lo, *hi));
     }

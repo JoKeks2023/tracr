@@ -437,6 +437,17 @@ fn ignored_quarantined_and_shape_failures() {
         key(r#"{"type":"ai-title","aiTitle":"SECRET","sessionId":"s"}"#),
         "ignored/ai-title"
     );
+    for t in [
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "frame-link",
+        "fork-context-ref",
+        "tools-used",
+    ] {
+        let line = format!(r#"{{"type":"{t}","sessionId":"s","message":{{"content":"SECRET"}}}}"#);
+        assert_eq!(key(&line), format!("ignored/{t}"));
+    }
 
     let unknown = r#"{"type":"brand-new-type","uuid":"cccccccc-0000-4000-8000-000000000001","sessionId":"s","timestamp":"2026-09-28T14:10:00Z","secretText":"SECRET","nested":{"deepKey":"SECRET"},"bad key":1,"/path/key":2}"#;
     let out = classify(unknown, StreamRole::Main);
