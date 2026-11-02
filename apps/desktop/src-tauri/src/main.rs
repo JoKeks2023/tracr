@@ -1034,7 +1034,16 @@ fn hook_tick(app: &tauri::AppHandle, last_seen: &mut i64) {
     *last_seen = newest.max(*last_seen);
 }
 
+/// Updates the menu bar item. Always runs on the main thread: AppKit status
+/// items must only be touched there, and a tray handle dropped on the quota
+/// thread could remove the status item off the main thread, which macOS
+/// answers with a crash (GH #19).
 fn refresh_tray(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || refresh_tray_now(&handle));
+}
+
+fn refresh_tray_now(app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("tracr") else {
         return;
     };
