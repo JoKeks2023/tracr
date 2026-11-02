@@ -1,0 +1,79 @@
+# Builds the release binaries on GitHub, unsigned. Signing, notarization,
+# DMG/PKG packaging and the upload happen on the developer's Mac with
+# packaging/macos/sign-release.sh, so no certificate or API key is stored
+# in GitHub. See docs/release.md.
+name: release-build
+
+on:
+  push:
+    tags: ["v*"]
+  # A change to the release build itself is test-built on its pull request.
+  pull_request:
+    paths:
+      - .github/workflows/release-build.yml
+      - packaging/macos/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: macOS release build (unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install UI dependencies
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+      - name: Build the command line tool (sidecar)
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/src/tracr --remap-path-prefix=/Users/runner=/home/build
+        run: |
+          for T in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked -p tracr-cli --target $T
+          done
+          B=apps/desktop/src-tauri/binaries
+          mkdir -p $B
+          cp target/aarch64-apple-darwin/release/tracr $B/tracr-aarch64-apple-darwin
+          cp target/x86_64-apple-darwin/release/tracr  $B/tracr-x86_64-apple-darwin
+          lipo -create target/aarch64-apple-darwin/release/tracr target/x86_64-apple-darwin/release/tracr \
+            -output $B/tracr-universal-apple-darwin
+      - name: Build the app (no signing identity, app bundle only)
+        working-directory: apps/desktop
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/src/tracr --remap-path-prefix=/Users/runner=/home/build
+        run: |
+          for T in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
+            pnpm tauri build --target $T --bundles app --config src-tauri/tauri.release.conf.json
+          done
+      - name: Collect
+        run: |
+          O=$RUNNER_TEMP/out; mkdir -p $O
+          for T in aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin; do
+            ditto -c -k --keepParent target/$T/release/bundle/macos/tracr.app $O/tracr-$T.app.zip
+          done
+          cp apps/desktop/src-tauri/binaries/tracr-universal-apple-darwin $O/tracr-cli-universal
+          (cd $O && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS)
+          git rev-parse HEAD > $O/COMMIT
+      - name: Artifact name
+        id: name
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then echo "n=tracr-unsigned-$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+          else echo "n=tracr-unsigned-test-${GITHUB_SHA::12}" >> $GITHUB_OUTPUT; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.n }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 14

@@ -1,6 +1,10 @@
 # Releasing tracr
 
-Releases are made by hand on the developer's Apple Silicon Mac: build, sign, notarize, upload. There is no release CI and no release script; the `ci` workflow only checks code. The website is deployed by hand to Cloudflare.
+Releases are split between GitHub and the developer's Mac:
+- **GitHub builds.** The `release-build` workflow (`.github/workflows/release-build.yml`) compiles everything unsigned when a `v*` tag is pushed.
+- **The Mac signs.** `packaging/macos/sign-release.sh` downloads that build, signs it with the Developer ID certificates from the login keychain, notarizes it with the local `tracr-notary` profile, and packages the DMGs, PKG and CLI archive.
+
+No certificate or API key is stored in GitHub. The upload, Homebrew and the website stay manual steps. The website is deployed by hand to Cloudflare.
 
 ## What a release contains
 
@@ -27,7 +31,27 @@ Replace `0.9.2` below. Needs at least 8 GB free disk (`df -h /`).
 - `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm --dir apps/desktop typecheck`
 - Commit and push to `main`.
 
-**2. Build** (the CLI first, because the app embeds it as a sidecar; Tauri expects one sidecar per target triple)
+**2. Build on GitHub, sign on the Mac** (default)
+```sh
+git tag -a v0.9.2 -m "tracr 0.9.2" && git push origin v0.9.2        # starts release-build (~15 min)
+gh run watch $(gh run list --workflow release-build --branch v0.9.2 --limit 1 --json databaseId -q '.[0].databaseId')
+packaging/macos/sign-release.sh 0.9.2
+```
+The script runs these steps:
+1. It checks the artifact's checksums and that it was built from the tag.
+2. It signs inside out: the embedded CLI first, then the app, each with the hardened runtime and a timestamp.
+3. It notarizes and staples each app.
+4. It builds each DMG with the window layout from `tauri.conf.json`, using the vendored create-dmg in `packaging/macos/create-dmg/`. It then signs, notarizes and staples the DMG.
+5. It builds the PKG (§5b, the same commands) and the CLI archive, with neutral file owners.
+6. It runs the checks from §4, scans the binaries for personal data, and prints the SHA-256, sizes and RIPEMD-160 needed for §7–8.
+
+The output lands in `dist/`. Continue with §6 below, without creating the tag again: it already exists.
+
+A pull request that changes the workflow or `packaging/macos/` test-builds it. To check such a build, run `TRACR_TEST_ARTIFACT=tracr-unsigned-test-<sha> packaging/macos/sign-release.sh <version> <run id>`. It skips the tag check, and its output is never uploaded.
+
+Steps 2–5b below are the **fallback**: building everything on the Mac.
+
+**2 (fallback). Build locally** (the CLI first, because the app embeds it as a sidecar; Tauri expects one sidecar per target triple)
 ```sh
 rustup target add x86_64-apple-darwin          # once
 for T in aarch64-apple-darwin x86_64-apple-darwin; do cargo build --release --locked -p tracr-cli --target $T; done
