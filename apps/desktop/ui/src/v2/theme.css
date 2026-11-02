@@ -240,3 +240,25 @@
 .v2 .cardname { margin-top: -4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2 .chip.hot { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
 .v2 .card-actions { display: flex; gap: 8px; }
+
+/* Environment (T-0016): rows that open in place, counts in the sub-navigation. */
+.v2 .st-nav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.v2 .st-nav .ecount { font-style: normal; font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.v2 .ebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.v2 .elist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.v2 .erow { border-top: 1px solid var(--line); min-width: 0; }
+.v2 .erow:first-child { border-top: 0; }
+.v2 .erow.flat, .v2 .erow .ehead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 2px; min-width: 0; }
+.v2 .erow .ehead { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
+.v2 .erow .ehead:hover:not(:disabled) { background: var(--hover); }
+.v2 .erow .ehead:disabled { cursor: default; }
+.v2 .erow .et { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.v2 .erow .et b { font-weight: 500; color: var(--tx-hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2 .erow .et .vnote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2 .erow.open .et .vnote { white-space: normal; }
+.v2 .erow .chips { display: inline-flex; gap: 6px; flex: none; }
+.v2 .erow .ebody { padding: 2px 2px 12px; }
+.v2 .efacts { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: 12px; }
+.v2 .efacts div { display: contents; }
+.v2 .efacts dt { color: var(--mute); }
+.v2 .efacts dd { margin: 0; color: var(--tx-2); overflow-wrap: anywhere; }

@@ -11,6 +11,7 @@ pub mod costwatch;
 pub mod day;
 pub mod derive;
 pub mod derive_human;
+pub mod environment;
 pub mod export;
 pub mod fleet;
 pub mod hooks;
@@ -887,6 +888,16 @@ impl Reader {
     /// Claude Code home folders the user approved (`~/.claude`).
     pub fn config_roots(&self) -> Result<Vec<String>> {
         read_roots(&self.conn, RootKind::Config)
+    }
+
+    /// How Claude Code is set up, read on demand from the approved Claude folders (T-0016).
+    pub fn environment(&self) -> Result<environment::Environment> {
+        let roots: Vec<PathBuf> = self
+            .config_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        Ok(environment::read(&roots))
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {

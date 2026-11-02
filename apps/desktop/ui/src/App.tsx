@@ -24,6 +24,7 @@ import { ReviewList } from "./ReviewList";
 import { RootsPicker } from "./RootsPicker";
 import { SessionSheet } from "./SessionSheet";
 import { Settings } from "./v2/Settings";
+import { EnvironmentPage } from "./v2/Environment";
 import { Timeline } from "./Timeline";
 import { Toast } from "./Toast";
 import { compact } from "./format";
@@ -296,6 +297,7 @@ export function App() {
       case "area_today": return setArea("today");
       case "area_projects": return setArea("projects");
       case "area_limits": return setArea("limits");
+      case "area_environment": return setArea("environment");
       case "area_worktime": return setArea("worktime");
       case "palette": return setPalette(true);
       case "overview": return (setArea("worktime"), setPage("day"));
@@ -323,6 +325,7 @@ export function App() {
     { id: "projects", label: t("cmdGoProjects"), hint: "⌘2", run: () => setArea("projects") },
     { id: "worktime", label: t("cmdGoWorktime"), hint: "⌘3", run: () => setArea("worktime") },
     { id: "limits", label: t("cmdGoLimits"), hint: "⌘4", run: () => setArea("limits") },
+    { id: "environment", label: t("cmdGoEnvironment"), hint: "⌘5", run: () => setArea("environment") },
     { id: "settings", label: t("settings"), hint: "⌘,", run: () => setArea("settings") },
     ...(days.length > 0 ? [{ id: "export", label: t("exportCsv"), hint: "⌘E", run: () => setExporting(true) }] : []),
     ...(canEditNow ? [{ id: "refresh", label: t("refresh"), hint: "⌘R", run: () => void refresh() }] : []),
@@ -391,6 +394,10 @@ export function App() {
             title={t("limitsTitle")}
             period={{ label: periodLabel(scope, anchor), scope, onScope: setScope, canPrev: !oldest || from > oldest, canNext: to < today, onShift: shiftPeriod }}
           />
+        )}
+
+        {area === "environment" && status && (
+          <EnvironmentPage status={status} onError={reportError} onApproved={() => void api.status().then(setStatus)} />
         )}
 
         {area === "settings" && status && (

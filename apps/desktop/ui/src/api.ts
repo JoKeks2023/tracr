@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 export type RootKind = "provider" | "repository" | "config";
 import type { ProjectOp, ProjectsView } from "./types";
-import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, AutostartView, Analytics, CostAlertPrefs, Fleet, Status, TargetOption } from "./types";
+import type { CorrectionRequest, ManualRequest, DayAgents, DayList, Refreshed, SessionList, SessionTrace, Limits, ProjectOverview, QuotaPrefs, HooksView, AutostartView, Environment, Analytics, CostAlertPrefs, Fleet, Status, TargetOption } from "./types";
 
 // The only way the window reaches tracr: its own commands (AD-12).
 export const api = {
@@ -23,6 +23,8 @@ export const api = {
   autostartState: () => invoke<AutostartView>("autostart_state"),
   /** Open tracr at login (a LaunchAgent in your own Library folder) or stop doing so. */
   autostartSet: (on: boolean) => invoke<void>("autostart_set", { on }),
+  /** How Claude Code is set up and its check, read on demand from the approved Claude folder. */
+  environment: () => invoke<Environment>("environment"),
   hooksState: () => invoke<HooksView>("hooks_state"),
   /** Opt in or out of Claude Code's hooks (needs you, your turn); a copy of the settings is made first. */
   hooksSet: (install: boolean) => invoke<void>("hooks_set", { install }),

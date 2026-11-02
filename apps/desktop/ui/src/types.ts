@@ -561,3 +561,96 @@ export interface Fleet {
   entries: RegistryEntry[];
   stats: SessionStat[];
 }
+
+/** Where an environment item comes from: your own Claude folder or a plugin. */
+export type EnvOrigin = { kind: "user" } | { kind: "plugin"; plugin: string };
+
+export interface EnvItem {
+  name: string;
+  description: string | null;
+  fields: Record<string, string>;
+  origin: EnvOrigin;
+  active: boolean;
+  path: string;
+  bytes: number;
+  lines: number;
+  modified_ms: number | null;
+}
+
+export interface EnvPlugin {
+  id: string;
+  name: string;
+  marketplace: string;
+  version: string | null;
+  description: string | null;
+  enabled: boolean;
+  installed: boolean;
+  path: string | null;
+  skills: number;
+  commands: number;
+  agents: number;
+  hooks: number;
+  mcp_servers: number;
+}
+
+export interface EnvMcpServer {
+  name: string;
+  origin: EnvOrigin;
+  active: boolean;
+  transport: string;
+  target: string | null;
+  env_keys: string[];
+}
+
+export interface EnvHook {
+  event: string;
+  matcher: string | null;
+  program: string | null;
+  timeout_s: number | null;
+  origin: EnvOrigin;
+  active: boolean;
+  file: string;
+  missing: boolean;
+}
+
+export interface EnvMemoryFile {
+  kind: "global" | "rule" | "auto_memory";
+  name: string;
+  path: string;
+  bytes: number;
+  lines: number;
+  chars: number;
+  topics: number;
+  modified_ms: number | null;
+}
+
+export interface EnvPermission {
+  list: "allow" | "ask" | "deny";
+  rule: string;
+  file: string;
+}
+
+export type EnvSeverity = "error" | "warning" | "info";
+
+export interface EnvFinding {
+  rule: string;
+  severity: EnvSeverity;
+  subject: string;
+  file: string | null;
+  detail: string | null;
+}
+
+/** How Claude Code is set up, read on demand from the approved Claude folder (T-0016). */
+export interface Environment {
+  roots: string[];
+  skills: EnvItem[];
+  commands: EnvItem[];
+  agents: EnvItem[];
+  plugins: EnvPlugin[];
+  mcp_servers: EnvMcpServer[];
+  hooks: EnvHook[];
+  memory: EnvMemoryFile[];
+  permissions: EnvPermission[];
+  findings: EnvFinding[];
+  score: number;
+}
