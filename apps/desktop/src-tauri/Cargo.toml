@@ -12,7 +12,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tracr-app = { version = "0.11.0", path = "../../../crates/tracr-app" }
