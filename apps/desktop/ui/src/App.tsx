@@ -292,6 +292,7 @@ export function App() {
   const act = useRef<(action: string) => void>(() => {});
   act.current = (action) => {
     const canEdit = status?.collector === "collecting";
+    if (action.startsWith("session:")) return showProject(action.slice("session:".length));
     switch (action) {
       case "settings": return setArea("settings");
       case "area_today": return setArea("today");
