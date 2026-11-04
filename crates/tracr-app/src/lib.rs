@@ -51,6 +51,8 @@ pub use tracr_core::time::UtcMillis;
 pub use tracr_platform::SystemClock;
 
 pub const LOCK_FILE: &str = "tracr.lock";
+/// How often a held `tracr.lock` is retried, 50 ms apart (see `App::open_writer`).
+const LOCK_RETRIES: u32 = 20;
 
 /// The platform's default data directory (§3.1), if it has one.
 pub fn default_data_dir() -> Option<PathBuf> {
@@ -177,15 +179,26 @@ impl App {
             .truncate(false)
             .write(true)
             .open(data_dir.join(LOCK_FILE))?;
-        match lock.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                bail!(
-                    "another tracr process holds {}",
-                    data_dir.join(LOCK_FILE).display()
-                )
+        // A lock that was just released can look held for a moment: the flock
+        // belongs to the open file description, and a process forked by another
+        // thread keeps a copy of the descriptor until its exec closes it (GH #9).
+        // So a held lock is retried for up to one second before giving up.
+        let mut tries = 0;
+        loop {
+            match lock.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if tries < LOCK_RETRIES => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(TryLockError::WouldBlock) => {
+                    bail!(
+                        "another tracr process holds {}",
+                        data_dir.join(LOCK_FILE).display()
+                    )
+                }
+                Err(TryLockError::Error(e)) => return Err(e.into()),
             }
-            Err(TryLockError::Error(e)) => return Err(e.into()),
         }
         let mut conn = open_ledger(&data_dir.join(LEDGER_FILE))?;
         let stamp = clock.now().to_rfc3339().replace(':', "-");
