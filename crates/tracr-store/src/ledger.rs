@@ -798,34 +798,53 @@ pub fn degraded_extents(
     conn: &Connection,
     ignored_types: &[&str],
 ) -> Result<Vec<(String, UtcMillis, UtcMillis)>> {
+    // `+f.kind` keeps SQLite on the primary key: with the kind index it scanned
+    // every quarantined fact once per degraded record (GH #25).
     let mut stmt = conn.prepare(
-        "SELECT o.source_id, o.occurred_at,
-           (SELECT p.occurred_at FROM observation p WHERE p.source_id = o.source_id AND p.seq < o.seq
-              AND p.occurred_at IS NOT NULL ORDER BY p.seq DESC LIMIT 1),
-           (SELECT n.occurred_at FROM observation n WHERE n.source_id = o.source_id AND n.seq > o.seq
-              AND n.occurred_at IS NOT NULL ORDER BY n.seq ASC LIMIT 1)
-           , (SELECT json_extract(f.facts_json, '$.quarantine.native_type') FROM observation_facts f
-              WHERE f.observation_id = o.id AND f.kind = 'quarantined' LIMIT 1)
+        "SELECT o.source_id, o.seq, o.occurred_at,
+           (SELECT json_extract(f.facts_json, '$.quarantine.native_type') FROM observation_facts f
+              WHERE f.observation_id = o.id AND +f.kind = 'quarantined' LIMIT 1)
          FROM observation o WHERE o.channel = 'transcript' AND o.parse_status <> 'ok'",
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, Option<i64>>(1)?,
-            r.get::<_, Option<i64>>(2)?,
-            r.get::<_, Option<i64>>(3)?,
-            r.get::<_, Option<String>>(4)?,
-        ))
-    })?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<i64>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    // The timed records of each affected source, in seq order, read once per
+    // source: a neighbour lookup per degraded record re-sorted the whole
+    // source each time and took about a minute on a large ledger (GH #25).
+    let mut timed: std::collections::HashMap<String, Vec<(i64, i64)>> =
+        std::collections::HashMap::new();
+    let mut timed_stmt = conn.prepare(
+        "SELECT seq, occurred_at FROM observation
+         WHERE source_id = ?1 AND occurred_at IS NOT NULL ORDER BY seq",
+    )?;
+    for (source, ..) in &rows {
+        if !timed.contains_key(source) {
+            let list = timed_stmt
+                .query_map([source], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            timed.insert(source.clone(), list);
+        }
+    }
     let mut out = Vec::new();
-    for row in rows {
-        let (source, own, prev, next, native_type) = row?;
+    for (source, seq, own, native_type) in rows {
         if native_type
             .as_deref()
             .is_some_and(|t| ignored_types.contains(&t))
         {
             continue;
         }
+        let list = &timed[&source];
+        let i = list.partition_point(|(s, _)| *s < seq);
+        let prev = i.checked_sub(1).map(|j| list[j].1);
+        let next = list[i..].iter().find(|(s, _)| *s > seq).map(|(_, at)| *at);
         let times: Vec<i64> = [own, prev, next].into_iter().flatten().collect();
         if let (Some(lo), Some(hi)) = (times.iter().min(), times.iter().max())
             && hi > lo
