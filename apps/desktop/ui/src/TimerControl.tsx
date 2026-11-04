@@ -48,7 +48,7 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
         <span className="dot recording" aria-hidden />
         <span className="mono">{elapsed(running.start)}</span>
         {running.target_label && <span className="muted">· {running.target_label}</span>}
-        <button className="button secondary small" disabled={busy} onClick={() => call("stop_timer")}>
+        <button className="btn s" disabled={busy} onClick={() => call("stop_timer")}>
           {t("stopTimer")}
         </button>
       </span>
@@ -72,10 +72,10 @@ export function TimerControl({ running, loadTargets, targets, onChanged }: {
             <TargetSelect targets={targets} value={target} onChange={setTarget} other={other} onOther={setOther} allowNone />
           </div>
           <div className="actions">
-            <button className="btn p" onClick={() => setOpen(false)}>
+            <button className="btn" onClick={() => setOpen(false)}>
               {t("cancel")}
             </button>
-            <button className="button primary" disabled={busy} onClick={() => call("start_timer")}>
+            <button className="btn p" disabled={busy} onClick={() => call("start_timer")}>
               {t("start")}
             </button>
           </div>
