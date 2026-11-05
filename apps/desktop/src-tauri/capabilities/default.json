@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The Day view window: tracr's own commands and core window events only. No filesystem, shell or HTTP plugin (AD-12).",
-  "windows": ["main"],
+  "description": "The app window and the menu bar popover: tracr's own commands and core window events only. No filesystem, shell or HTTP plugin (AD-12).",
+  "windows": ["main", "tray"],
   "permissions": ["core:default"]
 }

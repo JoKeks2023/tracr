@@ -4420,6 +4420,7 @@ name = "tracr-desktop"
 version = "0.11.1"
 dependencies = [
  "anyhow",
+ "objc2-app-kit",
  "serde",
  "tauri",
  "tauri-build",

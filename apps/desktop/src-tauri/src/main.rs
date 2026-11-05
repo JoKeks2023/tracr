@@ -13,8 +13,11 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, RunEvent, WindowEvent, Wry};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{
+    Emitter, Manager, PhysicalPosition, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Wry,
+};
 use tauri_plugin_notification::NotificationExt;
 use tracr_app::day::{DayAgents, DayList, SessionList};
 use tracr_app::quota::{self, Level, QuotaPrefs};
@@ -1134,6 +1137,135 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Popover width and the height it starts with (logical points); the page reports its real height.
+const POPOVER_WIDTH: f64 = 360.0;
+const POPOVER_HEIGHT: f64 = 420.0;
+
+/// The popover under the menu bar icon (T-0019): a frameless, translucent
+/// window that closes when it loses focus. It is built hidden at start.
+fn build_popover(app: &tauri::App) -> tauri::Result<()> {
+    let mut b = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("index.html#tray".into()))
+        .title("tracr")
+        .inner_size(POPOVER_WIDTH, POPOVER_HEIGHT)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible_on_all_workspaces(true)
+        .visible(false);
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::window::{Effect, EffectState, EffectsBuilder};
+        b = b.effects(
+            EffectsBuilder::new()
+                .effect(Effect::Popover)
+                .state(EffectState::Active)
+                .radius(12.0)
+                .build(),
+        );
+    }
+    let w = b.build()?;
+    // Over a full-screen app the popover must join that Space as an
+    // auxiliary window; `visible_on_all_workspaces` alone leaves it on the
+    // desktop Space, so a click on the icon showed nothing.
+    #[cfg(target_os = "macos")]
+    if let Ok(ptr) = w.ns_window() {
+        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+        // SAFETY: `ns_window` is the live NSWindow of this webview window, and
+        // setup runs on the main thread.
+        let ns: &NSWindow = unsafe { &*ptr.cast::<NSWindow>() };
+        ns.setCollectionBehavior(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::IgnoresCycle);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = w;
+    Ok(())
+}
+
+/// Puts the popover centered under the icon, kept on the icon's screen, and shows it.
+fn show_popover(app: &tauri::AppHandle, icon: Option<tauri::Rect>) {
+    let Some(w) = app.get_webview_window("tray") else {
+        return;
+    };
+    let scale = w.scale_factor().unwrap_or(2.0);
+    let width = POPOVER_WIDTH * scale;
+    let (x, y) = match icon {
+        Some(r) => {
+            let pos = r.position.to_physical::<f64>(scale);
+            let size = r.size.to_physical::<f64>(scale);
+            let x = pos.x + size.width / 2.0 - width / 2.0;
+            let y = pos.y + size.height + 4.0 * scale;
+            match app.monitor_from_point(pos.x, pos.y).ok().flatten() {
+                Some(m) => {
+                    let (mx, mw) = (m.position().x as f64, m.size().width as f64);
+                    (x.clamp(mx + 8.0 * scale, mx + mw - width - 8.0 * scale), y)
+                }
+                None => (x, y),
+            }
+        }
+        // No icon position (a development start): top right of the main screen.
+        None => match app.primary_monitor().ok().flatten() {
+            Some(m) => (
+                m.position().x as f64 + m.size().width as f64 - width - 12.0 * scale,
+                m.position().y as f64 + 32.0 * scale,
+            ),
+            None => (400.0, 60.0),
+        },
+    };
+    let _ = w.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    // A click on a menu bar icon does not activate the app. Without this the
+    // popover would never become key, so a click on the desktop or another
+    // app could not close it.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    let _ = w.show();
+    let _ = w.set_focus();
+    let _ = w.emit("popover-shown", ());
+}
+
+fn toggle_popover(app: &tauri::AppHandle, icon: Option<tauri::Rect>) {
+    match app.get_webview_window("tray") {
+        Some(w) if w.is_visible().unwrap_or(false) => hide_popover(app),
+        _ => show_popover(app, icon),
+    }
+}
+
+fn hide_popover(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
+    }
+}
+
+/// The popover asks the app window to go somewhere ("area_limits",
+/// "session:<id>", "settings", ...): it closes and the window takes over.
+#[tauri::command]
+fn popover_go(app: tauri::AppHandle, action: String) {
+    hide_popover(&app);
+    match action.as_str() {
+        "hide" => {}
+        "quit" => app.exit(0),
+        "open" => show_main(&app),
+        _ => {
+            show_main(&app);
+            let _ = app.emit_to("main", "menu", action);
+        }
+    }
+}
+
+/// The popover reports its content height so the window fits it (logical points).
+#[tauri::command]
+fn popover_fit(app: tauri::AppHandle, height: f64) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.set_size(tauri::LogicalSize::new(
+            POPOVER_WIDTH,
+            height.clamp(160.0, 600.0),
+        ));
+    }
+}
+
 /// The Mac menu bar: tracr, File, Edit, View, Window, Help. Items carry an
 /// `m:` id; the window does the work (it owns the open day and the sheets),
 /// except Quit, Timer and Open, which need no window state.
@@ -1377,7 +1509,9 @@ fn main() {
             manual,
             review,
             dismiss,
-            set_menu_language
+            set_menu_language,
+            popover_go,
+            popover_fit
         ])
         .on_menu_event(|app, event| on_app_menu(app, event.id().as_ref()))
         .setup(|app| {
@@ -1392,21 +1526,47 @@ fn main() {
             let open = MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
+            // macOS lets a window onto another app's full-screen Space only
+            // if it was created while the app was an accessory app (verified
+            // 2026-11-05, macOS 27): created as a regular app, the popover
+            // stayed on the desktop Space and a click on the icon showed
+            // nothing over a full-screen app. The Dock icon is back at once.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            build_popover(app)?;
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            // Left click: the popover. Right click: the plain native menu.
             let mut tray = TrayIconBuilder::with_id("tracr")
                 .tooltip("tracr")
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main(app),
                     "timer" => toggle_timer(app),
                     "quit" => app.exit(0),
                     _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        rect,
+                        ..
+                    } = event
+                    {
+                        toggle_popover(tray.app_handle(), Some(rect));
+                    }
                 });
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
             refresh_tray(app.handle());
+            // Development aid: open the popover at once, without clicking the icon.
+            if std::env::var_os("TRACR_SHOW_POPOVER").is_some() {
+                show_popover(app.handle(), None);
+            }
             // macOS asks once whether tracr may notify (only when alerts are on).
             if app
                 .state::<Ctx>()
@@ -1445,12 +1605,15 @@ fn main() {
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match (window.label(), event) {
+            // The popover closes as soon as you click elsewhere.
+            ("tray", WindowEvent::Focused(false)) => hide_popover(window.app_handle()),
             // Closing the window keeps collecting (AD-03); Quit stops.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            (_, WindowEvent::CloseRequested { api, .. }) => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("build tracr desktop");
