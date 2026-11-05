@@ -38,7 +38,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 12
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Typecheck the desktop UI
@@ -56,7 +56,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 12
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Build the desktop UI (tauri embeds dist/)
