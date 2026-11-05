@@ -1,0 +1,48 @@
+# cargo-deny: advisories, licenses, bans and sources of the Rust dependency
+# tree. Run in CI by .github/workflows/supply-chain.yml; locally with
+# `cargo deny check`.
+
+[graph]
+# The platforms tracr targets (README: macOS today, Windows on the way).
+# Linux-only dependencies (the WebKitGTK stack behind the Tauri host) are not
+# shipped anywhere and are left out of the graph.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[advisories]
+# Every advisory fails the check unless it is listed here with a reason.
+ignore = []
+
+[licenses]
+# tracr is AGPL-3.0-or-later (see .claude/canon.md). This list is what the
+# dependency graph above uses today; a new license needs a decision first.
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.93
+
+[licenses.private]
+# The workspace crates (publish = false) carry the project's own license.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies between the private workspace crates have no version.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
