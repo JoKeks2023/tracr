@@ -23,7 +23,7 @@ jobs:
       # gitleaks-action reads the commit list of a pull request.
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
@@ -37,5 +37,5 @@ jobs:
     name: home paths and e-mail addresses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: .github/scripts/check-personal-data.sh
