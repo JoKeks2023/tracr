@@ -4,6 +4,15 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its running checks; pushes to
+# branches always run to the end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -20,6 +29,21 @@ jobs:
       # The desktop host needs WebKitGTK on Linux; it is built by the macOS job.
       - run: cargo clippy --workspace --exclude tracr-desktop --all-targets -- -D warnings
       - run: cargo test --workspace --exclude tracr-desktop
+
+  ui-typecheck:
+    name: Desktop UI (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Typecheck the desktop UI
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile && pnpm typecheck
 
   macos:
     name: macOS (build, tests)

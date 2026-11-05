@@ -1,0 +1,38 @@
+# Weekly dependency updates. Minor and patch bumps are grouped into one pull
+# request per ecosystem; major bumps arrive one by one, since they are the
+# ones that need a look.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  # The desktop UI (pnpm-lock.yaml is read by the npm ecosystem).
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

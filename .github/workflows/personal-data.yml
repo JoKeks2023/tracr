@@ -1,0 +1,41 @@
+# Secrets and personal data. gitleaks scans the commits of a push or pull
+# request for credentials; the script checks the tracked files for home
+# directory paths and e-mail addresses of real people.
+name: personal-data
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gitleaks:
+    name: gitleaks (secrets in history)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # gitleaks-action reads the commit list of a pull request.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Findings go to the job log and summary, no pull request comments
+          # (that would need write access).
+          GITLEAKS_ENABLE_COMMENTS: false
+
+  tracked-files:
+    name: home paths and e-mail addresses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/scripts/check-personal-data.sh

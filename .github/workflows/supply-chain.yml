@@ -1,0 +1,35 @@
+# cargo-deny over the Rust dependency tree (config: deny.toml). Advisories
+# run in their own job so a newly published advisory is visible on its own
+# and does not hide a license or source problem.
+name: supply-chain
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - advisories
+          - licenses bans sources
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
