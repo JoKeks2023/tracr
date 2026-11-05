@@ -89,6 +89,7 @@ export function Popover() {
   const [fleet, setFleet] = useState<Fleet | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [timerBusy, setTimerBusy] = useState(false);
   const [menu, setMenu] = useState(false);
   const [, tick] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -190,6 +191,20 @@ export function Popover() {
     return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   })() : null;
 
+  // Waits for the collector, so the button stays disabled until the timer
+  // really started or stopped: a second click can no longer toggle twice
+  // or seem to be ignored while the collector is busy (GH #33).
+  const toggleTimer = async () => {
+    setTimerBusy(true);
+    try {
+      await api.manual({ op: running ? "stop_timer" : "start_timer" });
+    } catch {
+      /* the next read shows the state */
+    }
+    await read();
+    setTimerBusy(false);
+  };
+
   const refresh = async () => {
     setBusy(true);
     try {
@@ -274,7 +289,7 @@ export function Popover() {
       )}
 
       <footer className="pv-foot">
-        <button className={`btn ${running ? "pv-running" : ""}`} onClick={() => void invoke("popover_timer").then(() => window.setTimeout(() => void read(), 400)).catch(() => {})} disabled={!collecting} title={collecting ? undefined : t("pvNotRecording")}>
+        <button className={`btn ${running ? "pv-running" : ""}`} onClick={() => void toggleTimer()} disabled={!collecting || timerBusy} aria-busy={timerBusy} title={collecting ? undefined : t("pvNotRecording")}>
           {running ? <>■ <span className="mono">{timerText}</span></> : <>▶ {t("pvStartTimer")}</>}
         </button>
         <span className="grow" />

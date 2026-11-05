@@ -1168,7 +1168,20 @@ fn build_popover(app: &tauri::App) -> tauri::Result<()> {
                 .build(),
         );
     }
-    b.build()?;
+    let w = b.build()?;
+    // Over a full-screen app the popover must join that Space as an
+    // auxiliary window; `visible_on_all_workspaces` alone leaves it on the
+    // desktop Space, so a click on the icon showed nothing.
+    #[cfg(target_os = "macos")]
+    if let Ok(ptr) = w.ns_window() {
+        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+        // SAFETY: `ns_window` is the live NSWindow of this webview window, and
+        // setup runs on the main thread.
+        let ns: &NSWindow = unsafe { &*ptr.cast::<NSWindow>() };
+        ns.setCollectionBehavior(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::IgnoresCycle);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = w;
     Ok(())
 }
 
@@ -1215,10 +1228,14 @@ fn show_popover(app: &tauri::AppHandle, icon: Option<tauri::Rect>) {
 
 fn toggle_popover(app: &tauri::AppHandle, icon: Option<tauri::Rect>) {
     match app.get_webview_window("tray") {
-        Some(w) if w.is_visible().unwrap_or(false) => {
-            let _ = w.hide();
-        }
+        Some(w) if w.is_visible().unwrap_or(false) => hide_popover(app),
         _ => show_popover(app, icon),
+    }
+}
+
+fn hide_popover(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let _ = w.hide();
     }
 }
 
@@ -1226,9 +1243,7 @@ fn toggle_popover(app: &tauri::AppHandle, icon: Option<tauri::Rect>) {
 /// "session:<id>", "settings", ...): it closes and the window takes over.
 #[tauri::command]
 fn popover_go(app: tauri::AppHandle, action: String) {
-    if let Some(w) = app.get_webview_window("tray") {
-        let _ = w.hide();
-    }
+    hide_popover(&app);
     match action.as_str() {
         "hide" => {}
         "quit" => app.exit(0),
@@ -1249,12 +1264,6 @@ fn popover_fit(app: tauri::AppHandle, height: f64) {
             height.clamp(160.0, 600.0),
         ));
     }
-}
-
-/// Starts or stops the timer from the popover; the menu bar title follows.
-#[tauri::command]
-fn popover_timer(app: tauri::AppHandle) {
-    toggle_timer(&app);
 }
 
 /// The Mac menu bar: tracr, File, Edit, View, Window, Help. Items carry an
@@ -1502,8 +1511,7 @@ fn main() {
             dismiss,
             set_menu_language,
             popover_go,
-            popover_fit,
-            popover_timer
+            popover_fit
         ])
         .on_menu_event(|app, event| on_app_menu(app, event.id().as_ref()))
         .setup(|app| {
@@ -1518,7 +1526,16 @@ fn main() {
             let open = MenuItem::with_id(app, "open", "Open tracr", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit tracr", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
+            // macOS lets a window onto another app's full-screen Space only
+            // if it was created while the app was an accessory app (verified
+            // 2026-11-05, macOS 27): created as a regular app, the popover
+            // stayed on the desktop Space and a click on the icon showed
+            // nothing over a full-screen app. The Dock icon is back at once.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             build_popover(app)?;
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
             // Left click: the popover. Right click: the plain native menu.
             let mut tray = TrayIconBuilder::with_id("tracr")
                 .tooltip("tracr")
@@ -1590,9 +1607,7 @@ fn main() {
         })
         .on_window_event(|window, event| match (window.label(), event) {
             // The popover closes as soon as you click elsewhere.
-            ("tray", WindowEvent::Focused(false)) => {
-                let _ = window.hide();
-            }
+            ("tray", WindowEvent::Focused(false)) => hide_popover(window.app_handle()),
             // Closing the window keeps collecting (AD-03); Quit stops.
             (_, WindowEvent::CloseRequested { api, .. }) => {
                 api.prevent_close();

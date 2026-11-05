@@ -13,8 +13,21 @@ Date: 2026-11-02, debug build of `feat/menubar`, data dir = a copy in the sessio
 | Dark and light appearance: text readable on the material | ok (screenshots) |
 | Debug app writes only to the copy | ok (`lsof`) |
 
+## Click-through 2026-11-05 (debug build, copy of the data dir)
+| Check | Result |
+|---|---|
+| Click on the icon opens the popover; figures match the Today page (counted, unknown, agents, cost) | ok |
+| Timer start and stop from the popover | ok after the fix below |
+| ⋯ menu: Settings, Limits, Quit tracr | opens ok (items not clicked) |
+| Right-click: native menu (today line, Collecting, Open, Start timer, Quit) | ok; English until the main window has set the language |
+| Popover over a full-screen app (Terminal in its own Space) | **failed**, fixed below, then ok |
+
+### Fixes from the click-through
+- **Full-screen Space (found 2026-11-05):** the popover stayed on the desktop Space, so a click on the icon showed nothing over a full-screen app. Collection behaviour `CanJoinAllSpaces | FullScreenAuxiliary` alone did not help, neither did switching to an accessory app while open (also with a delay) or `orderFrontRegardless`. What works: create the popover window while the app is an accessory app and switch back to regular right after (Dock icon stays). Checked with `isOnActiveSpace` and CGWindowList, plus a screenshot over the full-screen Terminal; app type afterwards regular (`background only` = false).
+- **GH #33, timer seemed to ignore a click:** the button fired `popover_timer` without waiting and re-read after 400 ms, so a busy collector showed the old state and a second click could toggle twice. The popover now calls `manual` with an explicit start/stop and keeps the button disabled until done. Verified: start, immediate second click → one ledger revision; stop with one click → end written after ~1 s.
+
 ## Not verified
-Real clicks on the icon and in the popover (rows, timer, ⋯ menu, Settings, Quit), the right-click menu, English, VoiceOver, the "Braucht dich" section with waiting sessions.
+Rows that open sessions, Settings/Quit actually clicked, English UI, VoiceOver, the "Braucht dich" section with waiting sessions, several displays.
 
 ## Change after review
 - German `pvResets` "zurückgesetzt in {time}" truncated the left text at 360 pt → "Reset in {time}".
