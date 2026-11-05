@@ -117,3 +117,38 @@ fn a_missing_root_never_ends_its_sources() {
     let r = app.import(&mut |_, _| {}).unwrap();
     assert_eq!((r.ended, r.missing), (1, 0));
 }
+
+/// A record that cannot be read blocks the stream from the previous to the
+/// next timed record of the same source (§4.7 `degraded`, GH #25).
+#[test]
+fn an_unreadable_record_spans_its_timed_neighbours() {
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().join("data");
+    let root = dir.path().join("projects");
+    let mut s = ClaudeSession::new(S);
+    write_lines(
+        &root.join("-Users-dev-p").join(format!("{S}.jsonl")),
+        &[
+            s.prompt("09:00"),
+            s.assistant("09:01", "msg_1", 10),
+            "{not json".to_owned(),
+            s.assistant("09:05", "msg_2", 10),
+            s.prompt("09:10"),
+        ],
+    );
+    let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    app.import(&mut |_, _| {}).unwrap();
+    drop(app);
+
+    let conn = tracr_store::connection::open_ledger_read_only(&data.join("ledger.sqlite")).unwrap();
+    let extents = tracr_store::ledger::degraded_extents(&conn, &[]).unwrap();
+    let ms = |hhmm: &str| {
+        tracr_testkit::collector::at(hhmm)
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond()
+    };
+    let spans: Vec<(i64, i64)> = extents.iter().map(|(_, lo, hi)| (lo.0, hi.0)).collect();
+    assert_eq!(spans, vec![(ms("09:01"), ms("09:05"))]);
+}
