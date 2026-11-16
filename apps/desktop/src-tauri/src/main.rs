@@ -576,6 +576,16 @@ async fn environment(
         .map_err(err)
 }
 
+/// Project setup facts and plans (TRACR-23), read on demand.
+#[tauri::command]
+async fn project_setup(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::SetupView, String> {
+    let dir = ctx.dir()?;
+    tauri::async_runtime::spawn_blocking(move || Reader::open(&dir).and_then(|r| r.project_setup()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
 #[tauri::command]
 async fn fleet_state(ctx: tauri::State<'_, Ctx>) -> Result<tracr_app::fleet::Fleet, String> {
     let dir = ctx.dir()?;
@@ -1487,6 +1497,7 @@ fn main() {
             sessions,
             fleet_state,
             environment,
+            project_setup,
             get_cost_alerts,
             set_cost_alerts,
             analytics,

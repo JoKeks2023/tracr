@@ -334,6 +334,27 @@ export type ProjectOp =
   | { op: "delete"; id: string }
   | { op: "map"; repository: string; project: string | null };
 
+/** Setup facts of an observed repository (TRACR-23): presence, sizes, times and references only. */
+export interface ProjectSetup {
+  path: string;
+  instructions: { file: SetupFile; references: string[] }[];
+  canon: { file: SetupFile; records: number; canon: number } | null;
+  mcp_servers: string[] | null;
+  findings: { rule: string; severity: "warning" | "info"; message: string }[];
+}
+
+export interface SetupFile {
+  path: string;
+  bytes: number;
+  modified: number | null;
+}
+
+export interface SetupView {
+  projects: ProjectSetup[];
+  /** Plans: sizes and times only (their names come from prompt words). */
+  plans: { bytes: number; modified: number | null }[];
+}
+
 export interface SessionList {
   timezone: string;
   from: string;
