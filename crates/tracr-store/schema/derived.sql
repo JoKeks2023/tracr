@@ -49,10 +49,12 @@ CREATE TABLE agent_segment (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, actor
   end_basis TEXT NOT NULL, kind TEXT NOT NULL, rule_ref TEXT NOT NULL, derivation_run_id TEXT NOT NULL,
   CHECK (end_at > start_at));
 CREATE INDEX agent_segment_time ON agent_segment (start_at, end_at);
+CREATE INDEX agent_segment_session ON agent_segment (session_id);
 
 CREATE TABLE engagement_instant (id TEXT PRIMARY KEY, at INTEGER NOT NULL, session_id TEXT NOT NULL,
   event_id TEXT NOT NULL, subtype TEXT, context TEXT, derivation_run_id TEXT NOT NULL);
 CREATE INDEX engagement_instant_at ON engagement_instant (at);
+CREATE INDEX engagement_instant_session ON engagement_instant (session_id);
 
 CREATE TABLE usage_record (id TEXT PRIMARY KEY,        -- BLAKE3(provider, stream key, dedup identity or record key)
   provider TEXT NOT NULL, stream_key TEXT NOT NULL, dedup_identity TEXT,
@@ -65,6 +67,7 @@ CREATE TABLE usage_record (id TEXT PRIMARY KEY,        -- BLAKE3(provider, strea
   derivation_run_id TEXT NOT NULL,
   CHECK ((canonical = 1) = (duplicate_of IS NULL)));   -- NULL token column = unknown, 0 = observed zero
 CREATE INDEX usage_record_extent ON usage_record (extent_start);
+CREATE INDEX usage_record_session ON usage_record (session_id);
 CREATE TABLE usage_record_source (usage_id TEXT NOT NULL, observation_id TEXT NOT NULL,
   PRIMARY KEY (usage_id, observation_id));
 
