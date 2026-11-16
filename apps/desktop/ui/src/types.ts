@@ -109,6 +109,17 @@ export interface SessionDay {
   usage: UsageLine[];
   cost: CostView;
   reported: ReportedView[];
+  /** Targets of bindings of this session or its repository valid during the day. */
+  bound_to: string[];
+  /** Targets read from evidence (branch name); they count only once accepted. */
+  suggestions: Suggestion[];
+}
+
+export interface Suggestion {
+  target: string;
+  label: string;
+  /** `branch:<name>` */
+  evidence: string;
 }
 
 export interface PendingLane {
@@ -333,6 +344,27 @@ export type ProjectOp =
   | { op: "rename"; id: string; name: string }
   | { op: "delete"; id: string }
   | { op: "map"; repository: string; project: string | null };
+
+/** What a binding or rejection is about: a session (native ID) or a repository (key). */
+export type BindingSubject = { kind: "session"; id: string } | { kind: "repository"; id: string };
+
+export interface Binding {
+  id: string;
+  subject: BindingSubject;
+  target: string;
+  valid_from: number;
+  valid_to?: number;
+}
+
+export interface BindingConfig {
+  bindings: Binding[];
+  rejected: { subject: BindingSubject; target: string; at: number }[];
+}
+
+export type BindingOp =
+  | { op: "bind"; subject: BindingSubject; target: string; valid_from: number | null }
+  | { op: "end"; id: string; at: number | null }
+  | { op: "reject"; subject: BindingSubject; target: string };
 
 export interface SessionList {
   timezone: string;

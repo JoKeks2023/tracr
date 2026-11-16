@@ -6,6 +6,7 @@
 
 pub mod analytics;
 pub mod autostart;
+pub mod bindings;
 pub mod correct;
 pub mod costwatch;
 pub mod day;
@@ -379,6 +380,30 @@ impl App {
                     projects::REPOSITORY_PROJECTS_KEY,
                     serde_json::json!(config.repository_projects),
                 ),
+            ],
+        )?;
+        Ok(id)
+    }
+
+    /// Binds a session or repository to a target, ends a binding, or rejects
+    /// a suggestion (S3.2). Bindings change attribution, so the caller
+    /// updates the derived store afterwards (`Collector::binding_op` does).
+    pub fn binding_op(&mut self, op: &bindings::BindingOp) -> Result<String> {
+        let mut config = bindings::read_config(&self.conn)?;
+        let id = {
+            let env = IngestEnv {
+                clock: &*self.clock,
+                file_identity: &*self.fid,
+            };
+            bindings::apply(&mut config, op, self.clock.now().0, || {
+                format!("bnd_{}", new_uuid_v7(&env))
+            })?
+        };
+        self.write_settings(
+            &format!("setting.bindings.{}", op.action()),
+            &[
+                (bindings::BINDINGS_KEY, serde_json::json!(config.bindings)),
+                (bindings::REJECTED_KEY, serde_json::json!(config.rejected)),
             ],
         )?;
         Ok(id)
@@ -773,6 +798,29 @@ impl Reader {
         });
         let config = projects::read_config(&self.conn)?;
         v.counted_by_project = projects::project_totals(shown, &config);
+        // Bindings valid during the day, and suggestions not yet decided.
+        let binding_config = bindings::read_config(&self.conn)?;
+        let (day_start, day_end) = self.reporting_zone()?.bounds(
+            day.parse()
+                .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))?,
+        )?;
+        for s in &mut v.sessions {
+            let mut subjects = vec![bindings::Subject::Session(s.native_session_id.clone())];
+            subjects.extend(s.repository.clone().map(bindings::Subject::Repository));
+            let bound: std::collections::BTreeSet<String> = binding_config
+                .bindings
+                .iter()
+                .filter(|b| subjects.contains(&b.subject) && b.overlaps(day_start, day_end))
+                .map(|b| b.target.clone())
+                .collect();
+            s.suggestions = bindings::suggestions(
+                &binding_config,
+                &s.native_session_id,
+                s.git_branch.as_deref(),
+                &bound,
+            );
+            s.bound_to = bound.into_iter().collect();
+        }
         // A time target on a project shows the project's current name.
         for atom in &mut v.human.atoms {
             if let Some(at) = &mut atom.attribution {
@@ -791,6 +839,11 @@ impl Reader {
             }
         }
         Ok(v)
+    }
+
+    /// The user's bindings and rejected suggestions (S3.2).
+    pub fn binding_config(&self) -> Result<bindings::BindingConfig> {
+        bindings::read_config(&self.conn)
     }
 
     /// Targets time can be assigned to (S2): repositories seen in sessions,

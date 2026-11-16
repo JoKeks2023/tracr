@@ -400,6 +400,15 @@ impl<'c> DerivedWriter<'c> {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Native session ID of every derived session, by derived ID.
+    pub fn session_native_ids(&self) -> Result<std::collections::HashMap<String, String>> {
+        let mut stmt = self
+            .tx
+            .prepare("SELECT id, native_session_id FROM agent_session")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn set_session_repository(
         &self,
         id: &str,
