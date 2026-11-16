@@ -25,6 +25,7 @@ pub mod report;
 pub mod review;
 pub mod runtime;
 pub mod search;
+pub mod setup;
 pub mod trace;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -601,6 +602,13 @@ pub struct Stats {
     pub usage_records: UsageRecordStatsDto,
 }
 
+/// Project setup facts and plans (TRACR-23).
+#[derive(Debug, Clone, Serialize)]
+pub struct SetupView {
+    pub projects: Vec<setup::ProjectSetup>,
+    pub plans: Vec<setup::PlanFact>,
+}
+
 /// Counts of usage-bearing records, not token totals (election is S1.3).
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct UsageRecordStatsDto {
@@ -997,6 +1005,41 @@ impl Reader {
             .map(PathBuf::from)
             .collect();
         Ok(environment::read(&roots))
+    }
+
+    /// Setup facts of every repository observed under an approved repository
+    /// root, and the plans in the approved Claude folders (TRACR-23). Read
+    /// on demand, never stored.
+    pub fn project_setup(&self) -> Result<SetupView> {
+        let roots: Vec<PathBuf> = self
+            .repository_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        let mut toplevels: std::collections::BTreeSet<PathBuf> = Default::default();
+        for (_, _, json) in ledger::git_contexts(&self.conn)? {
+            let Some(g) = serde_json::from_str::<tracr_core::evidence::Facts>(&json)
+                .ok()
+                .and_then(|f| f.git)
+            else {
+                continue;
+            };
+            if let Some(top) = g.toplevel.filter(|_| g.is_repo).map(PathBuf::from)
+                && roots.iter().any(|r| top.starts_with(r))
+                && top.is_dir()
+            {
+                toplevels.insert(top);
+            }
+        }
+        let config: Vec<PathBuf> = self
+            .config_roots()?
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        Ok(SetupView {
+            projects: toplevels.iter().map(|t| setup::inspect(t)).collect(),
+            plans: setup::plans(&config),
+        })
     }
 
     pub fn sources(&self, kind: Option<&str>) -> Result<Vec<SourceSummary>> {
