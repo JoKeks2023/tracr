@@ -366,6 +366,35 @@ export type BindingOp =
   | { op: "end"; id: string; at: number | null }
   | { op: "reject"; subject: BindingSubject; target: string };
 
+/** Metadata filters; never content. Dates are YYYY-MM-DD, inclusive. */
+export interface SessionQuery {
+  from: string;
+  to: string;
+  text?: string | null;
+  provider?: string | null;
+  project?: string | null;
+  branch?: string | null;
+  model?: string | null;
+  tool?: string | null;
+  subagents?: boolean | null;
+  bound_to?: string | null;
+  min_cost_nano?: number | null;
+}
+
+export interface SessionSearch {
+  list: SessionList;
+  /** Sessions in the period before filtering. */
+  total: number;
+  facets: {
+    providers: string[];
+    branches: string[];
+    models: string[];
+    tools: string[];
+    projects: { id: string; name: string }[];
+    bound_to: string[];
+  };
+}
+
 export interface SessionList {
   timezone: string;
   from: string;

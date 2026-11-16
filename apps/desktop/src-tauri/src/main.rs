@@ -330,6 +330,21 @@ async fn project_op(
         .map_err(err)
 }
 
+/// Sessions of a period filtered by metadata, with dropdown values (TRACR-21).
+#[tauri::command]
+async fn search_sessions(
+    ctx: tauri::State<'_, Ctx>,
+    query: tracr_app::search::SessionQuery,
+) -> Result<tracr_app::search::SessionSearch, String> {
+    let dir = ctx.dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        Reader::open(&dir).and_then(|r| r.search_sessions(&query))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(err)
+}
+
 /// The user's bindings and rejected suggestions (S3.2).
 #[tauri::command]
 async fn bindings(
@@ -1516,6 +1531,7 @@ fn main() {
             project_op,
             bindings,
             binding_op,
+            search_sessions,
             days,
             day_agents,
             sessions,
