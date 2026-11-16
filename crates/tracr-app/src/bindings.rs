@@ -238,8 +238,14 @@ impl BindingConfig {
     }
 }
 
-/// Words that look like issue keys in branch names but are not.
-const NOT_KEYS: &[&str] = &["UTF", "SHA", "ISO", "RFC", "MD", "X", "V", "PR"];
+/// Words that look like issue keys in branch names but are not: encodings
+/// and standards, and the usual branch words before a number (`build-3`,
+/// `release-2`, `phase-1`). Found on real branch names (T-0023 check).
+const NOT_KEYS: &[&str] = &[
+    "UTF", "SHA", "ISO", "RFC", "MD", "X", "V", "PR", "BUILD", "FIX", "FEAT", "FEATURE", "RELEASE",
+    "HOTFIX", "BUGFIX", "CHORE", "DOCS", "TEST", "STAGE", "STEP", "PHASE", "PART", "SPRINT",
+    "WEEK", "DAY", "VERSION", "RC", "BETA", "ALPHA", "DRAFT", "WIP", "ISSUE", "TRY", "ROUND",
+];
 
 /// Issue keys (`ABC-123`) in a branch name, in order, uppercased.
 /// `tracr-46-review-speed` → `TRACR-46`; `feature/SERV-7_fix` → `SERV-7`.
