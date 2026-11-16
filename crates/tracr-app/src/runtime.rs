@@ -495,6 +495,12 @@ impl Collector {
         Ok(id)
     }
 
+    /// Reviews `day` as derived now: brings the store up to date first.
+    pub fn review(&mut self, day: &str, reason: Option<&str>) -> Result<String> {
+        self.rebuild()?;
+        self.app.review_day(day, reason)
+    }
+
     /// `coverage_ended` (a clean stop).
     pub fn end(mut self, reason: &str) -> Result<()> {
         let env = IngestEnv {
@@ -561,10 +567,7 @@ impl Collector {
                 Ok(())
             }
             Job::Review(day, reason, reply) => {
-                // Review what is derived now: bring the store up to date first.
-                let result = self
-                    .rebuild()
-                    .and_then(|_| self.app.review_day(&day, reason.as_deref()));
+                let result = self.review(&day, reason.as_deref());
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
