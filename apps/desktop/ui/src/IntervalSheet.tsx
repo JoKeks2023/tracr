@@ -115,7 +115,7 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
             </h2>
             <div className={`state-${atom.status}`}>{statusText(atom)}</div>
           </div>
-          <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
+          <button className="btn s" onClick={onClose} style={{ minWidth: 0 }}>
             {t("close")}
           </button>
         </header>
@@ -139,7 +139,7 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
                     {e.target_label ? ` · ${e.target_label}` : ""}
                     {e.note ? ` · ${e.note}` : ""}
                   </p>
-                  <button className="button secondary" onClick={() => onEditEntry(e)}>
+                  <button className="btn" onClick={() => onEditEntry(e)}>
                     {t("editOrDelete")}
                   </button>
                 </section>
@@ -171,12 +171,12 @@ export function IntervalSheet({ atom, day, targets, onClose, onChanged, onEditEn
           <SplitEditor atom={atom} day={day} targets={targets} busy={busy} onApply={runBatch} />
           <div className="choices">
             {atom.decided_by && (
-              <button className="button ghost" disabled={busy} onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, t("undone"))}>
+              <button className="btn s" disabled={busy} onClick={() => run({ op: "revoke", revokes: atom.decided_by ?? undefined }, t("undone"))}>
                 {t("undo")}
               </button>
             )}
             {explicit && (
-              <button className="button ghost" disabled={busy} onClick={() => run({ op: "reject_target", target: explicit }, t("targetRemoved"))}>
+              <button className="btn s" disabled={busy} onClick={() => run({ op: "reject_target", target: explicit }, t("targetRemoved"))}>
                 {t("removeTarget")}
               </button>
             )}

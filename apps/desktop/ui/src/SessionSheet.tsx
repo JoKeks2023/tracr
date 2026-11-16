@@ -26,7 +26,7 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
             <h2>{s.label ?? t("noWorkingDir")}</h2>
             <div className="mono muted">{s.native_session_id}</div>
           </div>
-          <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
+          <button className="btn s" onClick={onClose} style={{ minWidth: 0 }}>
             {t("close")}
           </button>
         </header>

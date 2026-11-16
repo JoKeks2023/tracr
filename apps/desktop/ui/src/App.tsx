@@ -59,7 +59,7 @@ function Setup({
           <RootsPicker paths={proposed} home={status.home} busy={busy} onApprove={onApprove} label={t("setupApprove")} />
         </div>
       )}
-      <button className="button secondary" disabled={busy} onClick={onChoose}>
+      <button className="btn" disabled={busy} onClick={onChoose}>
         {t("setupChoose")}
       </button>
       {status.data_dir && <p className="muted">{t("dataDirectory", { path: tildify(status.data_dir, status.home) })}</p>}
@@ -507,10 +507,10 @@ export function App() {
                 <span>{t("rootsFound")}</span>
                 <span className="spacer" />
                 <span className="banner-actions">
-                  <button className="button secondary small" disabled={approving} onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}>
+                  <button className="btn s" disabled={approving} onClick={() => approve(status.proposed_roots.filter((r) => !r.approved).map((r) => r.path))}>
                     {approving ? <span className="spinner" aria-label="…" /> : t("approveAll", { n: status.proposed_roots.filter((r) => !r.approved).length })}
                   </button>
-                  <button className="button ghost small" onClick={() => setHideRoots(true)}>
+                  <button className="btn s" onClick={() => setHideRoots(true)}>
                     {t("notNow")}
                   </button>
                 </span>
@@ -524,11 +524,11 @@ export function App() {
               >
                 <span>{t("differsFromReview", { counted: signed(view.discrepancy.counted_delta_ms) })}</span>
                 <span className="spacer" />
-                <button className="button secondary small" onClick={() => setReviewDay(true)}>
+                <button className="btn s" onClick={() => setReviewDay(true)}>
                   {t("acceptAs", { rev: view.review.rev + 1 })}
                 </button>
                 <button
-                  className="button ghost small"
+                  className="btn s"
                   onClick={async () => {
                     try {
                       await api.dismiss(view.day, view.discrepancy!.fingerprint);

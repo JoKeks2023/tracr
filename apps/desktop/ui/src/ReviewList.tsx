@@ -63,7 +63,7 @@ export function ReviewList({ day, targets, onOpen, onClose, onChanged }: {
               {t("unknownWindows", { n: atoms.filter((a) => a.status === "unknown").length, time: duration(day.human.unknown_ms) })}
             </div>
           </div>
-          <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
+          <button className="btn s" onClick={onClose} style={{ minWidth: 0 }}>
             {t("close")}
           </button>
         </header>
@@ -81,10 +81,10 @@ export function ReviewList({ day, targets, onOpen, onClose, onChanged }: {
                 </button>
                 {a.status === "unknown" && (
                   <span className="review-actions">
-                    <button className="button secondary small" disabled={busy !== null} onClick={() => quick(a, "confirm_work")}>
+                    <button className="btn s" disabled={busy !== null} onClick={() => quick(a, "confirm_work")}>
                       {t("work")}
                     </button>
-                    <button className="button secondary small" disabled={busy !== null} onClick={() => quick(a, "mark_non_work")}>
+                    <button className="btn s" disabled={busy !== null} onClick={() => quick(a, "mark_non_work")}>
                       {t("breakWord")}
                     </button>
                     <span className="review-assign">

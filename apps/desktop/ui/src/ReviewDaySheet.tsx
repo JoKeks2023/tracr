@@ -75,10 +75,10 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
             <input className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
           </label>
           <div className="actions">
-            <button className="button ghost" onClick={onClose}>
+            <button className="btn s" onClick={onClose}>
               {t("cancel")}
             </button>
-            <button className="button primary" disabled={busy || (next > 1 && !reason.trim())} onClick={review}>
+            <button className="btn p" disabled={busy || (next > 1 && !reason.trim())} onClick={review}>
               {busy ? <span className="spinner" /> : next === 1 ? t("reviewDayShort") : t("saveRev", { rev: next })}
             </button>
           </div>
