@@ -77,7 +77,7 @@ export function ReviewList({ day, targets, onOpen, onClose, onChanged }: {
                     {hhmm(a.start, tz)}–{hhmm(a.end, tz)}
                   </span>
                   <span className="mono muted">{duration(a.end - a.start)}</span>
-                  <span className="review-status">{statusText(a)}</span>
+                  <span className="review-status" title={statusText(a)}>{statusText(a)}</span>
                 </button>
                 {a.status === "unknown" && (
                   <span className="review-actions">

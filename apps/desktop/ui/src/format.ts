@@ -14,6 +14,13 @@ export function hhmm(ms: number, timeZone: string): string {
 }
 
 /** "2026-09-28" → "Mon 28 Sep". */
+/** "Mon 28 Sep", with the year when it is not the current one. */
+export function dayLabelYear(day: string): string {
+  const label = dayLabel(day);
+  const year = day.slice(0, 4);
+  return year === String(new Date().getFullYear()) ? label : `${label} ${year}`;
+}
+
 export function dayLabel(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -22,6 +29,8 @@ export function dayLabel(day: string): string {
 
 export function duration(ms: number): string {
   const minutes = Math.round(ms / 60_000);
+  // A section shorter than half a minute is not "0m" (GH #8).
+  if (minutes === 0 && ms > 0) return "<1m";
   if (minutes < 60) return `${minutes}m`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;

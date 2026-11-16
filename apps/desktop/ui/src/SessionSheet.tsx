@@ -4,10 +4,12 @@ import { t } from "./i18n";
 import { SessionDetail } from "./SessionDetail";
 import type { PricingInfo, SessionDay } from "./types";
 
-export function SessionSheet({ s, tz, pricing, onClose }: {
+export function SessionSheet({ s, tz, pricing, home = null, onClose }: {
   s: SessionDay;
   tz: string;
   pricing: PricingInfo;
+  /** The user's home folder: paths below it show as `~/…`. */
+  home?: string | null;
   onClose: () => void;
 }) {
   const sheetRef = useSheet<HTMLElement>();
@@ -31,7 +33,7 @@ export function SessionSheet({ s, tz, pricing, onClose }: {
           </button>
         </header>
         <div className="body">
-          <SessionDetail s={s} tz={tz} pricing={pricing} />
+          <SessionDetail s={s} tz={tz} pricing={pricing} home={home} />
         </div>
       </aside>
     </>
