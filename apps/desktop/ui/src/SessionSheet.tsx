@@ -63,10 +63,12 @@ function SessionTargets({ s, targets, onChanged }: {
   );
 }
 
-export function SessionSheet({ s, tz, pricing, targets = [], onChanged, onClose }: {
+export function SessionSheet({ s, tz, pricing, home = null, targets = [], onChanged, onClose }: {
   s: SessionDay;
   tz: string;
   pricing: PricingInfo;
+  /** The user's home folder: paths below it show as `~/…`. */
+  home?: string | null;
   /** Known targets, for project names. */
   targets?: TargetOption[];
   /** After a binding change: show the message and reload the day. */
@@ -89,13 +91,13 @@ export function SessionSheet({ s, tz, pricing, targets = [], onChanged, onClose 
             <h2>{s.label ?? t("noWorkingDir")}</h2>
             <div className="mono muted">{s.native_session_id}</div>
           </div>
-          <button className="button ghost" onClick={onClose} style={{ minWidth: 0 }}>
+          <button className="btn s" onClick={onClose} style={{ minWidth: 0 }}>
             {t("close")}
           </button>
         </header>
         <div className="body">
           {onChanged && <SessionTargets s={s} targets={targets} onChanged={onChanged} />}
-          <SessionDetail s={s} tz={tz} pricing={pricing} />
+          <SessionDetail s={s} tz={tz} pricing={pricing} home={home} />
         </div>
       </aside>
     </>

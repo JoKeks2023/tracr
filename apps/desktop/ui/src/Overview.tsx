@@ -14,7 +14,7 @@ export function BigNumber({ human, canReview, onReview, state }: { human: { coun
       <div className="review-state">
         <span className="muted">{state}</span>
         {canReview && (
-          <button className="button secondary" onClick={onReview}>
+          <button className="btn" onClick={onReview}>
             {t("reviewDay")}
           </button>
         )}
@@ -91,7 +91,7 @@ export function Attention({ human, windows, onResolve }: { human: { unknown_ms: 
           </details>
         )}
       </div>
-      <button className="button secondary" onClick={onResolve}>
+      <button className="btn" onClick={onResolve}>
         {t("resolve")}
       </button>
     </section>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSheet } from "./useSheet";
 import { t } from "./i18n";
 import { api, errorText } from "./api";
-import { dayLabel } from "./format";
+import { dayLabelYear } from "./format";
 
 type Kind = "timesheet" | "agent_sessions" | "everything";
 
@@ -62,7 +62,7 @@ export function ExportSheet({ days, current, onClose, onDone }: {
       <select className="select" value={value} onChange={(e) => set(e.target.value)}>
         {ascending.map((d) => (
           <option key={d} value={d}>
-            {dayLabel(d)} · {d}
+            {dayLabelYear(d)}
           </option>
         ))}
       </select>
@@ -98,10 +98,10 @@ export function ExportSheet({ days, current, onClose, onDone }: {
           )}
           <p className="note">{KINDS[kind].note()}</p>
           <div className="actions">
-            <button className="button ghost" onClick={onClose}>
+            <button className="btn s" onClick={onClose}>
               {t("cancel")}
             </button>
-            <button className="button primary" onClick={run} disabled={busy || (kind !== "everything" && (!from || !to || to < from))}>
+            <button className="btn p" onClick={run} disabled={busy || (kind !== "everything" && (!from || !to || to < from))}>
               {busy ? <span className="spinner" aria-label="…" /> : t("exportAction")}
             </button>
           </div>

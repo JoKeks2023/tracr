@@ -109,14 +109,14 @@ export function EntrySheet({ day, tz, entry, targets, onClose, onChanged }: {
           </label>
           <div className="actions">
             {entry && (
-              <button className="button ghost" disabled={busy} onClick={remove} style={{ marginRight: "auto" }}>
+              <button className="btn s" disabled={busy} onClick={remove} style={{ marginRight: "auto" }}>
                 {t("delete")}
               </button>
             )}
-            <button className="button ghost" onClick={onClose}>
+            <button className="btn s" onClick={onClose}>
               {t("cancel")}
             </button>
-            <button className="button primary" disabled={busy} onClick={save}>
+            <button className="btn p" disabled={busy} onClick={save}>
               {busy ? <span className="spinner" /> : entry ? t("save") : t("add")}
             </button>
           </div>

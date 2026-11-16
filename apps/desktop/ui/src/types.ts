@@ -395,6 +395,8 @@ export interface SessionSearch {
     projects: { id: string; name: string }[];
     bound_to: string[];
   };
+}
+
 /** Setup facts of an observed repository (TRACR-23): presence, sizes, times and references only. */
 export interface ProjectSetup {
   path: string;

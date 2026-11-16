@@ -42,7 +42,7 @@ export function RootsPicker({
           </li>
         ))}
       </ul>
-      <button className="button primary" disabled={busy || chosen.length === 0} onClick={() => onApprove(chosen)}>
+      <button className="btn p" disabled={busy || chosen.length === 0} onClick={() => onApprove(chosen)}>
         {busy ? <span className="spinner" aria-label="Approving" /> : `${label ?? t("approveSelected")}${chosen.length > 1 ? ` (${chosen.length})` : ""}`}
       </button>
     </div>
