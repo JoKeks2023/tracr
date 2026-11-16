@@ -6,6 +6,7 @@
 
 pub mod analytics;
 pub mod autostart;
+pub mod bindings;
 pub mod correct;
 pub mod costwatch;
 pub mod day;
@@ -23,6 +24,7 @@ pub mod quota;
 pub mod report;
 pub mod review;
 pub mod runtime;
+pub mod search;
 pub mod trace;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -384,6 +386,30 @@ impl App {
         Ok(id)
     }
 
+    /// Binds a session or repository to a target, ends a binding, or rejects
+    /// a suggestion (S3.2). Bindings change attribution, so the caller
+    /// updates the derived store afterwards (`Collector::binding_op` does).
+    pub fn binding_op(&mut self, op: &bindings::BindingOp) -> Result<String> {
+        let mut config = bindings::read_config(&self.conn)?;
+        let id = {
+            let env = IngestEnv {
+                clock: &*self.clock,
+                file_identity: &*self.fid,
+            };
+            bindings::apply(&mut config, op, self.clock.now().0, || {
+                format!("bnd_{}", new_uuid_v7(&env))
+            })?
+        };
+        self.write_settings(
+            &format!("setting.bindings.{}", op.action()),
+            &[
+                (bindings::BINDINGS_KEY, serde_json::json!(config.bindings)),
+                (bindings::REJECTED_KEY, serde_json::json!(config.rejected)),
+            ],
+        )?;
+        Ok(id)
+    }
+
     /// Backfill (§4.5): discovery over approved provider roots, then one
     /// reconcile per source, oldest first. Idempotent.
     pub fn import(&mut self, progress: &mut dyn FnMut(u64, u64)) -> Result<ImportReport> {
@@ -654,8 +680,61 @@ impl Reader {
     }
 
     /// Sessions active between two reporting days (inclusive), newest first.
+    /// Start of `from` and end of `to` (both `YYYY-MM-DD`) in the reporting zone.
+    fn range_bounds(&self, from: &str, to: &str) -> Result<(i64, i64)> {
+        let zone = self.reporting_zone()?;
+        let parse = |d: &str| -> Result<jiff::civil::Date> {
+            d.parse()
+                .map_err(|e| anyhow!("day must be YYYY-MM-DD: {e}"))
+        };
+        Ok((zone.bounds(parse(from)?)?.0, zone.bounds(parse(to)?)?.1))
+    }
+
+    /// Bindings valid during `[start, end)` and suggestions not yet decided (S3.2).
+    fn attach_bindings(
+        &self,
+        sessions: &mut [day::SessionDay],
+        (start, end): (i64, i64),
+    ) -> Result<()> {
+        let config = bindings::read_config(&self.conn)?;
+        for s in sessions {
+            let mut subjects = vec![bindings::Subject::Session(s.native_session_id.clone())];
+            subjects.extend(s.repository.clone().map(bindings::Subject::Repository));
+            let bound: std::collections::BTreeSet<String> = config
+                .bindings
+                .iter()
+                .filter(|b| subjects.contains(&b.subject) && b.overlaps(start, end))
+                .map(|b| b.target.clone())
+                .collect();
+            s.suggestions = bindings::suggestions(
+                &config,
+                &s.native_session_id,
+                s.git_branch.as_deref(),
+                &bound,
+            );
+            s.bound_to = bound.into_iter().collect();
+        }
+        Ok(())
+    }
+
+    /// Sessions of a period filtered by metadata (TRACR-21), with the values
+    /// found in the period for dropdowns. Never searches content.
+    pub fn search_sessions(&self, q: &search::SessionQuery) -> Result<search::SessionSearch> {
+        let list = self.sessions(&q.from, &q.to)?;
+        let bounds = self.range_bounds(&q.from, &q.to)?;
+        search::search(
+            &self.derived()?,
+            q,
+            list,
+            bounds,
+            &projects::read_config(&self.conn)?,
+        )
+    }
+
     pub fn sessions(&self, from: &str, to: &str) -> Result<day::SessionList> {
         let mut list = day::sessions(&self.derived()?, &self.reporting_zone()?, from, to)?;
+        let bounds = self.range_bounds(from, to)?;
+        self.attach_bindings(&mut list.sessions, bounds)?;
         if !quota::load_prefs(&self.data_dir).show_automated {
             // Automated sessions (e.g. Codex's auto-review) are not work the user does: out of the list and its total.
             list.sessions.retain(|s| !s.automated);
@@ -773,6 +852,8 @@ impl Reader {
         });
         let config = projects::read_config(&self.conn)?;
         v.counted_by_project = projects::project_totals(shown, &config);
+        let bounds = self.range_bounds(day, day)?;
+        self.attach_bindings(&mut v.sessions, bounds)?;
         // A time target on a project shows the project's current name.
         for atom in &mut v.human.atoms {
             if let Some(at) = &mut atom.attribution {
@@ -791,6 +872,11 @@ impl Reader {
             }
         }
         Ok(v)
+    }
+
+    /// The user's bindings and rejected suggestions (S3.2).
+    pub fn binding_config(&self) -> Result<bindings::BindingConfig> {
+        bindings::read_config(&self.conn)
     }
 
     /// Targets time can be assigned to (S2): repositories seen in sessions,

@@ -330,6 +330,53 @@ async fn project_op(
         .map_err(err)
 }
 
+/// Sessions of a period filtered by metadata, with dropdown values (TRACR-21).
+#[tauri::command]
+async fn search_sessions(
+    ctx: tauri::State<'_, Ctx>,
+    query: tracr_app::search::SessionQuery,
+) -> Result<tracr_app::search::SessionSearch, String> {
+    let dir = ctx.dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        Reader::open(&dir).and_then(|r| r.search_sessions(&query))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(err)
+}
+
+/// The user's bindings and rejected suggestions (S3.2).
+#[tauri::command]
+async fn bindings(
+    ctx: tauri::State<'_, Ctx>,
+) -> Result<tracr_app::bindings::BindingConfig, String> {
+    Reader::open(&ctx.dir()?)
+        .and_then(|r| r.binding_config())
+        .map_err(err)
+}
+
+/// Binds a session or repository to a target, ends a binding, or rejects a
+/// suggestion, through the collector. Changes attribution, never minutes.
+#[tauri::command]
+async fn binding_op(
+    ctx: tauri::State<'_, Ctx>,
+    op: tracr_app::bindings::BindingOp,
+) -> Result<String, String> {
+    let handle = ctx
+        .runtime
+        .lock()
+        .expect("runtime lock")
+        .as_ref()
+        .map(Runtime::handle);
+    let Some(handle) = handle else {
+        return Err("bindings need the collector of this app; it is not running here".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || handle.binding(op))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
 /// Chooses the reporting time zone (AD-14), or `None` for the system zone, and
 /// rebuilds the derived store because day boundaries move. Refused once a day
 /// has been reviewed.
@@ -1482,6 +1529,9 @@ fn main() {
             set_timezone,
             projects,
             project_op,
+            bindings,
+            binding_op,
+            search_sessions,
             days,
             day_agents,
             sessions,

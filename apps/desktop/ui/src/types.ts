@@ -111,6 +111,17 @@ export interface SessionDay {
   reported: ReportedView[];
   /** Context compactions on this day: their requests are not in the transcript, so not in the estimate. */
   compactions: number;
+  /** Targets of bindings of this session or its repository valid during the day. */
+  bound_to: string[];
+  /** Targets read from evidence (branch name); they count only once accepted. */
+  suggestions: Suggestion[];
+}
+
+export interface Suggestion {
+  target: string;
+  label: string;
+  /** `branch:<name>` */
+  evidence: string;
 }
 
 export interface PendingLane {
@@ -335,6 +346,56 @@ export type ProjectOp =
   | { op: "rename"; id: string; name: string }
   | { op: "delete"; id: string }
   | { op: "map"; repository: string; project: string | null };
+
+/** What a binding or rejection is about: a session (native ID) or a repository (key). */
+export type BindingSubject = { kind: "session"; id: string } | { kind: "repository"; id: string };
+
+export interface Binding {
+  id: string;
+  subject: BindingSubject;
+  target: string;
+  valid_from: number;
+  valid_to?: number;
+}
+
+export interface BindingConfig {
+  bindings: Binding[];
+  rejected: { subject: BindingSubject; target: string; at: number }[];
+}
+
+export type BindingOp =
+  | { op: "bind"; subject: BindingSubject; target: string; valid_from: number | null }
+  | { op: "end"; id: string; at: number | null }
+  | { op: "reject"; subject: BindingSubject; target: string };
+
+/** Metadata filters; never content. Dates are YYYY-MM-DD, inclusive. */
+export interface SessionQuery {
+  from: string;
+  to: string;
+  text?: string | null;
+  provider?: string | null;
+  project?: string | null;
+  branch?: string | null;
+  model?: string | null;
+  tool?: string | null;
+  subagents?: boolean | null;
+  bound_to?: string | null;
+  min_cost_nano?: number | null;
+}
+
+export interface SessionSearch {
+  list: SessionList;
+  /** Sessions in the period before filtering. */
+  total: number;
+  facets: {
+    providers: string[];
+    branches: string[];
+    models: string[];
+    tools: string[];
+    projects: { id: string; name: string }[];
+    bound_to: string[];
+  };
+}
 
 export interface SessionList {
   timezone: string;

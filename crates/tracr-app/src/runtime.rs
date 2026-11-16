@@ -113,6 +113,7 @@ pub enum Job {
     Dismiss(String, String, Sender<Result<String, String>>),
     /// Create, rename or delete a project, or map a repository (S3.1): a view, no rebuild.
     Projects(crate::projects::ProjectOp, Sender<Result<String, String>>),
+    Bindings(crate::bindings::BindingOp, Sender<Result<String, String>>),
     Stop(String),
 }
 
@@ -132,6 +133,7 @@ impl Job {
             Self::Review(..) => "review",
             Self::Dismiss(..) => "dismiss",
             Self::Projects(..) => "projects",
+            Self::Bindings(..) => "bindings",
             Self::Stop(_) => "stop",
         }
     }
@@ -495,6 +497,14 @@ impl Collector {
         Ok(id)
     }
 
+    /// Applies a binding operation and updates the derived store at once.
+    pub fn binding_op(&mut self, op: &crate::bindings::BindingOp) -> Result<String> {
+        let id = self.app.binding_op(op)?;
+        self.dirty = true;
+        self.rebuild()?;
+        Ok(id)
+    }
+
     /// Reviews `day` as derived now: brings the store up to date first.
     pub fn review(&mut self, day: &str, reason: Option<&str>) -> Result<String> {
         self.rebuild()?;
@@ -584,6 +594,11 @@ impl Collector {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
                 Ok(())
             }
+            Job::Bindings(op, reply) => {
+                let result = self.binding_op(&op);
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+                Ok(())
+            }
             Job::Stop(_) => Ok(()),
         }
     }
@@ -620,6 +635,11 @@ impl RuntimeHandle {
     /// Creates, renames or deletes a project, or maps a repository, through the collector.
     pub fn project(&self, op: crate::projects::ProjectOp) -> Result<String> {
         self.ask(|tx| Job::Projects(op, tx))
+    }
+
+    /// Binds, ends a binding or rejects a suggestion through the collector.
+    pub fn binding(&self, op: crate::bindings::BindingOp) -> Result<String> {
+        self.ask(|tx| Job::Bindings(op, tx))
     }
 
     /// Applies a manual-entry or timer operation through the collector.
