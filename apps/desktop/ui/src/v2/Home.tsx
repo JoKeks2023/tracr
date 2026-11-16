@@ -241,7 +241,8 @@ export function Home({
   const sum = useMemo(() => {
     if (!view) return null;
     const snap = view.review?.snapshot;
-    const windows = view.human.atoms.filter((a) => a.status === "unknown").length;
+    // A reviewed day shows its revision only; live changes appear as the difference on the work-time page (GH #31).
+    const windows = snap ? snap.intervals.filter((a) => a.status === "unknown").length : view.human.atoms.filter((a) => a.status === "unknown").length;
     const sessions = [...view.sessions].sort((a, b) => (b.last_evidence_at ?? 0) - (a.last_evidence_at ?? 0));
     return {
       counted: snap ? snap.counted_ms : view.human.counted_ms,

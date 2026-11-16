@@ -3,7 +3,7 @@
 PortSystem          1.0
 
 name                tracr
-version             0.11.1
+version             0.12.0
 revision            0
 categories          sysutils
 license             AGPL-3+
@@ -24,9 +24,9 @@ distname            ${name}-${version}-universal-apple-darwin
 use_configure       no
 universal_variant   no
 
-checksums           rmd160  2a2defef893a708a5e7e67f1517f49703addbc6b \
-                    sha256  45a49351a6a25ceb4c2adfce66c31fa3dbc99624718381fd7b3ae3671128aca9 \
-                    size    6256775
+checksums           rmd160  9d64f4fd6c04be5a849c526e575cb3175ffed744 \
+                    sha256  27fcb5867cd166d2e4b71bb2e898df6d13a342da2a5a245454a6a29bc9c46b6c \
+                    size    6265714
 
 extract.suffix      .tar.gz
 

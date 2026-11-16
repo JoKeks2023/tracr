@@ -757,17 +757,23 @@ impl Runtime {
                         c.heartbeat()
                     });
                     let mut reason = "channel closed".to_owned();
+                    // Diagnostics: `TRACR_JOB_TRACE=1` prints every job's run time to stderr.
+                    let trace = std::env::var_os("TRACR_JOB_TRACE").is_some();
                     while let Ok(job) = rx.recv() {
                         if let Job::Stop(r) = &job {
                             reason = r.clone();
                             break;
                         }
                         let what = job.name();
+                        let started = Instant::now();
                         let mut job = Some(job);
                         guard(&mut collector, what, &mut |c| match job.take() {
                             Some(j) => c.handle(j),
                             None => Ok(()),
                         });
+                        if trace {
+                            eprintln!("tracr-job {what} {:.3}s", started.elapsed().as_secs_f64());
+                        }
                     }
                     if let Err(e) = collector.end(&reason)
                         && let Ok(mut s) = status.lock()

@@ -284,7 +284,9 @@ export function App() {
       setEntry("new");
     }
   }); // eslint-disable-line react-hooks/exhaustive-deps
+  // Live windows drive the actions (resolve list); a reviewed day shows its revision's count.
   const unknownWindows = view ? view.human.atoms.filter((a) => a.status === "unknown").length : 0;
+  const shownWindows = view?.review ? view.review.snapshot.intervals.filter((a) => a.status === "unknown").length : unknownWindows;
   const canReview = !!view && status?.collector === "collecting" && !view.review;
   const rootsOpen = !!status && !hideRoots && status.proposed_roots.some((r) => !r.approved);
 
@@ -497,7 +499,7 @@ export function App() {
               onReview={() => setReviewDay(true)}
               state={`${view.review ? t("reviewed", { rev: view.review.rev }) : t("provisional")}${view.discrepancy ? ` · ${t("newEvidenceDiffers")}` : ""}`}
             />
-            <Attention human={totals.human} windows={unknownWindows} onResolve={() => setReviewing(true)} />
+            <Attention human={totals.human} windows={shownWindows} onResolve={() => setReviewing(true)} />
             {canEditNow && <DayTools view={view} targets={targets} loadTargets={loadTargets} onChanged={corrected} />}
             <Bars view={view} human={totals.human} />
             {rootsOpen && status && (
