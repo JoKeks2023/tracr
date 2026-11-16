@@ -6,7 +6,7 @@
 
 use tracr_core::manifest::{CapabilityManifest, GatedCapability, VersionRange};
 
-pub const EXTRACTOR_VERSION: &str = "claude-extract/2";
+pub const EXTRACTOR_VERSION: &str = "claude-extract/3";
 
 /// Record types the extractor reads.
 pub const KNOWN_RECORD_TYPES: &[&str] = &[

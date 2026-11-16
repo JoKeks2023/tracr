@@ -450,6 +450,10 @@ fn usage(u: &Obj, request_id: Option<&str>, message_id: Option<&str>, at: UtcMil
         service_tier: str_field(u, "service_tier")
             .and_then(ident)
             .map(str::to_owned),
+        speed: str_field(u, "speed").and_then(ident).map(str::to_owned),
+        inference_geo: str_field(u, "inference_geo")
+            .and_then(ident)
+            .map(str::to_owned),
         identity: UsageIdentity {
             request_id: request_id.map(str::to_owned),
             message_id: message_id.map(str::to_owned),

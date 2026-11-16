@@ -155,6 +155,11 @@ fn opt_json<T: Serialize>(v: &T, empty: bool) -> Option<String> {
     (!empty).then(|| serde_json::to_string(v).expect("serializable"))
 }
 
+/// A pricing dimension as the record states it; "not_available" is not a value.
+fn stated(v: Option<&str>) -> Option<&str> {
+    v.filter(|v| *v != "not_available")
+}
+
 fn basename(path: &str) -> String {
     path.trim_end_matches('/')
         .rsplit('/')
@@ -731,9 +736,11 @@ fn derive_into(
                             provider,
                             model: row.model.as_deref(),
                             service_tier: row.service_tier.as_deref(),
-                            // Not retained by the extractor yet: stated as assumptions.
-                            speed: None,
-                            inference_geo: None,
+                            // As stated by the record (claude-extract/3 on). Records
+                            // from older extractors, and "not_available", keep the
+                            // stated assumption (standard, global): GH #1.
+                            speed: stated(f.speed.as_deref()),
+                            inference_geo: stated(f.inference_geo.as_deref()),
                             at: start,
                             input_fresh: f.input_fresh,
                             input_total: f.input_total,

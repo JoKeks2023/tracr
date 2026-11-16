@@ -453,6 +453,8 @@ impl Normalizer for CodexNormalizer {
                                 reasoning_output: Some(reasoning),
                                 tool_charges: Default::default(),
                                 service_tier: None,
+                                speed: None,
+                                inference_geo: None,
                                 identity: Default::default(),
                                 includes_copied_context: None,
                                 extent,

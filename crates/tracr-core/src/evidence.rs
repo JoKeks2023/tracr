@@ -412,6 +412,12 @@ pub struct UsageFacts {
     pub tool_charges: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
+    /// Speed as stated (Claude: `standard`, `fast`). `None` when not stated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<String>,
+    /// Inference geography as stated (Claude: `global`, `us`, `not_available`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_geo: Option<String>,
     pub identity: UsageIdentity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub includes_copied_context: Option<bool>,
