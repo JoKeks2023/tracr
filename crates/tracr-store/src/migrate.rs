@@ -33,6 +33,11 @@ pub const LEDGER_MIGRATIONS: &[Migration] = &[
         name: "pricing",
         sql: include_str!("../migrations/ledger/0003_pricing.sql"),
     },
+    Migration {
+        version: 4,
+        name: "derive_indexes",
+        sql: include_str!("../migrations/ledger/0004_derive_indexes.sql"),
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

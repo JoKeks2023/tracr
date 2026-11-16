@@ -57,7 +57,7 @@ export function DayTools({
   const key = targetKey(choice, other);
 
   return (
-    <Panel title={t("dayToolsTitle")}>
+    <Panel title={t("dayToolsTitle")} aside={view.review ? t("dayToolsLive", { rev: view.review.rev }) : undefined}>
       {sets.unassigned.length > 0 && (
         <div className="srow">
           <div className="lbl">

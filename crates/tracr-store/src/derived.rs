@@ -19,7 +19,7 @@ use crate::{Result, StoreError};
 pub const DERIVED_FILE: &str = "derived.sqlite";
 pub const DERIVED_NEXT_FILE: &str = "derived.next.sqlite";
 /// Bumped whenever `schema/derived.sql` changes; a mismatch means "rebuild".
-pub const DERIVED_SCHEMA_VERSION: i64 = 6;
+pub const DERIVED_SCHEMA_VERSION: i64 = 7;
 const SCHEMA: &str = include_str!("../schema/derived.sql");
 
 fn sidecars(path: &Path) -> [PathBuf; 3] {
