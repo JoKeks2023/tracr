@@ -123,6 +123,7 @@ export function SessionDetail({ s, tz, pricing, range = false }: { s: SessionDay
         {t("estCostNote", { catalog: pricing.catalog_version, asOf: pricing.oldest_fetched_at ?? "?" })}
         {s.cost.reasons.length > 0 && t("unpricedHere", { list: s.cost.reasons.map(reasonText).join("; ") })}
         {s.cost.assumptions.length > 0 && t("assumedHere", { list: s.cost.assumptions.map(reasonText).join("; ") })}
+        {s.compactions > 0 && t(s.compactions === 1 ? "compactionsHereOne" : "compactionsHere", { n: s.compactions })}
       </p>
     </section>
 
