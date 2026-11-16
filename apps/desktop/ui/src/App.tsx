@@ -592,7 +592,7 @@ export function App() {
           onChanged={corrected}
         />
       )}
-      {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} onClose={() => setSelected(null)} />}
+      {session && view && <SessionSheet s={session} tz={view.timezone} pricing={view.cost.pricing} targets={targets} onChanged={corrected} onClose={() => setSelected(null)} />}
       {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
       {notice && <Toast text={notice.text} error={notice.error} onGone={() => setNotice(null)} />}
     </div>
