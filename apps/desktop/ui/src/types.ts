@@ -109,6 +109,8 @@ export interface SessionDay {
   usage: UsageLine[];
   cost: CostView;
   reported: ReportedView[];
+  /** Context compactions on this day: their requests are not in the transcript, so not in the estimate. */
+  compactions: number;
 }
 
 export interface PendingLane {

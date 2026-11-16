@@ -847,6 +847,16 @@ pub fn segments_in(
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
+/// Context compactions of a session between `start` and `end` (T-0026).
+pub fn compactions_in(conn: &Connection, session_id: &str, start: i64, end: i64) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM norm_event
+         WHERE session_id = ?1 AND occurred_at >= ?2 AND occurred_at < ?3 AND kind = 'context_compacted'",
+        rusqlite::params![session_id, start, end],
+        |r| r.get(0),
+    )?)
+}
+
 pub fn instants_in(
     conn: &Connection,
     session_id: &str,

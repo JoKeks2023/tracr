@@ -273,6 +273,9 @@ pub struct SessionDay {
     /// Identified usage of the session on this day.
     pub cost: CostView,
     pub reported: Vec<ReportedView>,
+    /// Context compactions on this day. Their requests are not in the
+    /// transcript, so the estimate leaves them out (T-0025): stated, not priced.
+    pub compactions: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -728,6 +731,7 @@ fn session_days(
             reported,
             repository,
             repository_label,
+            compactions: derived::compactions_in(conn, &s.id, start, end)?,
             engagement_instants: derived::instants_in(conn, &s.id, start, end)?
                 .into_iter()
                 .map(|i| i.at)

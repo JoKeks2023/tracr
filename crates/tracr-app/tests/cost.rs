@@ -291,3 +291,40 @@ fn stated_speed_and_geography_choose_the_price_rule() {
         us.reasons
     );
 }
+
+#[test]
+fn compactions_are_stated_on_the_session_and_change_no_agent_time() {
+    // T-0025/T-0026: a compaction's request is not in the transcript, so the
+    // estimate leaves it out and the session says how many there were.
+    let run = |with_compaction: bool| {
+        let dir = TempDir::new().unwrap();
+        let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+        let mut a = ClaudeSession::new(A);
+        let mut lines = vec![a.prompt("09:00"), a.assistant("09:01", "m1", 10)];
+        if with_compaction {
+            lines.push(a.compact_boundary("09:30", 500_000, 20_000));
+        }
+        write_lines(
+            &root.join("-Users-dev-project").join(format!("{A}.jsonl")),
+            &lines,
+        );
+        let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+        app.add_root(RootKind::Provider, &root).unwrap();
+        app.import(&mut |_, _| {}).unwrap();
+        app.rebuild().unwrap();
+        let day = Reader::open(&data).unwrap().day_agents(DAY).unwrap();
+        let s = day.sessions[0].clone();
+        (
+            s.compactions,
+            s.actors.iter().map(|x| x.execution_ms).sum::<i64>(),
+            s.cost.amount_nano,
+            s.last_evidence_at,
+        )
+    };
+    let (n0, exec0, cost0, _) = run(false);
+    let (n1, exec1, cost1, last1) = run(true);
+    assert_eq!((n0, n1), (0, 1));
+    assert_eq!(exec0, exec1, "a compaction marker is not agent activity");
+    assert_eq!(cost0, cost1, "never priced: stated, not invented");
+    assert!(last1.is_some());
+}

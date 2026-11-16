@@ -32,6 +32,10 @@ pub enum EventKind {
     /// The agent produced output with this model (one per agent output record).
     ModelObserved,
     CwdChanged,
+    /// The provider summarized the context (Claude Code `compact_boundary`).
+    /// Its request is not in the transcript, so its usage and cost are not
+    /// either (T-0025). Not agent activity for segments.
+    ContextCompacted,
 }
 
 impl EventKind {
@@ -45,6 +49,7 @@ impl EventKind {
             Self::ToolFinished => "tool_finished",
             Self::ModelObserved => "model_observed",
             Self::CwdChanged => "cwd_changed",
+            Self::ContextCompacted => "context_compacted",
         }
     }
 }

@@ -532,6 +532,25 @@ fn system(o: &Obj, ctx: &ExtractContext<'_>) -> Result<ExtractedRecord, ShapeErr
     if subtype.as_deref() == Some("turn_duration") {
         c.facts.stated_duration_ms = o.get("durationMs").and_then(Value::as_i64);
     }
+    // Compaction (claude-extract/4): token counts and trigger, never content.
+    if subtype.as_deref() == Some("compact_boundary")
+        && let Some(m) = obj_field(o, "compactMetadata")
+    {
+        for (key, field) in [
+            ("compact_pre_tokens", "preTokens"),
+            ("compact_post_tokens", "postTokens"),
+        ] {
+            if let Some(n) = m.get(field).and_then(Value::as_i64) {
+                c.facts.set_int(key, n);
+            }
+        }
+        // Only the known values: any other string is not retained (no content channel).
+        match str_field(m, "trigger") {
+            Some(t @ ("auto" | "manual")) => c.facts.set_ident("compact_trigger", t),
+            Some(_) => c.facts.set_bool("compact_trigger_other", true),
+            None => {}
+        }
+    }
     Ok(ExtractedRecord {
         native_record_id: Some(c.uuid.to_owned()),
         native: native(&c),
