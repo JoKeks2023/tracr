@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn references_are_path_imports_only() {
-        let text = "See @docs/guide.md and @AGENTS.md.\nPing @dependabot or mail a@b.de.\n\
+        let text = "See @docs/guide.md and @AGENTS.md.\nPing @dependabot or mail a@example.com.\n\
                     `@not/in-code.md`\n```\n@not/in/fence.md\n```\n@~/.claude/rules.md";
         assert_eq!(
             references(text),
