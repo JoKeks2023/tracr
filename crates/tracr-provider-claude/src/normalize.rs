@@ -30,7 +30,7 @@ use tracr_core::normalize::{
 use crate::rules::{non_human_reason, prompt_signals, starts_agent_run};
 use crate::{PRODUCER, SOURCE_KIND, manifest};
 
-pub const NORMALIZER_VERSION: &str = "claude-normalize/1";
+pub const NORMALIZER_VERSION: &str = "claude-normalize/2";
 pub const USAGE_ELECTION_RULE: &str = "claude.last_record_per_request_message@1";
 
 #[derive(Debug, Clone)]
@@ -259,6 +259,21 @@ impl Normalizer for ClaudeNormalizer {
                                 election_rule: USAGE_ELECTION_RULE,
                             }),
                         }
+                    }
+                }
+                // Compaction (OQ-I-07): mapped only for fixture-validated
+                // producer versions; otherwise the gated fallback applies.
+                FactKind::SystemEvent if r.subtype.as_deref() == Some("compact_boundary") => {
+                    if r.manifest_validated {
+                        push(
+                            &mut events,
+                            EventKind::ContextCompacted,
+                            Some("compact_boundary"),
+                            actor.clone(),
+                            Some(r.record_key.clone()),
+                        );
+                    } else {
+                        diag("compaction_not_mapped_unvalidated_version");
                     }
                 }
                 _ => {}

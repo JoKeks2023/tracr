@@ -183,7 +183,9 @@ pub fn derive_session(
     // Per actor: turns and execution segments.
     let mut by_actor: BTreeMap<ActorRef, Vec<&TimedEvent>> = BTreeMap::new();
     for e in &sorted {
-        if e.actor != ActorRef::Human {
+        // A compaction marker is not evidence of activity at its time: it
+        // leaves agent segments as they were (T-0026).
+        if e.actor != ActorRef::Human && e.kind != EventKind::ContextCompacted {
             by_actor.entry(e.actor.clone()).or_default().push(e);
         }
     }

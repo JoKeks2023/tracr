@@ -6,7 +6,7 @@
 
 use tracr_core::manifest::{CapabilityManifest, GatedCapability, VersionRange};
 
-pub const EXTRACTOR_VERSION: &str = "claude-extract/2";
+pub const EXTRACTOR_VERSION: &str = "claude-extract/4";
 
 /// Record types the extractor reads.
 pub const KNOWN_RECORD_TYPES: &[&str] = &[
@@ -93,6 +93,7 @@ pub fn manifest() -> CapabilityManifest {
         known_record_types: KNOWN_RECORD_TYPES.to_vec(),
         fixture_gated: vec![GatedCapability {
             name: "compaction_mapping",
+            // Validated by the compact_boundary records in fixtures/2.1.231..2.1.281.
             fallback: "no context_compacted events (OQ-I-07)",
         }],
         // AD-21: transcript structure alone does not document the main agent.

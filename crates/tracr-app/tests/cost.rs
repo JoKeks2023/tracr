@@ -76,7 +76,7 @@ fn records_are_estimated_one_by_one_and_unpriced_is_never_zero() {
         opus.reasons
             .contains(&"cache_write_tier_not_reported".to_owned())
     );
-    // Speed and geography are not retained yet: stated, not hidden.
+    // The fixture states no speed or geography: the assumption is stated, not hidden.
     assert!(
         opus.assumptions
             .contains(&"speed_not_recorded:standard".to_owned())
@@ -218,4 +218,113 @@ fn day_report_keeps_money_kinds_apart() {
         "only the latest reported figure"
     );
     assert!(text.contains("cost kinds: estimated API cost, provider-reported"));
+}
+
+#[test]
+fn stated_speed_and_geography_choose_the_price_rule() {
+    // GH #1: claude-extract/3 keeps usage.speed and usage.inference_geo.
+    // One session per case: the day view sums usage per actor and model.
+    let dir = TempDir::new().unwrap();
+    let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+    let cases = [
+        ("bbbbbbbb-1111-4111-8111-111111111111", "fast", "global"),
+        (
+            "cccccccc-1111-4111-8111-111111111111",
+            "standard",
+            "not_available",
+        ),
+        ("dddddddd-1111-4111-8111-111111111111", "standard", "us"),
+    ];
+    for (id, speed, geo) in cases {
+        let mut s = ClaudeSession::new(id);
+        let lines = vec![
+            s.prompt("09:00"),
+            with_usage(
+                s.assistant("09:01", &format!("msg_{speed}_{geo}"), 100),
+                |m| {
+                    m["usage"]["cache_creation_input_tokens"] = serde_json::json!(0);
+                    m["usage"]["speed"] = serde_json::json!(speed);
+                    m["usage"]["inference_geo"] = serde_json::json!(geo);
+                },
+            ),
+        ];
+        write_lines(
+            &root.join("-Users-dev-project").join(format!("{id}.jsonl")),
+            &lines,
+        );
+    }
+    let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+    app.add_root(RootKind::Provider, &root).unwrap();
+    app.import(&mut |_, _| {}).unwrap();
+    app.rebuild().unwrap();
+
+    let day = Reader::open(&data).unwrap().day_agents(DAY).unwrap();
+    let cost = |id: &str| {
+        let s = day
+            .sessions
+            .iter()
+            .find(|s| s.native_session_id == id)
+            .unwrap_or_else(|| panic!("session {id}"));
+        s.usage[0].cost.clone()
+    };
+
+    // Opus 5.5 fast: $8 input, $0.40 read, $40 output per MTok.
+    // 10×8000 + 1000×400 + 100×40000 = 4,480,000 nano; nothing assumed.
+    let fast = cost(cases[0].0);
+    assert_eq!(fast.amount_nano, Some(4_480_000));
+    assert!(fast.assumptions.is_empty(), "{:?}", fast.assumptions);
+
+    // "not_available" is not a geography: the stated assumption stays.
+    let na = cost(cases[1].0);
+    assert_eq!(na.amount_nano, Some(10 * 4000 + 1000 * 200 + 100 * 20000));
+    assert_eq!(
+        na.assumptions,
+        vec!["inference_geo_not_recorded:global".to_owned()]
+    );
+
+    // US-only inference is not in the catalog: unpriced, never zero.
+    let us = cost(cases[2].0);
+    assert_eq!(us.amount_nano, None);
+    assert!(
+        us.reasons.iter().any(|r| r.ends_with("/standard/us")),
+        "{:?}",
+        us.reasons
+    );
+}
+
+#[test]
+fn compactions_are_stated_on_the_session_and_change_no_agent_time() {
+    // T-0025/T-0026: a compaction's request is not in the transcript, so the
+    // estimate leaves it out and the session says how many there were.
+    let run = |with_compaction: bool| {
+        let dir = TempDir::new().unwrap();
+        let (data, root) = (dir.path().join("data"), dir.path().join("projects"));
+        let mut a = ClaudeSession::new(A);
+        let mut lines = vec![a.prompt("09:00"), a.assistant("09:01", "m1", 10)];
+        if with_compaction {
+            lines.push(a.compact_boundary("09:30", 500_000, 20_000));
+        }
+        write_lines(
+            &root.join("-Users-dev-project").join(format!("{A}.jsonl")),
+            &lines,
+        );
+        let mut app = App::open_writer(&data, Box::new(SystemClock)).unwrap();
+        app.add_root(RootKind::Provider, &root).unwrap();
+        app.import(&mut |_, _| {}).unwrap();
+        app.rebuild().unwrap();
+        let day = Reader::open(&data).unwrap().day_agents(DAY).unwrap();
+        let s = day.sessions[0].clone();
+        (
+            s.compactions,
+            s.actors.iter().map(|x| x.execution_ms).sum::<i64>(),
+            s.cost.amount_nano,
+            s.last_evidence_at,
+        )
+    };
+    let (n0, exec0, cost0, _) = run(false);
+    let (n1, exec1, cost1, last1) = run(true);
+    assert_eq!((n0, n1), (0, 1));
+    assert_eq!(exec0, exec1, "a compaction marker is not agent activity");
+    assert_eq!(cost0, cost1, "never priced: stated, not invented");
+    assert!(last1.is_some());
 }

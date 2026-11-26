@@ -453,16 +453,39 @@ pub fn derive(
         .collect();
     let atoms = count(&candidates, &manual, &corrections);
     let git = GitMap::load(ledger)?;
+    let config = crate::bindings::read_config(ledger)?;
+    let mut cuts: Vec<i64> = config
+        .bindings
+        .iter()
+        .flat_map(|b| std::iter::once(b.valid_from).chain(b.valid_to))
+        .collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    let bindings = Bindings {
+        config,
+        native: w.session_native_ids()?,
+        cuts,
+    };
     for atom in &atoms {
         let piece = Piece::from_atom(atom);
         for day_piece in split_by_day(&piece.cand, zone) {
-            let p = Piece {
-                cand: day_piece,
-                ..piece.clone()
-            };
-            let id = write_atom(w, &p, zone, &rule_ref, &run_id, agents)?;
-            attribute_atom(w, &p, &id, &run_id, agents, &git)?;
-            report.atoms += 1;
+            // Work with an engaged session is also cut where a binding starts
+            // or ends, so a binding applies from its exact time on.
+            let parts =
+                if day_piece.engaged.is_some() && matches!(day_piece.status, WorkStatus::Work(_)) {
+                    split_at(&day_piece, &bindings.cuts, "binding_boundary")
+                } else {
+                    vec![day_piece]
+                };
+            for part in parts {
+                let p = Piece {
+                    cand: part,
+                    ..piece.clone()
+                };
+                let id = write_atom(w, &p, zone, &rule_ref, &run_id, agents)?;
+                attribute_atom(w, &p, &id, &run_id, agents, &git, &bindings)?;
+                report.atoms += 1;
+            }
         }
     }
     for (session, first, cwd) in &agents.sessions {
@@ -503,9 +526,48 @@ fn split_by_day(c: &Candidate, zone: &ReportingZone) -> Vec<Candidate> {
     out
 }
 
-/// Structural attribution of a work atom (§7.5) from the event-time context
-/// of its engaged session's instants: worktree and repository levels, then
-/// the report target (repository > worktree > conflicting > unattributed).
+/// The user's bindings and the native IDs they name sessions by.
+struct Bindings {
+    config: crate::bindings::BindingConfig,
+    native: std::collections::HashMap<String, String>,
+    /// Every binding start and end, sorted.
+    cuts: Vec<i64>,
+}
+
+/// Splits a candidate at the given instants (sorted) inside it.
+fn split_at(c: &Candidate, cuts: &[i64], boundary: &'static str) -> Vec<Candidate> {
+    let inner: Vec<i64> = cuts
+        .iter()
+        .copied()
+        .filter(|&t| t > c.start.0 && t < c.end.0)
+        .collect();
+    if inner.is_empty() {
+        return vec![c.clone()];
+    }
+    let mut out = Vec::new();
+    let mut start = c.start.0;
+    for end in inner.into_iter().chain(std::iter::once(c.end.0)) {
+        let mut piece = c.clone();
+        piece.start = UtcMillis(start);
+        piece.end = UtcMillis(end);
+        if start > c.start.0 {
+            piece.start_boundary = boundary;
+        }
+        if end < c.end.0 {
+            piece.end_boundary = boundary;
+        }
+        piece.proposals.retain(|(t, _)| t.0 >= start && t.0 < end);
+        out.push(piece);
+        start = end;
+    }
+    out
+}
+
+/// Attribution of a work atom (§7.5, attribution §5): the explicit level
+/// (correction, manual entry), then a binding of the engaged session or its
+/// repository, then the structural levels from the event-time context of the
+/// engaged session's instants. Report target: explicit > binding >
+/// repository > worktree > unattributed.
 fn attribute_atom(
     w: &DerivedWriter<'_>,
     p: &Piece,
@@ -513,6 +575,7 @@ fn attribute_atom(
     run_id: &str,
     agents: &AgentContext,
     git: &GitMap,
+    bindings: &Bindings,
 ) -> Result<()> {
     let c = &p.cand;
     if !matches!(c.status, WorkStatus::Work(_)) {
@@ -597,8 +660,21 @@ fn attribute_atom(
     let evidence = (unresolved > 0).then(|| format!("{unresolved} instant(s) without git context"));
     let state = |n: usize| if n == 1 { "confirmed" } else { "conflicting" };
     let json = |set: &BTreeSet<String>| serde_json::to_string(set).expect("json");
+    // Level 3: bindings of the engaged session or its repository, valid at the
+    // piece's start. Different targets disagree: conflicting (OQ-P-20).
+    let mut subjects: Vec<crate::bindings::Subject> = repos
+        .iter()
+        .map(|r| crate::bindings::Subject::Repository(r.clone()))
+        .collect();
+    if let Some(native) = bindings.native.get(session) {
+        subjects.push(crate::bindings::Subject::Session(native.clone()));
+    }
+    let bound = bindings.config.active_at(&subjects, c.start.0);
+    let bound_targets: BTreeSet<String> = bound.iter().map(|b| b.target.clone()).collect();
     let report = if explicit_any {
         "explicit"
+    } else if !bound_targets.is_empty() {
+        "binding"
     } else if !repos.is_empty() {
         "repository"
     } else if !worktrees.is_empty() {
@@ -606,6 +682,21 @@ fn attribute_atom(
     } else {
         "none"
     };
+    if !bound_targets.is_empty() {
+        let ids: Vec<String> = bound.iter().map(|b| format!("binding:{}", b.id)).collect();
+        w.attribution(
+            "human_atom",
+            atom_id,
+            "binding",
+            state(bound_targets.len()),
+            &json(&bound_targets),
+            "binding",
+            Some(&ids.join(", ")),
+            true,
+            report == "binding",
+            run_id,
+        )?;
+    }
     if !worktrees.is_empty() {
         w.attribution(
             "human_atom",

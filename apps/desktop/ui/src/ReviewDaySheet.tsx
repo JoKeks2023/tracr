@@ -31,7 +31,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
     setBusy(true);
     try {
       await api.review(day.day, reason.trim() || undefined);
-      onChanged(t("reviewedToast", { rev: next }));
+      onChanged(next > 1 ? t("reviewUpdatedToast") : t("reviewedToast"));
       onClose();
     } catch (e) {
       onChanged(errorText(e), true);
@@ -58,7 +58,7 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
               .sort((a, b) => b[1] - a[1])
               .map(([label, ms]) => (
                 <div key={label} style={{ display: "contents" }}>
-                  <dt className="muted">· {label}</dt>
+                  <dt className="muted">· {bucketLabel(label)}</dt>
                   <dd className="mono">{duration(ms)}</dd>
                 </div>
               ))}
@@ -75,10 +75,10 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
             <input className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
           </label>
           <div className="actions">
-            <button className="button ghost" onClick={onClose}>
+            <button className="btn s" onClick={onClose}>
               {t("cancel")}
             </button>
-            <button className="button primary" disabled={busy || (next > 1 && !reason.trim())} onClick={review}>
+            <button className="btn p" disabled={busy || (next > 1 && !reason.trim())} onClick={review}>
               {busy ? <span className="spinner" /> : next === 1 ? t("reviewDayShort") : t("saveRev", { rev: next })}
             </button>
           </div>
@@ -86,4 +86,12 @@ export function ReviewDaySheet({ day, onClose, onChanged }: {
       </aside>
     </>
   );
+}
+
+/** Counted time without a resolved target comes from the backend as a state word. */
+function bucketLabel(label: string): string {
+  if (label === "unattributed") return t("unattributed");
+  if (label === "conflicting") return t("conflictingWord");
+  if (label === "ambiguous") return t("ambiguousWord");
+  return label;
 }

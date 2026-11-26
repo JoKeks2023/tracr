@@ -515,6 +515,8 @@ fn usage_of(
         reasoning_output: u64_field(u, "reasoning_output_tokens"),
         tool_charges: Default::default(),
         service_tier: None,
+        speed: None,
+        inference_geo: None,
         identity: UsageIdentity::default(),
         includes_copied_context: None,
         extent: at.map_or(TemporalExtent::Unknown, |at| TemporalExtent::Instant { at }),

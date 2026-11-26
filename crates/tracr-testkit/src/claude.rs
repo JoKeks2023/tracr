@@ -69,6 +69,19 @@ impl ClaudeSession {
         serde_json::Value::Object(o).to_string()
     }
 
+    /// A context compaction boundary with its token counts.
+    pub fn compact_boundary(&mut self, hhmm: &str, pre: u64, post: u64) -> String {
+        let mut o = self.base("system", hhmm);
+        o.insert("subtype".into(), json!("compact_boundary"));
+        o.insert("content".into(), json!("Conversation compacted"));
+        o.insert("level".into(), json!("info"));
+        o.insert(
+            "compactMetadata".into(),
+            json!({"trigger": "auto", "preTokens": pre, "postTokens": post, "durationMs": 30000}),
+        );
+        serde_json::Value::Object(o).to_string()
+    }
+
     /// An automated task notification (not a human prompt).
     pub fn task_notification(&mut self, hhmm: &str) -> String {
         let mut o = self.base("user", hhmm);

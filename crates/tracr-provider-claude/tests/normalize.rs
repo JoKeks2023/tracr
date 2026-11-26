@@ -196,6 +196,42 @@ fn cwd_changes_are_events() {
     );
 }
 
+#[test]
+fn compactions_are_events_for_validated_versions_only() {
+    let mut c = ClaudeSession::new(S);
+    let lines = vec![
+        c.prompt("09:00"),
+        c.assistant("09:01", "m1", 10),
+        c.compact_boundary("09:30", 500_000, 20_000),
+    ];
+    let out = normalize(&stream(StreamRole::Main, None), &lines);
+    let k = kinds(&out);
+    assert_eq!(
+        k.iter()
+            .filter(|k| *k == "context_compacted/compact_boundary")
+            .count(),
+        1
+    );
+
+    // An unvalidated producer version keeps the gated fallback: no event.
+    let st = stream(StreamRole::Main, None);
+    let mut ins = inputs(&st, &lines);
+    for i in &mut ins {
+        i.manifest_validated = false;
+    }
+    let out = ClaudeNormalizer::new().normalize_stream(&st, &ins);
+    assert!(
+        !kinds(&out)
+            .iter()
+            .any(|k| k.starts_with("context_compacted"))
+    );
+    assert_eq!(
+        out.diagnostics
+            .get("compaction_not_mapped_unvalidated_version"),
+        Some(&1)
+    );
+}
+
 /// E-1: the normalizer re-decides human prompts from retained markers and
 /// agrees with the extractor's classification on every fixture record.
 #[test]

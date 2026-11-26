@@ -400,6 +400,15 @@ impl<'c> DerivedWriter<'c> {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Native session ID of every derived session, by derived ID.
+    pub fn session_native_ids(&self) -> Result<std::collections::HashMap<String, String>> {
+        let mut stmt = self
+            .tx
+            .prepare("SELECT id, native_session_id FROM agent_session")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn set_session_repository(
         &self,
         id: &str,
@@ -845,6 +854,16 @@ pub fn segments_in(
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Context compactions of a session between `start` and `end` (T-0026).
+pub fn compactions_in(conn: &Connection, session_id: &str, start: i64, end: i64) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM norm_event
+         WHERE session_id = ?1 AND occurred_at >= ?2 AND occurred_at < ?3 AND kind = 'context_compacted'",
+        rusqlite::params![session_id, start, end],
+        |r| r.get(0),
+    )?)
 }
 
 pub fn instants_in(

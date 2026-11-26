@@ -1,5 +1,5 @@
 import { locale, t } from "./i18n";
-import { duration, estimate, hhmm, money, reasonText, shortId, tokens } from "./format";
+import { duration, estimate, hhmm, money, reasonText, shortId, tildify, tokens } from "./format";
 import type { PricingInfo, SessionDay, TokenCount, UsageLine } from "./types";
 
 function Tok({ t }: { t: TokenCount }) {
@@ -23,7 +23,7 @@ function actorName(s: SessionDay, actorId: string | null): string {
 }
 
 /** Everything known about one session in a period: where, who, how long, what it cost. */
-export function SessionDetail({ s, tz, pricing, range = false }: { s: SessionDay; tz: string; pricing: PricingInfo; range?: boolean }) {
+export function SessionDetail({ s, tz, pricing, range = false, home = null }: { s: SessionDay; tz: string; pricing: PricingInfo; range?: boolean; home?: string | null }) {
   const usage: UsageLine[] = [...s.usage].sort((a, b) => b.output.sum - a.output.sum);
   const diagnostics = Object.entries(s.diagnostics);
   return (
@@ -32,7 +32,7 @@ export function SessionDetail({ s, tz, pricing, range = false }: { s: SessionDay
       <dt>{t("provider")}</dt>
       <dd>{s.provider}</dd>
       <dt>{t("workingDir")}</dt>
-      <dd className="mono">{s.cwd ?? "—"}</dd>
+      <dd className="mono" title={s.cwd ?? undefined}>{s.cwd ? tildify(s.cwd, home) : "—"}</dd>
       <dt>{t("branch")}</dt>
       <dd className="mono">{s.git_branch ?? "—"}</dd>
       <dt>{t("evidenceSpan")}</dt>
@@ -123,6 +123,7 @@ export function SessionDetail({ s, tz, pricing, range = false }: { s: SessionDay
         {t("estCostNote", { catalog: pricing.catalog_version, asOf: pricing.oldest_fetched_at ?? "?" })}
         {s.cost.reasons.length > 0 && t("unpricedHere", { list: s.cost.reasons.map(reasonText).join("; ") })}
         {s.cost.assumptions.length > 0 && t("assumedHere", { list: s.cost.assumptions.map(reasonText).join("; ") })}
+        {s.compactions > 0 && t(s.compactions === 1 ? "compactionsHereOne" : "compactionsHere", { n: s.compactions })}
       </p>
     </section>
 

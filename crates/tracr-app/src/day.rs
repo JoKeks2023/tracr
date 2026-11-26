@@ -273,6 +273,15 @@ pub struct SessionDay {
     /// Identified usage of the session on this day.
     pub cost: CostView,
     pub reported: Vec<ReportedView>,
+    /// Context compactions on this day. Their requests are not in the
+    /// transcript, so the estimate leaves them out (T-0025): stated, not priced.
+    pub compactions: i64,
+    /// Targets of the user's bindings of this session (or its repository)
+    /// that were valid at some point of the day (S3.2).
+    pub bound_to: Vec<String>,
+    /// Targets suggested by evidence (the branch name); they count only once
+    /// the user accepts one, which binds the session.
+    pub suggestions: Vec<crate::bindings::Suggestion>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -728,6 +737,7 @@ fn session_days(
             reported,
             repository,
             repository_label,
+            compactions: derived::compactions_in(conn, &s.id, start, end)?,
             engagement_instants: derived::instants_in(conn, &s.id, start, end)?
                 .into_iter()
                 .map(|i| i.at)
@@ -747,6 +757,8 @@ fn session_days(
             last_evidence_at: s.last_evidence_at,
             actors,
             usage,
+            bound_to: Vec::new(),
+            suggestions: Vec::new(),
         });
     }
     Ok((sessions, identified_cost, unidentified_cost))
@@ -776,7 +788,7 @@ pub fn day_agents(
                     .iter()
                     .map(|t| match level.as_str() {
                         "repository" => tracr_git::repository_label(t),
-                        "explicit" => target_label(t),
+                        "explicit" | "binding" => target_label(t),
                         _ => t.rsplit('/').next().unwrap_or(t).to_owned(),
                     })
                     .collect();
