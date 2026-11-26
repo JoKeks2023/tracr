@@ -14,6 +14,7 @@ import { Home } from "./v2/Home";
 import { LimitsPage } from "./v2/LimitsPage";
 import { Projects } from "./v2/Projects";
 import { Rail } from "./v2/Rail";
+import { SessionsPage } from "./v2/SessionsPage";
 import { useQuotaPrefs } from "./v2/quota";
 import { mergeCost } from "./format";
 import "./v2/theme.css";
@@ -261,7 +262,7 @@ export function App() {
     if (area === "worktime") {
       const target = dir < 0 ? olderDay : newerDay;
       if (target) goTo(target);
-    } else if (area === "projects" || area === "limits") {
+    } else if (area === "projects" || area === "sessions" || area === "limits") {
       setAnchor(shiftAnchor(scope, anchor, dir));
       setFocusSession(null);
     }
@@ -299,6 +300,7 @@ export function App() {
       case "settings": return setArea("settings");
       case "area_today": return setArea("today");
       case "area_projects": return setArea("projects");
+      case "area_sessions": return setArea("sessions");
       case "area_limits": return setArea("limits");
       case "area_environment": return setArea("environment");
       case "area_worktime": return setArea("worktime");
@@ -392,6 +394,12 @@ export function App() {
             {bar}
           </Bar>
         )}
+        {area === "sessions" && (
+          <Bar
+            title={t("railSessions")}
+            period={{ label: periodLabel(scope, anchor), scope, onScope: setScope, canPrev: !oldest || from > oldest, canNext: to < today, onShift: shiftPeriod }}
+          />
+        )}
         {area === "limits" && (
           <Bar
             title={t("limitsTitle")}
@@ -459,6 +467,9 @@ export function App() {
             onShift={shiftPeriod}
             onError={reportError}
           />
+        )}
+        {load.state === "ready" && area === "sessions" && (
+          <SessionsPage from={from} to={to} home={status?.home ?? null} reloadKey={load} onError={reportError} onChanged={(text, error) => setNotice({ text, error })} />
         )}
         {load.state === "ready" && area === "limits" && (
           <LimitsPage from={from} to={to} limits={limits} reloadKey={load} onTap={tapNow} onError={reportError} />

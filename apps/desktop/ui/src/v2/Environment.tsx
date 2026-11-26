@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api, errorText } from "../api";
 import { tildify } from "../format";
 import { lang, locale, t } from "../i18n";
-import type { EnvFinding, EnvItem, EnvOrigin, EnvSeverity, Environment, Status } from "../types";
+import type { EnvFinding, EnvItem, EnvOrigin, EnvSeverity, Environment, ProjectSetup, SetupView, Status } from "../types";
 import { Panel, Stat } from "./ui";
 
-type Pane = "check" | "skills" | "commands" | "agents" | "plugins" | "mcp" | "hooks" | "memory" | "permissions";
+type Pane = "check" | "skills" | "commands" | "agents" | "plugins" | "mcp" | "hooks" | "memory" | "permissions" | "repos";
 const PANES: { id: Pane; label: Parameters<typeof t>[0] }[] = [
   { id: "check", label: "envCheck" },
   { id: "skills", label: "envSkills" },
@@ -16,6 +16,7 @@ const PANES: { id: Pane; label: Parameters<typeof t>[0] }[] = [
   { id: "hooks", label: "envHooks" },
   { id: "memory", label: "envMemory" },
   { id: "permissions", label: "envPermissions" },
+  { id: "repos", label: "envRepos" },
 ];
 
 /** Title, advice and how to read the detail, per rule. The backend sends ids and facts only. */
@@ -115,6 +116,114 @@ function originLabel(o: EnvOrigin): string {
 
 function dateLabel(ms: number | null): string | null {
   return ms === null ? null : new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(ms));
+}
+
+/** Setup findings per repository (TRACR-23): title and advice, keyed by rule without its version. */
+const SETUP_RULES: Record<string, { en: [string, string]; de: [string, string] }> = {
+  "setup.reference_missing": {
+    en: ["Reference to a missing file", "An instruction file imports a path that does not exist, so agents never see it."],
+    de: ["Verweis auf eine fehlende Datei", "Eine Anweisungsdatei importiert einen Pfad, den es nicht gibt. Agenten sehen ihn deshalb nie."],
+  },
+  "setup.instructions_unlinked": {
+    en: ["CLAUDE.md and AGENTS.md are not linked", "Neither file references the other, so different agents may get different instructions."],
+    de: ["CLAUDE.md und AGENTS.md sind nicht verknüpft", "Keine der Dateien verweist auf die andere. Verschiedene Agenten bekommen so womöglich verschiedene Anweisungen."],
+  },
+  "setup.single_instruction_file": {
+    en: ["Only one instruction file", "Agents that read the other file get no project instructions."],
+    de: ["Nur eine Anweisungsdatei", "Agenten, die die andere Datei lesen, bekommen keine Projekt-Anweisungen."],
+  },
+  "setup.no_instructions": {
+    en: ["No instruction file", "There is no CLAUDE.md or AGENTS.md at the repository root."],
+    de: ["Keine Anweisungsdatei", "Im Repository-Ordner gibt es weder CLAUDE.md noch AGENTS.md."],
+  },
+};
+
+function setupRule(rule: string, message: string): [string, string, string | null] {
+  const r = SETUP_RULES[rule.split("@")[0]];
+  // The one fact worth repeating is the missing path; the backend's sentence is English.
+  const missing = /references (.+), which does not exist$/.exec(message)?.[1] ?? null;
+  return r ? [...r[lang], missing] : [rule, message, null];
+}
+
+/** One repository's setup: instruction files and their imports, canon, MCP server names, findings. */
+function RepoSetup({ p, home }: { p: ProjectSetup; home: string | null }) {
+  const warnings = p.findings.filter((f) => f.severity === "warning").length;
+  return (
+    <Row
+      title={tildify(p.path, home)}
+      sub={p.instructions.length === 0 ? t("setupNoFiles") : p.instructions.map((i) => i.file.path).join(" · ")}
+      chips={
+        <>
+          {warnings > 0 && <span className="chip" style={{ color: SEVERITY_COLOR.warning }}>{t("envWarningsN", { n: warnings })}</span>}
+          {p.canon && <span className="chip">{t("setupCanonChip", { n: p.canon.canon })}</span>}
+          {p.mcp_servers && <span className="chip">{t("setupMcpChip", { n: p.mcp_servers.length })}</span>}
+        </>
+      }
+    >
+      {p.findings.length > 0 && (
+        <ul className="elist">
+          {p.findings.map((f, i) => {
+            const [title, advice, path] = setupRule(f.rule, f.message);
+            return (
+              <li key={i} className="erow flat">
+                <span className="et">
+                  <b style={{ color: SEVERITY_COLOR[f.severity] }}>{title}</b>
+                  <span className="vnote">{advice}</span>
+                  {path && <span className="vnote mono">{path}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Facts
+        home={home}
+        rows={[
+          ...p.instructions.map((i): [string, ReactNode] => [
+            i.file.path,
+            <>
+              {kb(i.file.bytes)}
+              {i.file.modified !== null && ` · ${t("envModified", { date: dateLabel(i.file.modified) ?? "" })}`}
+              {i.references.length > 0 && (
+                <span className="vnote mono" style={{ display: "block" }}>{i.references.map((r) => `@${r}`).join("  ")}</span>
+              )}
+            </>,
+          ]),
+          [t("setupCanon"), p.canon ? t("setupCanonText", { file: p.canon.file.path, canon: p.canon.canon, all: p.canon.records }) : null],
+          [t("envMcp"), p.mcp_servers ? (p.mcp_servers.length === 0 ? t("envNone") : p.mcp_servers.join(", ")) : null],
+        ]}
+      />
+    </Row>
+  );
+}
+
+function Repos({ setup, home }: { setup: SetupView; home: string | null }) {
+  const latest = setup.plans.reduce<number | null>((m, x) => (x.modified !== null && (m === null || x.modified > m) ? x.modified : m), null);
+  const bytes = setup.plans.reduce((n, x) => n + x.bytes, 0);
+  return (
+    <>
+      {setup.projects.length === 0 ? (
+        <div className="vempty">
+          <h2>{t("repoSetupNone")}</h2>
+          <p>{t("repoSetupNoneHint")}</p>
+        </div>
+      ) : (
+        <ul className="elist">
+          {setup.projects.map((p) => (
+            <RepoSetup key={p.path} p={p} home={home} />
+          ))}
+        </ul>
+      )}
+      <Panel title={t("setupPlans")} aside={String(setup.plans.length)}>
+        <p className="vnote">
+          {setup.plans.length === 0
+            ? t("envNone")
+            : t("setupPlansText", { n: setup.plans.length, size: kb(bytes), date: dateLabel(latest) ?? "—" })}{" "}
+          {t("setupPlansPrivacy")}
+        </p>
+      </Panel>
+    </>
+  );
 }
 
 /** One row that opens in place: the name and a line of description, then the facts. */
@@ -247,6 +356,7 @@ export function EnvironmentPage({ status, onApproved, onError }: { status: Statu
   const [pane, setPane] = useState<Pane>("check");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [setup, setSetup] = useState<SetupView | null>(null);
   const home = status.home ?? null;
   const approved = status.approved_config_roots.length > 0;
 
@@ -264,6 +374,15 @@ export function EnvironmentPage({ status, onApproved, onError }: { status: Statu
   useEffect(() => {
     if (approved) load();
   }, [approved, load]);
+  const loadSetup = useCallback(() => {
+    void api
+      .projectSetup()
+      .then(setSetup)
+      .catch((e) => errorRef.current(errorText(e)));
+  }, []);
+  useEffect(() => {
+    if (approved && pane === "repos" && !setup) loadSetup();
+  }, [approved, pane, setup, loadSetup]);
 
   if (!approved) {
     const proposed = status.proposed_config_root;
@@ -295,11 +414,12 @@ export function EnvironmentPage({ status, onApproved, onError }: { status: Statu
         hooks: env.hooks.length,
         memory: env.memory.length,
         permissions: env.permissions.length,
+        repos: setup ? setup.projects.length : null,
       }
-    : { check: null, skills: null, commands: null, agents: null, plugins: null, mcp: null, hooks: null, memory: null, permissions: null };
+    : { check: null, skills: null, commands: null, agents: null, plugins: null, mcp: null, hooks: null, memory: null, permissions: null, repos: null };
   const q = query.trim().toLowerCase();
   const match = (...texts: (string | null | undefined)[]) => !q || texts.some((x) => (x ?? "").toLowerCase().includes(q));
-  const searchable = pane !== "check" && pane !== "permissions";
+  const searchable = pane !== "check" && pane !== "permissions" && pane !== "repos";
 
   return (
     <div className="st">
@@ -315,7 +435,7 @@ export function EnvironmentPage({ status, onApproved, onError }: { status: Statu
       <div className="st-pane" aria-busy={busy || !env}>
         <div className="ebar">
           <h2 className="st-title">{t(PANES.find((p) => p.id === pane)!.label)}</h2>
-          <button className="btn s" disabled={busy} onClick={load}>{t("envRefresh")}</button>
+          <button className="btn s" disabled={busy} onClick={() => (load(), pane === "repos" && loadSetup())}>{t("envRefresh")}</button>
         </div>
         {env && readAt && (
           <p className="vnote">
@@ -403,6 +523,7 @@ export function EnvironmentPage({ status, onApproved, onError }: { status: Statu
             ))}
           </ul>
         )}
+        {pane === "repos" && setup && <Repos setup={setup} home={home} />}
         {env && pane === "permissions" &&
           (["allow", "ask", "deny"] as const).map((list) => {
             const rules = env.permissions.filter((p) => p.list === list);

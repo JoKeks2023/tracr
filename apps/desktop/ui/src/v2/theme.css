@@ -195,6 +195,10 @@
 .v2 .sinput, .v2 .ssel { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 7px; color: var(--tx); padding: 5px 10px; font: 13px -apple-system, system-ui, sans-serif; min-width: 0; }
 .v2 .sform .sinput { flex: 1; }
 .v2 .ssel { max-width: 16rem; }
+.v2 .sfilters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.v2 .sfilter { display: flex; flex-direction: column; gap: 3px; min-width: 8rem; }
+.v2 .sfilter.grow { flex: 1 1 14rem; }
+.v2 .sfilter .ssel { max-width: 12rem; }
 .v2 .st-pane p.vnote { margin: 0 0 6px; }
 @media (max-width: 900px) { .v2 .st { grid-template-columns: 180px minmax(0, 1fr); } }
 

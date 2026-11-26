@@ -9,6 +9,12 @@ const svg = (d: ReactNode) => (
 export const icons = {
   today: svg(<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />),
   projects: svg(<path d="M3 7l9-4 9 4-9 4zM3 12l9 4 9-4M3 17l9 4 9-4" />),
+  sessions: svg(
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5L20 20" />
+    </>,
+  ),
   worktime: svg(
     <>
       <circle cx="12" cy="12" r="9" />

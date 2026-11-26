@@ -6,7 +6,7 @@ import { SessionDetail } from "./SessionDetail";
 import type { PricingInfo, SessionDay, TargetOption } from "./types";
 
 /** A target key as a person reads it: the project's name, else the key without its kind. */
-function targetName(key: string, targets: TargetOption[]): string {
+export function targetName(key: string, targets: TargetOption[]): string {
   return targets.find((o) => o.key === key)?.label ?? key.replace(/^(other|category|project):/, "");
 }
 
