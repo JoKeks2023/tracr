@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, errorText, type RootKind } from "../api";
 import { tildify } from "../format";
-import { t } from "../i18n";
+import { locale, t } from "../i18n";
 import { RootsPicker } from "../RootsPicker";
-import type { AutostartView, CostAlertPrefs, HooksView, Limits, ProjectOp, ProjectsView, Status } from "../types";
+import { targetName } from "../SessionSheet";
+import type { AutostartView, BindingConfig, BindingSubject, CostAlertPrefs, HooksView, Limits, ProjectOp, ProjectsView, Status, TargetOption } from "../types";
 import { useQuotaPrefs } from "./quota";
 import { Panel } from "./ui";
 
@@ -199,6 +200,87 @@ function ProjectsPane({ onChanged }: { onChanged: (text: string, error?: boolean
               );
             })
           )}
+        </Panel>
+      )}
+      <BindingsPanel view={view} onChanged={onChanged} />
+    </>
+  );
+}
+
+/**
+ * Bindings (TRACR-40): what a session or repository is for, and the
+ * suggestions you rejected. Ending a binding keeps it in the ledger; it just
+ * stops applying from now on.
+ */
+function BindingsPanel({ view, onChanged }: { view: ProjectsView; onChanged: (text: string, error?: boolean) => void }) {
+  const [config, setConfig] = useState<BindingConfig | null>(null);
+  const [targets, setTargets] = useState<TargetOption[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [now] = useState(Date.now());
+  const notify = useRef(onChanged);
+  notify.current = onChanged;
+  const load = useCallback(() => {
+    void api.bindings().then(setConfig).catch((e) => notify.current(errorText(e), true));
+  }, []);
+  useEffect(() => {
+    load();
+    void api.targets().then(setTargets).catch(() => setTargets([]));
+  }, [load]);
+  if (!config) return null;
+  const subjectName = (s: BindingSubject) =>
+    s.kind === "repository" ? (view.repositories.find((r) => r.key === s.id)?.label ?? s.id) : t("bindingSession", { id: s.id.slice(0, 8) });
+  const date = (ms: number) => new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(ms));
+  const active = config.bindings.filter((b) => b.valid_to === undefined || b.valid_to === null || b.valid_to > now);
+  const ended = config.bindings.length - active.length;
+  const end = async (id: string, name: string) => {
+    setBusy(true);
+    try {
+      await api.bindingOp({ op: "end", id, at: null });
+      load();
+      onChanged(t("bindingEnded", { name }));
+    } catch (e) {
+      onChanged(errorText(e), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Panel title={t("bindingsTitle")} aside={String(active.length)}>
+        <p className="vnote">{t("bindingsNote")}</p>
+        {active.length === 0 ? (
+          <p className="vnote">{t("bindingsNone")}</p>
+        ) : (
+          <ul className="rlist">
+            {active.map((b) => {
+              const name = targetName(b.target, targets);
+              return (
+                <li key={b.id}>
+                  <span className="path">
+                    {subjectName(b.subject)} → <b>{name}</b> <span className="vnote">{t("bindingSince", { date: date(b.valid_from) })}</span>
+                  </span>
+                  <span className="acts">
+                    <button className="btn s" disabled={busy} onClick={() => void end(b.id, name)}>{t("bindingEnd")}</button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {ended > 0 && <p className="vnote">{t("bindingsEndedN", { n: ended })}</p>}
+      </Panel>
+      {config.rejected.length > 0 && (
+        <Panel title={t("rejectedTitle")} aside={String(config.rejected.length)}>
+          <p className="vnote">{t("rejectedNote")}</p>
+          <ul className="rlist">
+            {config.rejected.map((r, i) => (
+              <li key={i}>
+                <span className="path">
+                  {subjectName(r.subject)} → {targetName(r.target, targets)} <span className="vnote">{date(r.at)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </Panel>
       )}
     </>
